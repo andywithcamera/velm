@@ -1,0 +1,31 @@
+name: Task
+description: Track a concrete engineering task or maintenance item.
+title: "[Task] "
+labels:
+  - enhancement
+body:
+  - type: input
+    id: outcome
+    attributes:
+      label: Desired outcome
+      placeholder: What should be true when this task is done?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Keep this to the specific deliverable.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies or blockers

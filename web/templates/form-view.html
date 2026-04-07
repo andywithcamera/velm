@@ -1,0 +1,2828 @@
+{{define "form-view"}}
+<section class="ui-form-wrap">
+  {{$expectedVersion := .FormExpectedVersion}}
+  {{$isNew := eq .FormID "new"}}
+  <div class="ui-form-frame-head">
+	    <div class="ui-form-frame-copy">
+	      <h1 class="ui-form-frame-title">{{if $isNew}}New {{end}}{{.FormTableLabel}}</h1>
+	      <p class="ui-form-frame-subtitle">{{.FormTableDescription}}</p>
+        {{if .FormVariantOptions}}
+        <div class="ui-form-frame-variants">
+          <span class="ui-field-pill ui-field-pill-muted">Form</span>
+          {{range .FormVariantOptions}}
+            {{if .Selected}}
+            <span class="ui-field-pill">{{.Label}}</span>
+            {{else}}
+            <a href="{{.Href}}" class="ui-field-link">{{.Label}}</a>
+            {{end}}
+          {{end}}
+        </div>
+        {{end}}
+	    </div>
+		    <div class="ui-form-frame-actions">
+		      {{if and (not .FormReadOnly) (not .FormHidePrimaryActions)}}
+		      <button type="submit" form="recordForm" class="ui-btn ui-btn-primary" data-primary-submit="true" data-form-save-submit="true">{{if .FormPrimaryActionLabel}}{{.FormPrimaryActionLabel}}{{else}}Save Changes{{end}}</button>
+		      {{if .FormPublishAction}}
+		      <button type="submit" form="recordForm" class="ui-btn ui-btn-secondary" data-form-save-submit="true" formaction="{{.FormPublishAction}}" formmethod="post">{{if .FormPublishLabel}}{{.FormPublishLabel}}{{else}}Publish{{end}}</button>
+		      {{end}}
+		      {{end}}
+		      {{if not .FormHideSecondaryActions}}
+		      <button type="button" class="ui-btn ui-btn-secondary">Export</button>
+		      <button type="button" class="ui-btn ui-btn-secondary">Copy</button>
+		      {{end}}
+		      {{if and (not $isNew) (not .FormReadOnly) (not .FormHideDeleteActions)}}
+		        {{if .FormIsDeleted}}
+		          <button
+		            type="submit"
+	            form="recordForm"
+	            class="ui-btn ui-btn-secondary"
+	            formaction="/api/restore/{{.FormTable}}"
+	            formmethod="post"
+	          >
+	            Restore
+	          </button>
+	        {{else}}
+	          <button
+	            type="submit"
+	            form="recordForm"
+	            class="ui-btn ui-btn-danger"
+	            formaction="{{if .FormDeleteAction}}{{.FormDeleteAction}}{{else}}/api/delete/{{.FormTable}}{{end}}"
+	            formmethod="post"
+	            onclick="return confirm('{{if .FormDeleteConfirm}}{{.FormDeleteConfirm}}{{else}}Soft-delete this record?{{end}}');"
+	          >
+	            {{if .FormDeleteLabel}}{{.FormDeleteLabel}}{{else}}Delete{{end}}
+		          </button>
+		        {{end}}
+		      {{end}}
+      {{if not .FormHideTimeline}}
+      <button
+        type="button"
+        class="ui-btn ui-btn-secondary ui-form-timeline-toggle"
+        data-form-timeline-toggle="true"
+        aria-expanded="true"
+        aria-controls="recordTimelineAside"
+      >
+        Collapse Updates
+      </button>
+      {{end}}
+    </div>
+  </div>
+  <div class="ui-form-layout{{if .FormHideTimeline}} is-timeline-collapsed{{end}}" data-form-layout-shell="true">
+    <div class="ui-form-main ui-form-main-stack">
+      <form
+        id="recordForm"
+        method="POST"
+        class="ui-form-shell ui-form-editor"
+        hx-post="{{if .FormAction}}{{.FormAction}}{{else}}/api/save/{{.FormTable}}{{end}}"
+        hx-target="body"
+        hx-swap="none"
+	      >
+	      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+	      {{range .FormHiddenFields}}
+	        <input type="hidden" name="{{.Name}}" value="{{.Value}}">
+	      {{end}}
+	      <input type="hidden" name="realtime_client_id" value="" data-realtime-client-id-field="true">
+	      <input type="hidden" name="expected_version" value="{{$expectedVersion}}">
+	      {{if not $isNew}}
+	        <input type="hidden" name="_id" value="{{.FormID}}">
+	      {{end}}
+	      <div class="ui-alert ui-alert-danger ui-form-error-banner hidden" data-form-error-banner="true" role="alert"></div>
+	      <div class="ui-alert hidden ui-form-live-banner" data-form-live-banner="true">
+	        <div class="ui-form-live-banner-copy" data-form-live-message="true">Updates are available for this record.</div>
+	        <button type="button" class="ui-btn ui-btn-secondary" data-form-live-reload="true">Reload latest</button>
+	      </div>
+
+	      <section class="ui-card ui-form-section ui-domain-form">
+          <div class="ui-form-grid">
+            {{range $x := .FormColumns}}
+            {{$cfg := index $.FormFieldConfigs $x.NAME}}
+            {{$val := index $.FormFieldValues $x.NAME}}
+            {{$readonly := or $x.IS_READONLY $cfg.ReadOnly}}
+            {{$required := and (not $x.IS_NULLABLE) (not $readonly) (not $x.IS_HIDDEN)}}
+            {{$fieldKind := $cfg.Kind}}
+            <div
+              class="ui-field ui-field-card{{if eq $fieldKind "bool"}} ui-field-card-bool{{end}}"
+              {{if or (eq $fieldKind "json") (eq $fieldKind "markdown") (eq $fieldKind "reference") (eq $fieldKind "textarea") (eq $fieldKind "page_wysiwyg") (eq $fieldKind "page_html")}}data-span="full"{{end}}
+              {{if $x.IS_HIDDEN}}hidden{{end}}
+              data-field-container="true"
+              data-condition-expr="{{$cfg.ConditionExpr}}"
+            >
+              {{if not $x.IS_HIDDEN}}
+                <div class="ui-field-head">
+                  <label class="ui-field-label" for="{{$x.NAME}}">
+                    <span>{{$x.LABEL}}</span>
+                  </label>
+                  <div class="ui-field-meta-row">
+                    {{if $required}}<span class="ui-field-pill">Required</span>{{else}}<span class="ui-field-pill ui-field-pill-muted">Optional</span>{{end}}
+                    {{if $readonly}}<span class="ui-field-pill ui-field-pill-muted">Read only</span>{{end}}
+                    {{if $cfg.ConditionExpr}}<span class="ui-field-pill ui-field-pill-accent">Conditional</span>{{end}}
+                  </div>
+                </div>
+              {{end}}
+
+              {{if eq $cfg.Kind "bool"}}
+	              <input type="hidden" name="{{$x.NAME}}" value="false" data-field-name="{{$x.NAME}}" data-base-required="0" />
+              <label class="ui-checkbox ui-toggle-card {{if $x.IS_HIDDEN}}hidden{{end}}">
+                <input
+                  id="{{$x.NAME}}"
+                  type="checkbox"
+                  name="{{$x.NAME}}"
+                  data-field-name="{{$x.NAME}}"
+                  data-base-required="{{if $required}}1{{else}}0{{end}}"
+                  value="true"
+                  {{if or (eq $val "true") (eq $val "1")}}checked{{end}}
+                  {{if $readonly}}disabled{{end}}
+                />
+                <span class="ui-toggle-visual" aria-hidden="true"></span>
+                <span class="ui-toggle-copy">
+                  <strong>{{if or (eq $val "true") (eq $val "1")}}Enabled{{else}}Disabled{{end}}</strong>
+                  <small>Toggle this state directly from the form.</small>
+                </span>
+	              </label>
+	              {{else if eq $cfg.Kind "choice"}}
+              <select
+                id="{{$x.NAME}}"
+                name="{{$x.NAME}}"
+                data-field-name="{{$x.NAME}}"
+                data-base-required="{{if $required}}1{{else}}0{{end}}"
+                {{if $x.IS_HIDDEN}}hidden{{end}}
+                {{if $readonly}}disabled{{end}}
+                {{if not $x.IS_NULLABLE}}required{{end}}
+                class="ui-select"
+              >
+                {{if $x.IS_NULLABLE}}
+                  <option value="">-- None --</option>
+                {{else}}
+                  <option value="">-- Select --</option>
+                {{end}}
+                {{range $opt := $cfg.ReferenceRows}}
+                  <option value="{{$opt.Value}}" {{if eq $val $opt.Value}}selected{{end}}>{{$opt.Label}}</option>
+                {{end}}
+              </select>
+	              {{else if eq $cfg.Kind "reference"}}
+              <div
+                class="ui-reference-picker{{if $readonly}} is-readonly{{end}}"
+                data-reference-picker="true"
+                data-reference-field="{{$x.NAME}}"
+                data-reference-field-label="{{$x.LABEL}}"
+                data-reference-table="{{$cfg.ReferenceTo}}"
+                data-reference-table-label="{{if $cfg.ReferenceTableLabel}}{{$cfg.ReferenceTableLabel}}{{else}}Record{{end}}"
+                data-reference-nullable="{{if $x.IS_NULLABLE}}1{{else}}0{{end}}"
+                data-reference-readonly="{{if $readonly}}1{{else}}0{{end}}"
+              >
+                <select
+                  name="{{$x.NAME}}"
+                  data-field-name="{{$x.NAME}}"
+                  data-base-required="{{if $required}}1{{else}}0{{end}}"
+                  {{if $x.IS_HIDDEN}}hidden{{end}}
+                  {{if $readonly}}disabled{{end}}
+                  data-reference-select="true"
+                  data-reference-table="{{$cfg.ReferenceTo}}"
+                  class="ui-reference-native-select"
+                  hidden
+                  tabindex="-1"
+                  aria-hidden="true"
+                >
+                  {{if $x.IS_NULLABLE}}<option value="">-- None --</option>{{end}}
+                  {{range $opt := $cfg.ReferenceRows}}
+                    <option value="{{$opt.Value}}" {{if eq $val $opt.Value}}selected{{end}}>{{$opt.Label}}</option>
+                  {{end}}
+                </select>
+                <div class="ui-reference-picker-shell{{if not $val}} is-empty{{end}}" data-reference-shell="true">
+                  <div class="ui-reference-picker-copy">
+                    <p class="ui-reference-picker-kicker">{{if $cfg.ReferenceTableLabel}}{{$cfg.ReferenceTableLabel}}{{else}}Record{{end}}</p>
+                    <strong class="ui-reference-picker-value" data-reference-selected-label="true">{{if $val}}Selected record{{else if $x.IS_NULLABLE}}No record selected{{else}}Selection required{{end}}</strong>
+                    <span class="ui-reference-picker-meta" data-reference-selected-meta="true">{{if $val}}{{$val}}{{else if $cfg.ReferenceTo}}Browse records and choose one to link here{{else}}Reference table unavailable{{end}}</span>
+                  </div>
+                  <div class="ui-reference-picker-actions">
+                    <button
+                      id="{{$x.NAME}}"
+                      type="button"
+                      class="ui-btn ui-btn-secondary ui-reference-picker-trigger"
+                      data-reference-open="true"
+                      aria-haspopup="dialog"
+                      {{if or $readonly (not $cfg.ReferenceTo)}}disabled{{end}}
+                    >
+                      Browse records
+                    </button>
+                    {{if $x.IS_NULLABLE}}
+                    <button
+                      type="button"
+                      class="ui-btn ui-btn-secondary ui-reference-picker-clear"
+                      data-reference-clear="true"
+                      {{if or $readonly (not $val)}}hidden{{end}}
+                      {{if $readonly}}disabled{{end}}
+                    >
+                      Clear
+                    </button>
+                    {{end}}
+                    <a href="{{if and $cfg.ReferenceTo $val}}/f/{{$cfg.ReferenceTo}}/{{$val}}{{end}}" class="ui-field-link ui-reference-picker-link{{if not (and $cfg.ReferenceTo $val)}} hidden{{end}}" data-reference-open-record="true">Open selected record</a>
+                  </div>
+                </div>
+              </div>
+	              <p class="ui-field-help">{{if $cfg.ReferenceTo}}Browse records in a modal, search by label or ID, and select the one you want linked here.{{else}}This reference field does not have a resolved target table yet.{{end}}</p>
+	              {{else if eq $cfg.Kind "json"}}
+              <textarea
+                id="{{$x.NAME}}"
+                name="{{$x.NAME}}"
+                data-field-name="{{$x.NAME}}"
+                data-base-required="{{if $required}}1{{else}}0{{end}}"
+                {{if $x.IS_HIDDEN}}hidden{{end}}
+                {{if $readonly}}readonly{{end}}
+                {{if not $x.IS_NULLABLE}}required{{end}}
+                data-json-input="true"
+                data-json-error-id="{{$x.NAME}}-json-error"
+                rows="10"
+                placeholder='{"key":"value"}'
+                class="ui-textarea font-mono"
+              >{{$val}}</textarea>
+              <p class="ui-field-help">Structured content is validated before save.</p>
+              <p id="{{$x.NAME}}-json-error" class="ui-field-error hidden">Invalid JSON. Fix the syntax before saving.</p>
+              {{else if eq $cfg.Kind "markdown"}}
+              <div class="ui-markdown-workbench">
+                <textarea
+                  id="{{$x.NAME}}"
+                  name="{{$x.NAME}}"
+                  data-field-name="{{$x.NAME}}"
+                  data-base-required="{{if $required}}1{{else}}0{{end}}"
+                  {{if $x.IS_HIDDEN}}hidden{{end}}
+                  {{if $readonly}}readonly{{end}}
+                  {{if not $x.IS_NULLABLE}}required{{end}}
+                  data-markdown-input="true"
+                  data-markdown-preview-id="{{$x.NAME}}-md-preview"
+                  rows="12"
+                  placeholder="Write markdown..."
+                  class="ui-textarea font-mono"
+                >{{$val}}</textarea>
+                <div class="ui-code-preview">
+                  <p class="ui-field-help">Live preview</p>
+                  <div id="{{$x.NAME}}-md-preview" class="ui-markdown-preview"></div>
+                </div>
+              </div>
+              {{else if or (eq $cfg.Kind "page_wysiwyg") (eq $cfg.Kind "page_html")}}
+              <div
+                class="ui-page-editor-frame"
+                data-page-editor="true"
+                data-page-editor-default-view="{{if eq $cfg.Kind "page_html"}}html{{else}}visual{{end}}"
+              >
+                <div class="ui-code-editor-toolbar ui-page-editor-toolbar">
+                  <div class="ui-editor-toolbar">
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="bold" {{if $readonly}}disabled{{end}}>Bold</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="italic" {{if $readonly}}disabled{{end}}>Italic</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="underline" {{if $readonly}}disabled{{end}}>Underline</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="formatBlock" data-page-editor-value="H1" {{if $readonly}}disabled{{end}}>H1</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="formatBlock" data-page-editor-value="H2" {{if $readonly}}disabled{{end}}>H2</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="formatBlock" data-page-editor-value="P" {{if $readonly}}disabled{{end}}>Body</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="insertUnorderedList" {{if $readonly}}disabled{{end}}>Bullets</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="insertOrderedList" {{if $readonly}}disabled{{end}}>Numbers</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="formatBlock" data-page-editor-value="BLOCKQUOTE" {{if $readonly}}disabled{{end}}>Quote</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="formatBlock" data-page-editor-value="PRE" {{if $readonly}}disabled{{end}}>Code</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="createLink" {{if $readonly}}disabled{{end}}>Link</button>
+                    <button type="button" class="ui-btn ui-btn-secondary" data-page-editor-command="removeFormat" {{if $readonly}}disabled{{end}}>Clear</button>
+                  </div>
+                  <div class="ui-segmented ui-page-editor-view-toggle" role="tablist" aria-label="Page editor views">
+                    <button type="button" data-page-editor-view="visual">Visual</button>
+                    <button type="button" data-page-editor-view="html">HTML</button>
+                  </div>
+                </div>
+                <div class="ui-page-editor-body">
+                  <section class="ui-page-editor-panel" data-page-editor-panel="visual">
+                    <div
+                      class="ui-page-editor-surface ui-content-prose"
+                      data-page-editor-surface="true"
+                      data-placeholder="Start building this page..."
+                      {{if $readonly}}contenteditable="false"{{else}}contenteditable="true"{{end}}
+                    ></div>
+                  </section>
+                  <section class="ui-page-editor-panel{{if ne $cfg.Kind "page_html"}} hidden{{end}}" data-page-editor-panel="html" {{if ne $cfg.Kind "page_html"}}hidden{{end}}>
+                    <textarea
+                      id="{{$x.NAME}}"
+                      name="{{$x.NAME}}"
+                      data-field-name="{{$x.NAME}}"
+                      data-base-required="{{if $required}}1{{else}}0{{end}}"
+                      data-page-editor-source="true"
+                      {{if $x.IS_HIDDEN}}hidden{{end}}
+                      {{if $readonly}}readonly{{end}}
+                      {{if not $x.IS_NULLABLE}}required{{end}}
+                      rows="18"
+                      spellcheck="false"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      placeholder="<section><h1>Title</h1><p>Page content</p></section>"
+                      class="ui-code-textarea font-mono"
+                    >{{$val}}</textarea>
+                  </section>
+                </div>
+              </div>
+              <p class="ui-field-help">Edit visually, then switch to HTML when you need precise source control.</p>
+              {{else if and $.FormScriptEditor (eq $x.NAME "script")}}
+              <div class="ui-code-editor-frame" data-script-editor-frame="true" data-span="full">
+                <div class="ui-code-editor-toolbar">
+                  <div class="ui-stack-list" style="gap: 0.25rem;">
+                    <span class="ui-code-editor-label">Script Editor</span>
+                    <span class="ui-field-help" data-script-editor-status="true">Autocomplete: `Ctrl+Space` • JavaScript runtime • Insert tab: `Tab`</span>
+                  </div>
+                  <div class="ui-tab-strip" style="gap: 0.4rem;">
+                    <span class="ui-tab is-active" data-script-language-chip="true">JAVASCRIPT</span>
+                    <span class="ui-tab">Bulk API</span>
+                    <span class="ui-tab">App Scoped</span>
+                  </div>
+                </div>
+                <div class="ui-code-editor-body">
+                  <div class="ui-code-gutter" data-script-editor-gutter="true" aria-hidden="true"></div>
+                  <div class="ui-code-pane">
+                    <textarea
+                      id="{{$x.NAME}}"
+                      name="{{$x.NAME}}"
+                      data-field-name="{{$x.NAME}}"
+                      data-base-required="{{if $required}}1{{else}}0{{end}}"
+                      data-script-editor="true"
+                      data-script-scope-field="scope"
+                      data-script-trigger-field="trigger_type"
+                      data-script-table-field="table_name"
+                      data-script-event-field="event_name"
+                      data-script-language-field="language"
+                      {{if $x.IS_HIDDEN}}hidden{{end}}
+                      {{if $readonly}}readonly{{end}}
+                      {{if not $x.IS_NULLABLE}}required{{end}}
+                      rows="18"
+                      spellcheck="false"
+                      autocomplete="off"
+                      autocorrect="off"
+                      autocapitalize="off"
+                      placeholder="// Write app logic here"
+                      class="ui-code-textarea font-mono"
+                    >{{$val}}</textarea>
+                    <div class="ui-script-complete hidden" data-script-complete="true">
+                      <div class="ui-script-complete-head">
+                        <strong>Suggestions</strong>
+                        <span data-script-complete-meta="true">In scope</span>
+                      </div>
+                      <div class="ui-script-complete-list" data-script-complete-list="true"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {{else if eq $cfg.Kind "textarea"}}
+              <textarea
+                id="{{$x.NAME}}"
+                name="{{$x.NAME}}"
+                data-field-name="{{$x.NAME}}"
+                data-base-required="{{if $required}}1{{else}}0{{end}}"
+                {{if $x.IS_HIDDEN}}hidden{{end}}
+                {{if $readonly}}readonly{{end}}
+                {{if not $x.IS_NULLABLE}}required{{end}}
+                rows="{{if eq $x.NAME "script"}}18{{else}}6{{end}}"
+                placeholder="{{$cfg.Placeholder}}"
+                class="ui-textarea {{if eq $x.NAME "script"}}font-mono{{end}}"
+              >{{$val}}</textarea>
+              {{else}}
+              <input
+                id="{{$x.NAME}}"
+                type="{{$cfg.InputType}}"
+                {{if $cfg.Step}}step="{{$cfg.Step}}"{{end}}
+                data-field-name="{{$x.NAME}}"
+                data-base-required="{{if $required}}1{{else}}0{{end}}"
+                {{if $x.IS_HIDDEN}}hidden{{end}}
+                {{if $readonly}}readonly{{end}}
+                {{if not $x.IS_NULLABLE}}required{{end}}
+                name="{{$x.NAME}}"
+                value="{{$val}}"
+                placeholder="{{$cfg.Placeholder}}"
+                class="ui-input"
+              />
+	              {{end}}
+	              <p class="ui-field-error hidden" data-field-error-for="{{$x.NAME}}"></p>
+	            </div>
+
+	            {{else}}
+            <div class="ui-note" data-span="full">
+              No editable columns are configured for this table yet.
+            </div>
+            {{end}}
+          </div>
+        </section>
+	    </form>
+
+      <div class="ui-reference-modal hidden" data-reference-modal="true" hidden aria-hidden="true">
+        <div class="ui-reference-modal-backdrop" data-reference-modal-dismiss="true"></div>
+        <div class="ui-reference-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="referencePickerTitle">
+          <div class="ui-reference-modal-head">
+            <div class="ui-reference-modal-copy">
+              <p class="ui-reference-modal-kicker" data-reference-modal-kicker="true">Reference Picker</p>
+              <h2 id="referencePickerTitle" class="ui-reference-modal-title" data-reference-modal-title="true">Select record</h2>
+            </div>
+            <button type="button" class="ui-btn ui-btn-secondary ui-reference-modal-close" data-reference-modal-dismiss="true">Close</button>
+          </div>
+          <div class="ui-reference-modal-body">
+            <div class="ui-reference-modal-toolbar">
+              <input
+                type="search"
+                class="ui-input"
+                placeholder="Search by label or record ID"
+                autocomplete="off"
+                data-reference-modal-search="true"
+              />
+              <button type="button" class="ui-btn ui-btn-secondary" data-reference-modal-refresh="true">Refresh</button>
+            </div>
+            <p class="ui-field-help" data-reference-modal-status="true">Search results will appear here.</p>
+            <div class="ui-reference-modal-results" data-reference-modal-results="true"></div>
+          </div>
+          <div class="ui-reference-modal-foot">
+            <div class="ui-reference-modal-current hidden" data-reference-modal-current="true">
+              <strong class="ui-reference-modal-current-label" data-reference-modal-current-label="true"></strong>
+              <span class="ui-reference-modal-current-meta" data-reference-modal-current-meta="true"></span>
+              <a href="" class="ui-field-link ui-reference-modal-current-link hidden" data-reference-modal-open-record="true">Open selected record</a>
+            </div>
+            <div class="ui-reference-modal-actions">
+              <button type="button" class="ui-btn ui-btn-secondary" data-reference-modal-clear="true">Clear selection</button>
+              <button type="button" class="ui-btn ui-btn-secondary" data-reference-modal-dismiss="true">Done</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {{if and (ne .FormID "new") (not .FormHideRelatedSections)}}
+      <section class="ui-card ui-form-section ui-form-related-section">
+        <div class="ui-form-related-head">
+          <div>
+            <h2 class="ui-form-related-title">{{if .FormRelatedTitle}}{{.FormRelatedTitle}}{{else}}Related Records{{end}}</h2>
+            <p class="ui-section-copy">{{if .FormRelatedDescription}}{{.FormRelatedDescription}}{{else}}Records from other tables that refer to this record appear here.{{end}}</p>
+          </div>
+        </div>
+
+        <div class="ui-form-related-list">
+          {{range .FormRelatedSections}}
+            <section class="ui-form-related-card">
+              <div class="ui-form-related-card-head">
+                <div>
+                  <h3 class="ui-form-related-card-title">{{.TableLabel}}</h3>
+                  <p class="ui-form-related-card-copy">{{.Summary}}</p>
+                </div>
+                <div class="ui-toolbar-group">
+                  <span class="ui-badge ui-badge-neutral">{{.Count}}</span>
+                  {{if .ViewAllURL}}
+                  <a href="{{.ViewAllURL}}" class="ui-btn ui-btn-secondary">View All</a>
+                  {{end}}
+                </div>
+              </div>
+
+              <div class="ui-table-shell ui-domain-table ui-form-related-table">
+                <div class="ui-table-scroll">
+                  <table class="ui-table">
+                    <thead>
+                      <tr>
+                        {{if .Rows}}
+                          {{with index .Rows 0}}
+                            {{range .Cells}}
+                              <th scope="col">{{.Label}}</th>
+                            {{end}}
+                          {{end}}
+                        {{end}}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {{range $row := .Rows}}
+                        <tr{{if $row.Href}} class="cursor-pointer" onclick='return window.navigateWithTransition("{{$row.Href}}")'>{{else}}>{{end}}
+                          {{range $cellIndex, $cell := $row.Cells}}
+                            <td>
+                              {{if and $row.Href (eq $cellIndex 0)}}
+                                <a href="{{$row.Href}}" class="ui-field-link ui-field-link-inline">{{$cell.Value}}</a>
+                              {{else}}
+                                {{$cell.Value}}
+                              {{end}}
+                            </td>
+                          {{end}}
+                        </tr>
+                      {{end}}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {{if .HasMore}}
+                <p class="ui-field-help">Showing the first {{len .Rows}} related records.</p>
+              {{end}}
+            </section>
+          {{else}}
+            <div class="ui-empty-state ui-record-timeline-empty">
+              <strong>No related records yet</strong>
+              <span>Other tables that point at this record will appear here.</span>
+            </div>
+          {{end}}
+        </div>
+      </section>
+      {{end}}
+    </div>
+
+    {{if not .FormHideTimeline}}
+    <aside id="recordTimelineAside" class="ui-form-side ui-record-timeline-pane" data-form-timeline-pane="true">
+      <section class="ui-card ui-form-sidebar-card ui-record-timeline-card">
+	        <div class="ui-record-timeline-head">
+	          <div>
+	            <h3 class="ui-form-sidebar-title">Updates and Comments</h3>
+	            <p class="ui-section-copy">Field updates and discussion for this record appear together in one stream.</p>
+	          </div>
+	        </div>
+	        <div class="ui-record-presence hidden" data-record-presence="true">
+	          <span class="ui-field-label">Active now</span>
+	          <div class="ui-record-presence-list" data-record-presence-list="true"></div>
+	        </div>
+
+	        {{if .FormTimelineCanComment}}
+          <form method="POST" action="/api/comments/add" class="ui-record-comment-form">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="table_name" value="{{.FormTable}}">
+            <input type="hidden" name="record_id" value="{{.FormID}}">
+            <input type="hidden" name="realtime_client_id" value="" data-realtime-client-id-field="true">
+            <label class="ui-field-label" for="record-comment-body">Add comment</label>
+            <textarea
+              id="record-comment-body"
+              name="body"
+              rows="4"
+              class="ui-textarea"
+              placeholder="Add a comment about this record"
+            ></textarea>
+            <div class="ui-record-comment-actions">
+              <button type="submit" class="ui-btn ui-btn-primary">Add Comment</button>
+            </div>
+          </form>
+        {{else}}
+          <div class="ui-empty-state ui-record-timeline-empty">
+            <strong>Save this record first</strong>
+            <span>Updates and comments will begin once the record exists.</span>
+          </div>
+        {{end}}
+
+        <div id="recordTimeline" class="ui-record-timeline-list">
+          {{range .FormTimelineItems}}
+            <article class="ui-record-timeline-item ui-record-timeline-item-{{.Kind}}">
+              <div class="ui-record-timeline-item-head">
+                <div class="ui-record-timeline-item-meta">
+                  <strong class="ui-record-timeline-actor">{{.Actor}}</strong>
+                  {{if .ActorMeta}}<span class="ui-record-timeline-actor-meta">{{.ActorMeta}}</span>{{end}}
+                </div>
+                <time class="ui-record-timeline-time">{{.Timestamp}}</time>
+              </div>
+              <p class="ui-record-timeline-summary">{{.Summary}}</p>
+              {{if .CommentBody}}
+                <div class="ui-record-timeline-comment">{{.CommentBody}}</div>
+              {{end}}
+              {{if .Changes}}
+                <div class="ui-record-timeline-changes">
+                  {{range .Changes}}
+                    <div class="ui-record-timeline-change">
+                      <span class="ui-record-timeline-change-label">{{.Label}}</span>
+                      <div class="ui-record-timeline-change-values">
+                        <span class="ui-record-timeline-change-old">{{.OldValue}}</span>
+                        <span class="ui-record-timeline-change-arrow" aria-hidden="true">→</span>
+                        <span class="ui-record-timeline-change-new">{{.NewValue}}</span>
+                      </div>
+                    </div>
+                  {{end}}
+                </div>
+              {{end}}
+            </article>
+          {{else}}
+            <div class="ui-empty-state ui-record-timeline-empty">
+              <strong>No updates or comments yet</strong>
+              <span>Changes and discussion will appear here once this record starts moving.</span>
+            </div>
+          {{end}}
+        </div>
+      </section>
+    </aside>
+    {{end}}
+  </div>
+</section>
+<div id="toast" class="ui-toast hidden"></div>
+<script>
+  function showToast(message, isError = false) {
+    const toast = document.getElementById("toast");
+    toast.textContent = message;
+    toast.className = `ui-toast ${isError ? "is-error" : "is-success"}`;
+
+    toast.classList.remove("hidden");
+    toast.style.opacity = "1";
+
+    const timeout = isError ? 4200 : 2000;
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      setTimeout(() => {
+        toast.classList.add("hidden");
+      }, 1000);
+    }, timeout);
+  }
+
+  function escapeSelectorValue(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") {
+      return window.CSS.escape(value);
+    }
+    return String(value).replace(/"/g, '\\"');
+  }
+
+  function recordForm() {
+    return document.getElementById("recordForm");
+  }
+
+  function recordFormBanner(form) {
+    return form ? form.querySelector('[data-form-error-banner="true"]') : null;
+  }
+
+  function recordLiveBanner(form) {
+    return form ? form.querySelector('[data-form-live-banner="true"]') : null;
+  }
+
+  function hideRecordFormBanner(form) {
+    const banner = recordFormBanner(form);
+    if (!banner) return;
+    banner.textContent = "";
+    banner.classList.add("hidden");
+  }
+
+  function hideRecordLiveBanner(form) {
+    const banner = recordLiveBanner(form);
+    if (!banner) return;
+    banner.classList.add("hidden");
+  }
+
+  function showRecordFormBanner(form, message) {
+    const banner = recordFormBanner(form);
+    if (!banner) return;
+    banner.textContent = message;
+    banner.classList.remove("hidden");
+  }
+
+  function showRecordLiveBanner(form, message) {
+    const banner = recordLiveBanner(form);
+    if (!banner) return;
+    const copy = banner.querySelector('[data-form-live-message="true"]');
+    if (copy) {
+      copy.textContent = message;
+    }
+    banner.classList.remove("hidden");
+  }
+
+  function clearRecordFormErrors(form) {
+    if (!form) return;
+    hideRecordFormBanner(form);
+    form.querySelectorAll('[data-field-container="true"]').forEach((container) => {
+      container.classList.remove("has-error");
+    });
+    form.querySelectorAll('[data-field-error-for]').forEach((errorEl) => {
+      errorEl.textContent = "";
+      errorEl.classList.add("hidden");
+    });
+    form.querySelectorAll(".is-error").forEach((input) => {
+      input.classList.remove("is-error");
+      input.removeAttribute("aria-invalid");
+    });
+  }
+
+  function clearRecordFieldError(form, fieldName) {
+    if (!form || !fieldName) return;
+    const escaped = escapeSelectorValue(fieldName);
+    const control = form.querySelector(`#${escaped}`) || form.querySelector(`[name="${escaped}"]`);
+    const errorEl = form.querySelector(`[data-field-error-for="${escaped}"]`);
+    const container = control ? control.closest('[data-field-container="true"]') : null;
+    if (container) {
+      container.classList.remove("has-error");
+    }
+    if (control) {
+      control.classList.remove("is-error");
+      control.removeAttribute("aria-invalid");
+    }
+    if (errorEl) {
+      errorEl.textContent = "";
+      errorEl.classList.add("hidden");
+    }
+  }
+
+  function applyRecordFieldError(form, fieldName, message, focusField = false) {
+    if (!form || !fieldName) return false;
+    const escaped = escapeSelectorValue(fieldName);
+    const control = form.querySelector(`#${escaped}`) || form.querySelector(`[name="${escaped}"]`);
+    const errorEl = form.querySelector(`[data-field-error-for="${escaped}"]`);
+    const container = control ? control.closest('[data-field-container="true"]') : null;
+    if (!control && !errorEl) {
+      return false;
+    }
+    if (container) {
+      container.classList.add("has-error");
+    }
+    if (control) {
+      control.classList.add("is-error");
+      control.setAttribute("aria-invalid", "true");
+      if (focusField && typeof control.focus === "function") {
+        control.focus();
+      }
+    }
+    if (errorEl) {
+      errorEl.textContent = message;
+      errorEl.classList.remove("hidden");
+    }
+    return true;
+  }
+
+  function fieldNameFromMessage(message) {
+    const match = String(message || "").match(/field\s+"?([a-zA-Z0-9_]+)"?/i);
+    return match ? match[1] : "";
+  }
+
+  function responseMessage(detail) {
+    const raw = String(detail?.xhr?.responseText || "").trim();
+    if (raw) {
+      return raw.replace(/\s+/g, " ");
+    }
+    const status = Number(detail?.xhr?.status || 0);
+    if (status === 409) {
+      return "Record changed by another user; refresh and try again";
+    }
+    if (status > 0) {
+      return `Save failed (${status})`;
+    }
+    return "Save failed";
+  }
+
+  function successMessage(detail) {
+    const raw = String(detail?.xhr?.getResponseHeader("X-Velm-Form-Message") || "").trim();
+    if (raw) {
+      return raw.replace(/\s+/g, " ");
+    }
+    return "Saved!";
+  }
+
+  function realtimeClientID() {
+    const key = "velm-realtime-client-id";
+    try {
+      const storage = window.sessionStorage || window.localStorage;
+      let value = storage.getItem(key);
+      if (value) return value;
+      value = window.crypto && typeof window.crypto.randomUUID === "function"
+        ? window.crypto.randomUUID()
+        : `rt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      storage.setItem(key, value);
+      return value;
+    } catch (_) {
+      return `rt-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+  }
+
+  document.addEventListener("htmx:afterRequest", function (e) {
+    const form = recordForm();
+    if (
+      !form ||
+      !e.detail ||
+      !e.detail.requestConfig ||
+      e.detail.requestConfig.elt !== form
+    )
+      return;
+
+    if (e.detail.successful) {
+      clearRecordFormErrors(form);
+      showToast(successMessage(e.detail));
+    } else {
+      const message = responseMessage(e.detail);
+      clearRecordFormErrors(form);
+      showRecordFormBanner(form, message);
+      applyRecordFieldError(form, fieldNameFromMessage(message), message, true);
+      showToast(message, true);
+    }
+  });
+
+  document.addEventListener("htmx:beforeRequest", function (e) {
+    const form = recordForm();
+    if (!form || !e.detail || !e.detail.requestConfig || e.detail.requestConfig.elt !== form) {
+      return;
+    }
+    clearRecordFormErrors(form);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    const isMac = navigator.platform.toUpperCase().includes("MAC");
+    const isSaveCombo =
+      (isMac && e.metaKey && e.key.toLowerCase() === "s") ||
+      (!isMac && e.ctrlKey && e.key.toLowerCase() === "s");
+
+    if (isSaveCombo) {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const submitButton = document.querySelector('[data-primary-submit="true"]');
+      if (submitButton) {
+        submitButton.click();
+      }
+    }
+  });
+
+	  (function () {
+	    const form = document.querySelector("form[hx-post]");
+	    if (!form) return;
+
+    const jsonInputs = Array.from(document.querySelectorAll('[data-json-input="true"]'));
+    if (jsonInputs.length === 0) return;
+
+    function validateJSONInput(input) {
+      const errorId = input.getAttribute("data-json-error-id");
+      const errorEl = errorId ? document.getElementById(errorId) : null;
+      const raw = input.value.trim();
+      const isValid = raw === "" || (() => {
+        try {
+          JSON.parse(raw);
+          return true;
+        } catch {
+          return false;
+        }
+      })();
+
+      if (errorEl) {
+        errorEl.classList.toggle("hidden", isValid);
+      }
+      input.classList.toggle("border-red-500", !isValid);
+      return isValid;
+    }
+
+	    jsonInputs.forEach((input) => {
+	      input.addEventListener("input", () => validateJSONInput(input));
+	      validateJSONInput(input);
+	    });
+
+	    form.addEventListener("submit", function (event) {
+	      const allValid = jsonInputs.every((input) => validateJSONInput(input));
+	      if (!allValid) {
+	        event.preventDefault();
+	        showRecordFormBanner(form, "Fix invalid JSON fields before saving");
+	        showToast("Fix invalid JSON fields before saving", true);
+	      }
+	    });
+	  })();
+
+	  (function () {
+	    const form = recordForm();
+	    if (!form) return;
+
+	    let validationToastShown = false;
+
+	    function resetValidationToast() {
+	      validationToastShown = false;
+	    }
+
+	    const submitButtons = Array.from(document.querySelectorAll('[form="recordForm"][type="submit"]'));
+	    submitButtons.forEach((button) => {
+	      button.addEventListener("click", function () {
+	        clearRecordFormErrors(form);
+	        resetValidationToast();
+	      });
+	    });
+
+	    form.addEventListener("invalid", function (event) {
+	      const target = event.target;
+	      if (!target || !target.name) return;
+	      const message = target.validationMessage || "Check this field.";
+	      applyRecordFieldError(form, target.name, message);
+	      showRecordFormBanner(form, message);
+	      if (!validationToastShown) {
+	        showToast(message, true);
+	        validationToastShown = true;
+	      }
+	    }, true);
+
+	    form.querySelectorAll("input, select, textarea").forEach((control) => {
+	      const fieldName = control.getAttribute("name");
+	      if (!fieldName) return;
+	      const clear = function () {
+	        clearRecordFieldError(form, fieldName);
+	        hideRecordFormBanner(form);
+	        resetValidationToast();
+	      };
+	      control.addEventListener("input", clear);
+	      control.addEventListener("change", clear);
+	    });
+	  })();
+
+  (function () {
+    const form = recordForm();
+    const previewURL = "{{.FormSecurityPreviewURL}}";
+    const tableName = "{{.FormTable}}";
+    const recordID = "{{.FormID}}";
+    if (!form || !previewURL || !window.fetch || !tableName || !recordID) return;
+
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+    const saveButtons = Array.from(document.querySelectorAll('[data-form-save-submit="true"]'));
+    if (saveButtons.length === 0) return;
+
+    saveButtons.forEach((button) => {
+      button.dataset.previewBaseDisabled = button.disabled ? "1" : "0";
+    });
+
+    let previewAllowed = true;
+    let previewMessage = "";
+    let previewTimer = 0;
+    let requestSequence = 0;
+
+    function applyPreviewState(allowed, message) {
+      previewAllowed = allowed;
+      previewMessage = String(message || "").trim();
+      saveButtons.forEach((button) => {
+        const baseDisabled = button.dataset.previewBaseDisabled === "1";
+        button.disabled = baseDisabled || !allowed;
+      });
+      if (allowed) {
+        hideRecordFormBanner(form);
+        return;
+      }
+      showRecordFormBanner(form, previewMessage || "Current changes are not allowed by security rules.");
+    }
+
+    async function runPreview() {
+      const currentRequest = ++requestSequence;
+      const body = new URLSearchParams(new FormData(form));
+      body.set("table_name", tableName);
+      body.set("record_id", recordID);
+      try {
+        const response = await fetch(previewURL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-CSRF-Token": csrf
+          },
+          body: body.toString(),
+          credentials: "same-origin"
+        });
+        if (currentRequest !== requestSequence) return;
+        if (!response.ok) {
+          applyPreviewState(true, "");
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        applyPreviewState(payload.save_allowed !== false, payload.message || "");
+      } catch (_) {
+        if (currentRequest !== requestSequence) return;
+        applyPreviewState(true, "");
+      }
+    }
+
+    function schedulePreview() {
+      window.clearTimeout(previewTimer);
+      previewTimer = window.setTimeout(runPreview, 200);
+    }
+
+    form.addEventListener("input", schedulePreview, true);
+    form.addEventListener("change", schedulePreview, true);
+    form.addEventListener("submit", function (event) {
+      const submitter = event.submitter;
+      if (submitter && !submitter.matches('[data-form-save-submit="true"]')) {
+        return;
+      }
+      if (previewAllowed) {
+        return;
+      }
+      event.preventDefault();
+      showRecordFormBanner(form, previewMessage || "Current changes are not allowed by security rules.");
+      showToast(previewMessage || "Current changes are not allowed by security rules.", true);
+    });
+  })();
+
+  (function () {
+    const markdownInputs = Array.from(document.querySelectorAll('[data-markdown-input="true"]'));
+    if (markdownInputs.length === 0) return;
+
+    function escapeHtml(input) {
+      return String(input || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function sanitizeURL(url) {
+      const trimmed = String(url || "").trim();
+      if (/^(https?:|mailto:)/i.test(trimmed)) {
+        return trimmed;
+      }
+      return "#";
+    }
+
+    function renderMarkdown(raw) {
+      let html = escapeHtml(raw);
+      html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+      html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+      html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
+        const safe = sanitizeURL(url);
+        return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      });
+      html = html.replace(/\n/g, "<br>");
+      return html;
+    }
+
+    function refresh(input) {
+      const targetId = input.getAttribute("data-markdown-preview-id");
+      const preview = targetId ? document.getElementById(targetId) : null;
+      if (!preview) return;
+      preview.innerHTML = renderMarkdown(input.value || "");
+    }
+
+    markdownInputs.forEach((input) => {
+      input.addEventListener("input", () => refresh(input));
+      refresh(input);
+    });
+  })();
+
+  (function () {
+    const editors = Array.from(document.querySelectorAll('[data-page-editor="true"]'));
+    if (editors.length === 0) return;
+
+    function sanitizePageEditorHTML(raw) {
+      const template = document.createElement("template");
+      template.innerHTML = String(raw || "");
+      template.content.querySelectorAll("script, style, iframe, object, embed").forEach((node) => node.remove());
+      template.content.querySelectorAll("*").forEach((node) => {
+        Array.from(node.attributes).forEach((attr) => {
+          const name = String(attr.name || "").toLowerCase();
+          const value = String(attr.value || "");
+          if (name.startsWith("on")) {
+            node.removeAttribute(attr.name);
+            return;
+          }
+          if ((name === "href" || name === "src") && /^\s*javascript:/i.test(value)) {
+            node.setAttribute(attr.name, "#");
+          }
+        });
+      });
+      return template.innerHTML;
+    }
+
+    function syncPlaceholder(surface) {
+      const text = (surface.textContent || "").replace(/\u200B/g, "").trim();
+      const hasStructure = surface.querySelector("img, hr, br, ul, ol, li, blockquote, pre, h1, h2, h3, h4, h5, h6, p, div, section, article");
+      surface.classList.toggle("is-empty", text === "" && !hasStructure);
+    }
+
+    function setSurfaceHTML(surface, html) {
+      const sanitized = sanitizePageEditorHTML(html);
+      if (surface.innerHTML !== sanitized) {
+        surface.innerHTML = sanitized;
+      }
+      syncPlaceholder(surface);
+    }
+
+    function syncSourceFromSurface(surface, source) {
+      source.value = surface.innerHTML || "";
+      syncPlaceholder(surface);
+    }
+
+    function syncSurfaceFromSource(surface, source) {
+      setSurfaceHTML(surface, source.value || "");
+    }
+
+    function setEditorView(frame, view) {
+      const panels = Array.from(frame.querySelectorAll("[data-page-editor-panel]"));
+      const viewButtons = Array.from(frame.querySelectorAll("[data-page-editor-view]"));
+      const nextView = view === "html" ? "html" : "visual";
+      frame.dataset.pageEditorView = nextView;
+      panels.forEach((panel) => {
+        const panelView = panel.getAttribute("data-page-editor-panel");
+        const active = panelView === nextView;
+        panel.classList.toggle("hidden", !active);
+        if (active) {
+          panel.removeAttribute("hidden");
+        } else {
+          panel.setAttribute("hidden", "hidden");
+        }
+      });
+      viewButtons.forEach((button) => {
+        const active = button.getAttribute("data-page-editor-view") === nextView;
+        button.classList.toggle("is-active", active);
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
+    function applyPageEditorCommand(frame, command, value) {
+      const surface = frame.querySelector('[data-page-editor-surface="true"]');
+      const source = frame.querySelector('[data-page-editor-source="true"]');
+      if (!surface || !source || surface.getAttribute("contenteditable") !== "true") return;
+
+      surface.focus();
+      if (command === "createLink") {
+        const raw = window.prompt("Enter a URL", "https://");
+        if (!raw) return;
+        document.execCommand(command, false, raw.trim());
+      } else if (value) {
+        document.execCommand(command, false, value);
+      } else {
+        document.execCommand(command, false, null);
+      }
+      syncSourceFromSurface(surface, source);
+    }
+
+    editors.forEach((frame) => {
+      const surface = frame.querySelector('[data-page-editor-surface="true"]');
+      const source = frame.querySelector('[data-page-editor-source="true"]');
+      if (!surface || !source) return;
+
+      const defaultView = frame.getAttribute("data-page-editor-default-view") === "html" ? "html" : "visual";
+      syncSurfaceFromSource(surface, source);
+      if (!source.value.trim()) {
+        surface.innerHTML = "<p></p>";
+        if (defaultView === "visual") {
+          syncSourceFromSurface(surface, source);
+        } else {
+          syncPlaceholder(surface);
+        }
+      }
+      setEditorView(frame, defaultView);
+
+      surface.addEventListener("input", function () {
+        syncSourceFromSurface(surface, source);
+      });
+      surface.addEventListener("blur", function () {
+        syncSourceFromSurface(surface, source);
+      });
+
+      source.addEventListener("input", function () {
+        if ((frame.dataset.pageEditorView || "visual") === "html") {
+          setSurfaceHTML(surface, source.value || "");
+        }
+      });
+
+      frame.querySelectorAll("[data-page-editor-view]").forEach((button) => {
+        button.addEventListener("click", function () {
+          const nextView = button.getAttribute("data-page-editor-view");
+          if (nextView === "visual") {
+            syncSurfaceFromSource(surface, source);
+            syncSourceFromSurface(surface, source);
+          } else {
+            syncSourceFromSurface(surface, source);
+          }
+          setEditorView(frame, nextView);
+        });
+      });
+
+      frame.querySelectorAll("[data-page-editor-command]").forEach((button) => {
+        button.addEventListener("mousedown", function (event) {
+          event.preventDefault();
+        });
+        button.addEventListener("click", function () {
+          applyPageEditorCommand(
+            frame,
+            button.getAttribute("data-page-editor-command"),
+            button.getAttribute("data-page-editor-value") || ""
+          );
+        });
+      });
+
+      const form = frame.closest("form");
+      if (form) {
+        form.addEventListener("submit", function () {
+          if ((frame.dataset.pageEditorView || "visual") === "visual") {
+            syncSourceFromSurface(surface, source);
+          }
+        });
+      }
+    });
+  })();
+
+  (function () {
+    const pickers = Array.from(document.querySelectorAll('[data-reference-picker="true"]'));
+    const modal = document.querySelector('[data-reference-modal="true"]');
+    if (pickers.length === 0 || !modal) return;
+
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+    const modalSearch = modal.querySelector('[data-reference-modal-search="true"]');
+    const modalResults = modal.querySelector('[data-reference-modal-results="true"]');
+    const modalStatus = modal.querySelector('[data-reference-modal-status="true"]');
+    const modalKicker = modal.querySelector('[data-reference-modal-kicker="true"]');
+    const modalTitle = modal.querySelector('[data-reference-modal-title="true"]');
+    const modalCurrent = modal.querySelector('[data-reference-modal-current="true"]');
+    const modalCurrentLabel = modal.querySelector('[data-reference-modal-current-label="true"]');
+    const modalCurrentMeta = modal.querySelector('[data-reference-modal-current-meta="true"]');
+    const modalOpenRecord = modal.querySelector('[data-reference-modal-open-record="true"]');
+    const modalClear = modal.querySelector('[data-reference-modal-clear="true"]');
+    const modalRefresh = modal.querySelector('[data-reference-modal-refresh="true"]');
+    let activePicker = null;
+    let activeTimer = null;
+    let lastFocused = null;
+    let requestSequence = 0;
+
+    function pickerSelect(picker) {
+      return picker ? picker.querySelector('[data-reference-select="true"]') : null;
+    }
+
+    function pickerTable(picker) {
+      return (picker?.getAttribute("data-reference-table") || "").trim();
+    }
+
+    function pickerTableLabel(picker) {
+      return (picker?.getAttribute("data-reference-table-label") || "Record").trim();
+    }
+
+    function pickerFieldLabel(picker) {
+      return (picker?.getAttribute("data-reference-field-label") || "Reference").trim();
+    }
+
+    function pickerNullable(picker) {
+      return picker?.getAttribute("data-reference-nullable") === "1";
+    }
+
+    function pickerReadonly(picker) {
+      return picker?.getAttribute("data-reference-readonly") === "1";
+    }
+
+    function selectedReferenceOption(select) {
+      if (!select || !select.value) return null;
+      return Array.from(select.options).find((option) => option.value === select.value) || null;
+    }
+
+    function ensureReferenceOption(select, value, label) {
+      if (!select || !value) return;
+      let option = Array.from(select.options).find((item) => item.value === value);
+      if (!option) {
+        option = document.createElement("option");
+        option.value = value;
+        select.appendChild(option);
+      }
+      option.textContent = label || value;
+    }
+
+    function dispatchReferenceChange(select) {
+      if (!select) return;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    function selectedReferenceData(picker) {
+      const select = pickerSelect(picker);
+      const option = selectedReferenceOption(select);
+      if (!select || !option) return null;
+      return {
+        value: select.value,
+        label: (option.textContent || select.value || "").trim() || select.value
+      };
+    }
+
+    function setModalStatus(message) {
+      if (modalStatus) {
+        modalStatus.textContent = message;
+      }
+    }
+
+    function renderModalCurrent() {
+      if (!modalCurrent || !modalCurrentLabel || !modalCurrentMeta || !modalOpenRecord) return;
+      const selected = selectedReferenceData(activePicker);
+      const table = pickerTable(activePicker);
+      if (!selected) {
+        modalCurrent.classList.add("hidden");
+        modalOpenRecord.classList.add("hidden");
+        modalOpenRecord.removeAttribute("href");
+        modalCurrentLabel.textContent = "";
+        modalCurrentMeta.textContent = "";
+        return;
+      }
+
+      modalCurrent.classList.remove("hidden");
+      modalCurrentLabel.textContent = selected.label;
+      modalCurrentMeta.textContent = selected.value;
+      if (table) {
+        modalOpenRecord.href = `/f/${table}/${selected.value}`;
+        modalOpenRecord.classList.remove("hidden");
+      } else {
+        modalOpenRecord.classList.add("hidden");
+        modalOpenRecord.removeAttribute("href");
+      }
+    }
+
+    function updatePickerPresentation(picker) {
+      const selected = selectedReferenceData(picker);
+      const table = pickerTable(picker);
+      const nullable = pickerNullable(picker);
+      const readonly = pickerReadonly(picker);
+      const shell = picker.querySelector('[data-reference-shell="true"]');
+      const label = picker.querySelector('[data-reference-selected-label="true"]');
+      const meta = picker.querySelector('[data-reference-selected-meta="true"]');
+      const trigger = picker.querySelector('[data-reference-open="true"]');
+      const clear = picker.querySelector('[data-reference-clear="true"]');
+      const link = picker.querySelector('[data-reference-open-record="true"]');
+
+      if (shell) {
+        shell.classList.toggle("is-empty", !selected);
+      }
+      if (label) {
+        label.textContent = selected
+          ? selected.label
+          : (nullable ? "No record selected" : "Selection required");
+      }
+      if (meta) {
+        meta.textContent = selected
+          ? selected.value
+          : (table ? "Browse records and choose one to link here" : "Reference table unavailable");
+      }
+      if (trigger) {
+        trigger.disabled = readonly || !table;
+        trigger.textContent = selected ? "Change selection" : "Browse records";
+        trigger.setAttribute("aria-label", selected ? `Change ${pickerFieldLabel(picker)}` : `Select ${pickerFieldLabel(picker)}`);
+      }
+      if (clear) {
+        const hideClear = readonly || !nullable || !selected;
+        clear.hidden = hideClear;
+        clear.disabled = readonly;
+      }
+      if (link) {
+        if (selected && table) {
+          link.href = `/f/${table}/${selected.value}`;
+          link.classList.remove("hidden");
+        } else {
+          link.classList.add("hidden");
+          link.removeAttribute("href");
+        }
+      }
+      if (activePicker === picker) {
+        renderModalCurrent();
+      }
+    }
+
+    function renderModalResults(options) {
+      if (!modalResults) return;
+      modalResults.innerHTML = "";
+      if (!Array.isArray(options) || options.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "ui-reference-modal-empty";
+        empty.textContent = "No matching records found.";
+        modalResults.appendChild(empty);
+        return;
+      }
+
+      const selectedValue = selectedReferenceData(activePicker)?.value || "";
+      const list = document.createElement("div");
+      list.className = "ui-reference-modal-list";
+
+      options.forEach((option) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ui-reference-modal-result";
+        button.dataset.value = option.value || "";
+        button.dataset.label = option.label || option.value || "";
+        if (button.dataset.value === selectedValue) {
+          button.classList.add("is-selected");
+        }
+
+        const copy = document.createElement("span");
+        copy.className = "ui-reference-modal-result-copy";
+
+        const label = document.createElement("strong");
+        label.className = "ui-reference-modal-result-label";
+        label.textContent = option.label || option.value || "(unnamed record)";
+
+        const meta = document.createElement("span");
+        meta.className = "ui-reference-modal-result-meta";
+        meta.textContent = option.value || "";
+
+        const badge = document.createElement("span");
+        badge.className = "ui-reference-modal-result-badge";
+        badge.textContent = button.dataset.value === selectedValue ? "Current" : "Select";
+
+        copy.appendChild(label);
+        copy.appendChild(meta);
+        button.appendChild(copy);
+        button.appendChild(badge);
+        list.appendChild(button);
+      });
+
+      modalResults.appendChild(list);
+    }
+
+    async function fetchReferenceResults(query) {
+      if (!activePicker) return;
+      const table = pickerTable(activePicker);
+      if (!table) {
+        renderModalResults([]);
+        setModalStatus("This reference field does not have a target table configured.");
+        return;
+      }
+
+      const currentRequest = ++requestSequence;
+      const selected = selectedReferenceData(activePicker)?.value || "";
+      setModalStatus(query ? `Searching ${pickerTableLabel(activePicker)} records...` : `Showing ${pickerTableLabel(activePicker)} records.`);
+
+      const url = `/api/reference-options?table=${encodeURIComponent(table)}&q=${encodeURIComponent(query)}&selected=${encodeURIComponent(selected)}&limit=40`;
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            "X-CSRF-Token": csrf
+          }
+        });
+        if (!response.ok || currentRequest !== requestSequence) return;
+        const data = await response.json();
+        const options = Array.isArray(data.options) ? data.options : [];
+        renderModalResults(options);
+        setModalStatus(options.length > 0 ? `${options.length} record${options.length === 1 ? "" : "s"} available.` : "No matching records found.");
+      } catch (_) {
+        if (currentRequest !== requestSequence) return;
+        renderModalResults([]);
+        setModalStatus("Lookup failed. Try again.");
+      }
+    }
+
+    function scheduleReferenceFetch(query) {
+      if (activeTimer) {
+        clearTimeout(activeTimer);
+      }
+      activeTimer = setTimeout(() => {
+        fetchReferenceResults(query);
+      }, 180);
+    }
+
+    function setPickerValue(picker, value, label) {
+      const select = pickerSelect(picker);
+      if (!select) return;
+      if (value) {
+        ensureReferenceOption(select, value, label);
+      }
+      select.value = value || "";
+      updatePickerPresentation(picker);
+      dispatchReferenceChange(select);
+      clearRecordFieldError(recordForm(), select.name || picker.getAttribute("data-reference-field") || "");
+    }
+
+    function openReferenceModal(picker) {
+      activePicker = picker;
+      lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (modalKicker) {
+        modalKicker.textContent = pickerTableLabel(picker);
+      }
+      if (modalTitle) {
+        modalTitle.textContent = `Select ${pickerFieldLabel(picker)}`;
+      }
+      renderModalCurrent();
+      if (modalClear) {
+        modalClear.hidden = pickerReadonly(picker) || !pickerNullable(picker);
+        modalClear.disabled = pickerReadonly(picker);
+      }
+      if (modalSearch) {
+        modalSearch.value = "";
+      }
+      modal.hidden = false;
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("ui-reference-modal-open");
+      renderModalResults([]);
+      setModalStatus(`Search ${pickerTableLabel(picker)} records by label or ID.`);
+      fetchReferenceResults("");
+      window.requestAnimationFrame(() => {
+        if (modalSearch) {
+          modalSearch.focus();
+        }
+      });
+    }
+
+    function closeReferenceModal() {
+      if (activeTimer) {
+        clearTimeout(activeTimer);
+        activeTimer = null;
+      }
+      modal.hidden = true;
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("ui-reference-modal-open");
+      activePicker = null;
+      requestSequence++;
+      if (lastFocused && typeof lastFocused.focus === "function") {
+        lastFocused.focus();
+      }
+    }
+
+    pickers.forEach((picker) => {
+      const select = pickerSelect(picker);
+      const openButton = picker.querySelector('[data-reference-open="true"]');
+      const clearButton = picker.querySelector('[data-reference-clear="true"]');
+      updatePickerPresentation(picker);
+
+      if (select) {
+        select.addEventListener("change", function () {
+          updatePickerPresentation(picker);
+        });
+      }
+      if (openButton) {
+        openButton.addEventListener("click", function () {
+          if (pickerReadonly(picker) || !pickerTable(picker)) return;
+          openReferenceModal(picker);
+        });
+      }
+      if (clearButton) {
+        clearButton.addEventListener("click", function () {
+          if (!pickerNullable(picker) || pickerReadonly(picker)) return;
+          setPickerValue(picker, "", "");
+        });
+      }
+    });
+
+    if (modalResults) {
+      modalResults.addEventListener("click", function (event) {
+        const button = event.target.closest(".ui-reference-modal-result");
+        if (!button || !activePicker) return;
+        setPickerValue(activePicker, button.dataset.value || "", button.dataset.label || "");
+        closeReferenceModal();
+      });
+    }
+
+    modal.querySelectorAll('[data-reference-modal-dismiss="true"]').forEach((element) => {
+      element.addEventListener("click", function () {
+        closeReferenceModal();
+      });
+    });
+
+    if (modalSearch) {
+      modalSearch.addEventListener("input", function () {
+        scheduleReferenceFetch(modalSearch.value.trim());
+      });
+      modalSearch.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeReferenceModal();
+          return;
+        }
+        if (event.key === "Enter") {
+          const firstResult = modalResults ? modalResults.querySelector(".ui-reference-modal-result") : null;
+          if (firstResult instanceof HTMLButtonElement) {
+            event.preventDefault();
+            firstResult.click();
+          }
+        }
+      });
+    }
+
+    if (modalRefresh) {
+      modalRefresh.addEventListener("click", function () {
+        fetchReferenceResults(modalSearch ? modalSearch.value.trim() : "");
+      });
+    }
+
+    if (modalClear) {
+      modalClear.addEventListener("click", function () {
+        if (!activePicker || !pickerNullable(activePicker) || pickerReadonly(activePicker)) return;
+        setPickerValue(activePicker, "", "");
+        closeReferenceModal();
+      });
+    }
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !modal.hidden) {
+        closeReferenceModal();
+      }
+    });
+  })();
+
+  (function () {
+    const form = document.querySelector("form[hx-post]");
+    if (!form) return;
+
+    const containers = Array.from(form.querySelectorAll('[data-field-container="true"]'));
+    if (containers.length === 0) return;
+
+    function fieldValue(name) {
+      const checkbox = form.querySelector(`input[type="checkbox"][name="${name}"]`);
+      if (checkbox) {
+        return checkbox.checked ? "true" : "false";
+      }
+      const field = form.querySelector(`[name="${name}"]`);
+      if (!field) return "";
+      return (field.value || "").trim();
+    }
+
+    function evaluateExpr(expr) {
+      if (!expr) return true;
+      const rules = expr.split("&&").map((x) => x.trim()).filter(Boolean);
+      for (const rule of rules) {
+        if (rule.includes("!=")) {
+          const [lhs, rhs] = rule.split("!=", 2);
+          const expected = (rhs || "").trim();
+          const actual = fieldValue((lhs || "").trim());
+          if (expected === "empty") {
+            if (actual === "") return false;
+          } else if (actual === expected) {
+            return false;
+          }
+          continue;
+        }
+        if (rule.includes("=")) {
+          const [lhs, rhs] = rule.split("=", 2);
+          const expected = (rhs || "").trim();
+          const actual = fieldValue((lhs || "").trim());
+          if (expected === "empty") {
+            if (actual !== "") return false;
+          } else if (actual !== expected) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function applyConditionalFields() {
+      containers.forEach((container) => {
+        const expr = (container.getAttribute("data-condition-expr") || "").trim();
+        const visible = evaluateExpr(expr);
+        container.classList.toggle("hidden", !visible);
+
+        const fields = Array.from(container.querySelectorAll("[data-field-name]"));
+        fields.forEach((field) => {
+          const baseRequired = field.getAttribute("data-base-required") === "1";
+          const readonly = field.hasAttribute("readonly");
+          const isCheckbox = field instanceof HTMLInputElement && field.type === "checkbox";
+          const isHiddenField = field.hasAttribute("hidden") || (field instanceof HTMLInputElement && field.type === "hidden");
+          if (!readonly) {
+            field.disabled = !visible;
+          }
+          if (visible && baseRequired && !isCheckbox && !isHiddenField) {
+            field.setAttribute("required", "required");
+          } else {
+            field.removeAttribute("required");
+          }
+        });
+      });
+    }
+
+    form.addEventListener("change", applyConditionalFields);
+    form.addEventListener("input", applyConditionalFields);
+    applyConditionalFields();
+  })();
+
+	  (function () {
+	    const editors = Array.from(document.querySelectorAll('[data-script-editor="true"]'));
+    if (editors.length === 0) return;
+
+    function escapeHTML(value) {
+      return String(value || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function currentFieldValue(form, name) {
+      if (!name) return "";
+      const field = form.querySelector(`[name="${name}"]`);
+      if (!field) return "";
+      if (field instanceof HTMLInputElement && field.type === "checkbox") {
+        return field.checked ? "true" : "false";
+      }
+      return (field.value || "").trim();
+    }
+
+    function getScopeInfo(textarea) {
+      const form = textarea.closest("form");
+      if (!form) {
+        return { scope: "", language: "javascript", trigger: "", table: "", eventName: "" };
+      }
+      return {
+        scope: currentFieldValue(form, textarea.getAttribute("data-script-scope-field")),
+        language: currentFieldValue(form, textarea.getAttribute("data-script-language-field")) || "javascript",
+        trigger: currentFieldValue(form, textarea.getAttribute("data-script-trigger-field")),
+        table: currentFieldValue(form, textarea.getAttribute("data-script-table-field")),
+        eventName: currentFieldValue(form, textarea.getAttribute("data-script-event-field"))
+      };
+    }
+
+    function emptyAppScope() {
+      return { current_app: {}, dependency_apps: [], objects: [] };
+    }
+
+    function scriptModelClassName(alias) {
+      const raw = String(alias || "").trim().toLowerCase();
+      if (!raw) return "Model";
+      const parts = raw.split(/[^a-z0-9]+/).filter(Boolean);
+      if (parts.length === 0) return "Model";
+      const value = parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("");
+      return /^\d/.test(value) ? `T${value}` : value;
+    }
+
+    function scopeAppObjectName(app) {
+      if (app && app.namespace) return String(app.namespace).trim().toLowerCase();
+      if (app && app.name) return String(app.name).trim().toLowerCase();
+      return "";
+    }
+
+    function scopeObjectClassRef(object, currentAppName) {
+      const className = scriptModelClassName(object && (object.alias || object.table_name));
+      const appName = object && object.app && object.app.name ? String(object.app.name).trim().toLowerCase() : "";
+      if (appName && appName !== String(currentAppName || "").trim().toLowerCase()) {
+        const namespaceName = scopeAppObjectName(object.app);
+        if (namespaceName) return `${namespaceName}.${className}`;
+      }
+      return className;
+    }
+
+    const queryOperatorHints = [
+      { label: "=", insertText: "=", detail: "Equals" },
+      { label: "!=", insertText: "!=", detail: "Not equal" },
+      { label: "<", insertText: "<", detail: "Less than" },
+      { label: "<=", insertText: "<=", detail: "Less than or equal" },
+      { label: ">", insertText: ">", detail: "Greater than" },
+      { label: ">=", insertText: ">=", detail: "Greater than or equal" },
+      { label: "in", insertText: "in", detail: "Value is in the provided list" },
+      { label: "not in", insertText: "not in", detail: "Value is not in the provided list" }
+    ];
+
+    const queryDirectionHints = [
+      { label: "asc", insertText: "asc", detail: "Ascending sort order" },
+      { label: "desc", insertText: "desc", detail: "Descending sort order" }
+    ];
+
+    function scopeObjectsOrdered(appScope) {
+      if (!appScope || !Array.isArray(appScope.objects)) return [];
+      const currentAppName = appScope.current_app && appScope.current_app.name ? String(appScope.current_app.name).trim().toLowerCase() : "";
+      const local = [];
+      const deps = [];
+      appScope.objects.forEach((object) => {
+        const appName = object && object.app && object.app.name ? String(object.app.name).trim().toLowerCase() : "";
+        if (appName === currentAppName) {
+          local.push(object);
+        } else {
+          deps.push(object);
+        }
+      });
+      return local.concat(deps);
+    }
+
+    function queryContextObject(scope, appScope, prefixText) {
+      const prefix = String(prefixText || "");
+      const currentAppName = appScope && appScope.current_app && appScope.current_app.name ? appScope.current_app.name : "";
+      let winner = null;
+      let winnerIndex = -1;
+      scopeObjectsOrdered(appScope).forEach((object) => {
+        const classRef = scopeObjectClassRef(object, currentAppName);
+        if (!classRef) return;
+        const index = prefix.lastIndexOf(`${classRef}.query(`);
+        if (index >= 0 && index >= winnerIndex) {
+          winnerIndex = index;
+          winner = object;
+        }
+      });
+      return winner || currentScopeObject(scope, appScope) || scopeObjectsOrdered(appScope)[0] || null;
+    }
+
+    function detectQueryCompletionContext(prefixText) {
+      const prefix = String(prefixText || "");
+      const patterns = [
+        { type: "group-operator", match: prefix.match(/\.where(?:Any|All)\([\s\S]*\{\s*column\s*:\s*["'][^"']*["']\s*,\s*operator\s*:\s*["']([^"']*)$/) },
+        { type: "group-column", match: prefix.match(/\.where(?:Any|All)\([\s\S]*\{\s*column\s*:\s*["']([^"']*)$/) },
+        { type: "where-operator", match: prefix.match(/\.where\(\s*["'][^"']*["']\s*,\s*["']([^"']*)$/) },
+        { type: "where-column", match: prefix.match(/\.where\(\s*["']([^"']*)$/) },
+        { type: "order-direction", match: prefix.match(/\.orderBy\(\s*["'][^"']*["']\s*,\s*["']([^"']*)$/) },
+        { type: "order-column", match: prefix.match(/\.orderBy\(\s*["']([^"']*)$/) }
+      ];
+      for (const candidate of patterns) {
+        if (candidate.match) {
+          return {
+            type: candidate.type,
+            replaceLength: String(candidate.match[1] || "").length
+          };
+        }
+      }
+      return null;
+    }
+
+    function buildContextualQueryCompletions(scope, appScope, prefixText) {
+      const context = detectQueryCompletionContext(prefixText);
+      if (!context) return null;
+
+      if (context.type === "where-operator" || context.type === "group-operator") {
+        return { items: queryOperatorHints, replaceLength: context.replaceLength };
+      }
+      if (context.type === "order-direction") {
+        return { items: queryDirectionHints, replaceLength: context.replaceLength };
+      }
+      if (context.type !== "where-column" && context.type !== "group-column" && context.type !== "order-column") {
+        return null;
+      }
+
+      const object = queryContextObject(scope, appScope, prefixText);
+      const currentAppName = appScope && appScope.current_app && appScope.current_app.name ? appScope.current_app.name : "";
+      const seen = new Set();
+      const items = [];
+      const objects = object ? [object].concat(scopeObjectsOrdered(appScope).filter((candidate) => candidate !== object)) : scopeObjectsOrdered(appScope);
+      objects.forEach((item) => {
+        const classRef = scopeObjectClassRef(item, currentAppName);
+        (item.columns || []).forEach((column) => {
+          if (!column || !column.name) return;
+          const key = `${classRef}:${column.name}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          items.push({
+            label: column.name,
+            insertText: column.name,
+            detail: `${classRef} column${column.label ? ` • ${column.label}` : ""}`
+          });
+        });
+      });
+      return { items: items, replaceLength: context.replaceLength };
+    }
+
+    function currentScopeObject(scope, appScope) {
+      const tableName = String(scope && scope.table || "").trim().toLowerCase();
+      if (!tableName || !appScope || !Array.isArray(appScope.objects)) return null;
+      return appScope.objects.find((object) => String(object && object.table_name || "").trim().toLowerCase() === tableName) || null;
+    }
+
+    function buildObjectCompletions(scope, appScope) {
+      if (!appScope || !Array.isArray(appScope.objects)) return [];
+
+      const items = [];
+      const currentAppName = appScope.current_app && appScope.current_app.name ? appScope.current_app.name : "";
+      const activeObject = currentScopeObject(scope, appScope);
+      appScope.objects.forEach((object) => {
+        const classRef = scopeObjectClassRef(object, currentAppName);
+        if (!classRef) return;
+
+        const objectScopeDetail = object.app && object.app.name && object.app.name !== currentAppName
+          ? `Dependency app ${object.app.name}`
+          : "Current app model";
+
+        items.push({
+          label: classRef,
+          insertText: classRef,
+          detail: object.label ? `${object.label} • ${objectScopeDetail}` : objectScopeDetail
+        });
+        items.push(
+          {
+            label: `new ${classRef}`,
+            insertText: `new ${classRef}({ field_name: value })`,
+            detail: `Construct a ${classRef} instance`
+          },
+          {
+            label: `${classRef}.get`,
+            insertText: `await ${classRef}.get(id)`,
+            detail: `Load one ${classRef} record`
+          },
+          {
+            label: `${classRef}.query`,
+            insertText: `await ${classRef}.query().where("field_name", "=", value).orderBy("field_name", "asc").limit(100).fetch()`,
+            detail: `Query ${classRef} records with the fluent builder`
+          },
+          {
+            label: `${classRef}.query().where`,
+            insertText: `${classRef}.query().where("field_name", "=", value)`,
+            detail: `Add an AND filter to a ${classRef} query`
+          },
+          {
+            label: `${classRef}.query().whereAny`,
+            insertText: `${classRef}.query().whereAny([{ column: "field_name", operator: "=", value }, { column: "other_field", operator: "=", value }])`,
+            detail: `Add a grouped OR filter block to a ${classRef} query`
+          },
+          {
+            label: `${classRef}.query().whereAll`,
+            insertText: `${classRef}.query().whereAll([{ column: "field_name", operator: "=", value }])`,
+            detail: `Add a grouped AND filter block to a ${classRef} query`
+          },
+          {
+            label: `${classRef}.query().orderBy`,
+            insertText: `${classRef}.query().orderBy("field_name", "asc")`,
+            detail: `Sort ${classRef} query results`
+          },
+          {
+            label: `${classRef}.query().limit`,
+            insertText: `${classRef}.query().limit(100)`,
+            detail: `Limit ${classRef} query results`
+          },
+          {
+            label: `${classRef}.query().includeDeleted`,
+            insertText: `${classRef}.query().includeDeleted()`,
+            detail: `Include soft-deleted ${classRef} records`
+          },
+          {
+            label: `${classRef}.query().first`,
+            insertText: `await ${classRef}.query().first()`,
+            detail: `Fetch the first ${classRef} result`
+          },
+          {
+            label: `${classRef}.query().listIDs`,
+            insertText: `await ${classRef}.query().listIDs()`,
+            detail: `Fetch only ${classRef} ids`
+          },
+          {
+            label: `${classRef}.create`,
+            insertText: `await ${classRef}.create({ field_name: value })`,
+            detail: `Create a ${classRef} record`
+          },
+          {
+            label: `${classRef}.query().update`,
+            insertText: `await ${classRef}.query().where("field_name", "=", value).limit(1000).update({ status: "updated" })`,
+            detail: `Bulk update ${classRef} records through the fluent builder`
+          },
+          {
+            label: `${classRef}.query().delete`,
+            insertText: `await ${classRef}.query().where("field_name", "=", value).limit(1000).delete()`,
+            detail: `Bulk soft-delete ${classRef} records through the fluent builder`
+          },
+          {
+            label: `${classRef}.schema`,
+            insertText: `${classRef}.schema()`,
+            detail: `Inspect model metadata`
+          }
+        );
+
+        if (activeObject && activeObject.table_name === object.table_name && (scope.trigger || "").startsWith("record.")) {
+          (object.columns || []).forEach((column) => {
+            if (!column || !column.name) return;
+            items.push({
+              label: `record.${column.name}`,
+              insertText: `record.${column.name}`,
+              detail: column.label ? `${column.label} on current record` : "Field on current record"
+            });
+            items.push({
+              label: `previousRecord.${column.name}`,
+              insertText: `previousRecord.${column.name}`,
+              detail: column.label ? `${column.label} on previous record` : "Field on previous record"
+            });
+          });
+          items.push({
+            label: "record.save",
+            insertText: "await record.save()",
+            detail: "Persist the current record instance"
+          });
+        }
+      });
+
+      return items;
+    }
+
+    function scopeMetaText(scope, appScope, scopeLoadError) {
+      if (scopeLoadError) {
+        return `Scope unavailable for ${scope.scope || "app"}`;
+      }
+      if (!scope.scope) {
+        return "No app scope";
+      }
+
+      const currentAppName = appScope.current_app && appScope.current_app.name ? appScope.current_app.name : scope.scope;
+      const dependencyNames = Array.isArray(appScope.dependency_apps)
+        ? appScope.dependency_apps
+            .map((item) => (item && item.name ? item.name : ""))
+            .filter(Boolean)
+        : [];
+
+      if (dependencyNames.length > 0) {
+        return `App: ${currentAppName} • deps: ${dependencyNames.join(", ")}`;
+      }
+      return `App: ${currentAppName}`;
+    }
+
+    function scopeStatusText(scope, appScope, scopeLoadError) {
+      if (scopeLoadError) {
+        return `Autocomplete: Ctrl+Space • JS runtime • Scope unavailable (${scope.scope || "unset"})`;
+      }
+      if (scope.trigger) {
+        return `Autocomplete: Ctrl+Space • JS runtime • Trigger: ${scope.trigger}`;
+      }
+      if (appScope && appScope.current_app && appScope.current_app.name) {
+        return `Autocomplete: Ctrl+Space • JS runtime • App: ${appScope.current_app.name}`;
+      }
+      if (scope.scope) {
+        return `Autocomplete: Ctrl+Space • JS runtime • Scope: ${scope.scope}`;
+      }
+      return "Autocomplete: Ctrl+Space • JavaScript runtime • Insert tab: Tab";
+    }
+
+    function buildCompletions(scope, appScope) {
+      const activeObject = currentScopeObject(scope, appScope);
+      const modelRef = activeObject
+        ? scopeObjectClassRef(activeObject, appScope && appScope.current_app ? appScope.current_app.name : "")
+        : "Model";
+      const eventName = scope.eventName || "event_name";
+      const base = [
+        { label: "async function run", insertText: "async function run(ctx) {\n  return null;\n}", detail: "JavaScript script entrypoint" },
+        { label: "const", insertText: "const name = value;", detail: "Constant declaration" },
+        { label: "let", insertText: "let value = null;", detail: "Mutable binding" },
+        { label: "if", insertText: "if (condition) {\n  \n}", detail: "If block" },
+        { label: "if (!value)", insertText: "if (!value) {\n  return null;\n}", detail: "Guard clause" },
+        { label: "for...of", insertText: "for (const item of items) {\n  \n}", detail: "Iterate a collection" },
+        { label: "try/catch", insertText: "try {\n  \n} catch (error) {\n  ctx.log(\"script failed\", { error: error.message });\n  throw error;\n}", detail: "Error handling block" },
+        { label: "await", insertText: "await promise", detail: "Await async work" },
+        { label: "console.log", insertText: "console.log(value);", detail: "Write ad hoc runner output" },
+        { label: "new model", insertText: `new ${modelRef}({ field_name: value })`, detail: "Create a new model instance" },
+        { label: "model.get", insertText: `await ${modelRef}.get(id)`, detail: "Load one record through the generated model class" },
+        { label: "model.query", insertText: `await ${modelRef}.query().where("field_name", "=", value).orderBy("field_name", "asc").limit(100).fetch()`, detail: "Query records through the generated model class" },
+        { label: "model.query().where", insertText: `${modelRef}.query().where("field_name", "=", value)`, detail: "Add an AND filter to the generated model query" },
+        { label: "model.query().whereAny", insertText: `${modelRef}.query().whereAny([{ column: "field_name", operator: "=", value }, { column: "other_field", operator: "=", value }])`, detail: "Add a grouped OR filter block to the generated model query" },
+        { label: "model.query().whereAll", insertText: `${modelRef}.query().whereAll([{ column: "field_name", operator: "=", value }])`, detail: "Add a grouped AND filter block to the generated model query" },
+        { label: "model.query().orderBy", insertText: `${modelRef}.query().orderBy("field_name", "asc")`, detail: "Sort generated model query results" },
+        { label: "model.query().limit", insertText: `${modelRef}.query().limit(100)`, detail: "Limit generated model query results" },
+        { label: "model.query().includeDeleted", insertText: `${modelRef}.query().includeDeleted()`, detail: "Include soft-deleted records" },
+        { label: "model.query().first", insertText: `await ${modelRef}.query().first()`, detail: "Fetch the first matching record" },
+        { label: "model.query().listIDs", insertText: `await ${modelRef}.query().listIDs()`, detail: "Fetch only matching record ids" },
+        { label: "model.create", insertText: `await ${modelRef}.create({ field_name: value })`, detail: "Create a record through the generated model class" },
+        { label: "model.query().update", insertText: `await ${modelRef}.query().where("field_name", "=", value).limit(1000).update({ status: "updated" })`, detail: "Bulk update records through the generated model class" },
+        { label: "model.query().delete", insertText: `await ${modelRef}.query().where("field_name", "=", value).limit(1000).delete()`, detail: "Bulk soft-delete records through the generated model class" },
+        { label: "ctx.jobs.enqueue", insertText: `await ctx.jobs.enqueue("script_name", payload)`, detail: "Queue another script asynchronously" },
+        { label: "ctx.notifications.send", insertText: `await ctx.notifications.send({ title: "Assigned", body: "A new record needs attention", href: "/f/" + trigger.table + "/" + record._id, userID: ctx.user.id, level: "info" })`, detail: "Create an in-app notification for one or more users" },
+        { label: "ctx.log", insertText: `ctx.log("message", { detail: "value" });`, detail: "Write structured script logs" },
+        { label: "ctx.now", insertText: "ctx.now()", detail: "Current platform time" },
+        { label: "ctx.app.id", insertText: "ctx.app.id", detail: "Current app id" },
+        { label: "ctx.user.id", insertText: "ctx.user.id", detail: "Current user id" },
+        { label: "ctx.request.id", insertText: "ctx.request.id", detail: "Current request id" },
+        { label: "app", insertText: "app", detail: "App object in scope" },
+        { label: "user", insertText: "user", detail: "User object in scope" },
+        { label: "trigger", insertText: "trigger", detail: `Trigger metadata (${scope.trigger || "manual"})` },
+        { label: "input", insertText: "input", detail: "Manual/script invocation input" },
+        { label: "payload", insertText: "payload", detail: "Generic event payload" }
+      ];
+
+      if ((scope.trigger || "").startsWith("record.")) {
+        base.push(
+          { label: "record", insertText: "record", detail: `Current record instance for ${scope.table || "table"}` },
+          { label: "previousRecord", insertText: "previousRecord", detail: "Prior version of the record" },
+          { label: "trigger.table", insertText: `trigger.table // ${scope.table || "table_name"}`, detail: "Target table" },
+          { label: "trigger.event", insertText: `trigger.event // ${eventName}`, detail: "Target event" }
+        );
+      }
+
+      if ((scope.trigger || "").startsWith("schedule.")) {
+        base.push(
+          { label: "schedule", insertText: "schedule", detail: "Schedule metadata in scope" },
+          { label: "runAt", insertText: "runAt", detail: "Scheduled execution timestamp" }
+        );
+      }
+
+      if ((scope.trigger || "").startsWith("webhook")) {
+        base.push(
+          { label: "request", insertText: "request", detail: "Webhook request metadata" },
+          { label: "headers", insertText: "headers", detail: "Webhook headers" }
+        );
+      }
+
+      return base.concat(buildObjectCompletions(scope, appScope));
+    }
+
+    editors.forEach((textarea) => {
+      const frame = textarea.closest('[data-script-editor-frame="true"]');
+      if (!frame) return;
+
+      const gutter = frame.querySelector('[data-script-editor-gutter="true"]');
+      const popup = frame.querySelector('[data-script-complete="true"]');
+      const popupList = frame.querySelector('[data-script-complete-list="true"]');
+      const popupMeta = frame.querySelector('[data-script-complete-meta="true"]');
+      const status = frame.querySelector('[data-script-editor-status="true"]');
+      const languageChip = frame.querySelector('[data-script-language-chip="true"]');
+      let suggestions = [];
+      let activeIndex = 0;
+      let activeToken = null;
+      let appScope = emptyAppScope();
+      let scopeLoadError = false;
+      let scopeRequestID = 0;
+
+      function syncLanguageChip() {
+        const scope = getScopeInfo(textarea);
+        if (languageChip) {
+          languageChip.textContent = (scope.language || "javascript").toUpperCase();
+        }
+      }
+
+      function syncGutter() {
+        if (!gutter) return;
+        const lineCount = Math.max(1, textarea.value.split("\n").length);
+        const lines = [];
+        for (let index = 1; index <= lineCount; index++) {
+          lines.push(`<span>${index}</span>`);
+        }
+        gutter.innerHTML = lines.join("");
+        gutter.scrollTop = textarea.scrollTop;
+      }
+
+      function closePopup() {
+        suggestions = [];
+        activeIndex = 0;
+        activeToken = null;
+        if (popup) popup.classList.add("hidden");
+      }
+
+      function tokenAtCursor() {
+        const start = textarea.selectionStart || 0;
+        const prefix = textarea.value.slice(0, start);
+        const stringMatch = prefix.match(/["']([^"'\n]*)$/);
+        if (stringMatch) {
+          return {
+            text: stringMatch[1],
+            from: start - stringMatch[1].length,
+            to: start
+          };
+        }
+        const match = prefix.match(/([A-Za-z_][A-Za-z0-9_\.]*)$/);
+        if (!match) return null;
+        return {
+          text: match[1],
+          from: start - match[1].length,
+          to: start
+        };
+      }
+
+      function renderPopup() {
+        if (!popup || !popupList || suggestions.length === 0) {
+          closePopup();
+          return;
+        }
+        popup.classList.remove("hidden");
+        popupList.innerHTML = suggestions.map((item, index) => `
+          <button
+            type="button"
+            class="ui-script-complete-item ${index === activeIndex ? "is-active" : ""}"
+            data-script-complete-index="${index}"
+          >
+            <span class="ui-script-complete-main">${escapeHTML(item.label)}</span>
+            <span class="ui-script-complete-detail">${escapeHTML(item.detail)}</span>
+          </button>
+        `).join("");
+
+        popupList.querySelectorAll("[data-script-complete-index]").forEach((node) => {
+          node.addEventListener("mousedown", function (event) {
+            event.preventDefault();
+            const rawIndex = node.getAttribute("data-script-complete-index");
+            const idx = Number(rawIndex || "0");
+            if (!Number.isNaN(idx)) {
+              activeIndex = idx;
+              applySuggestion();
+            }
+          });
+        });
+      }
+
+      function applySuggestion() {
+        if (!activeToken || suggestions.length === 0) return;
+        const picked = suggestions[activeIndex];
+        if (!picked) return;
+        const before = textarea.value.slice(0, activeToken.from);
+        const after = textarea.value.slice(activeToken.to);
+        textarea.value = before + picked.insertText + after;
+        const nextPos = before.length + picked.insertText.length;
+        textarea.setSelectionRange(nextPos, nextPos);
+        textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        closePopup();
+      }
+
+      async function refreshAppScope() {
+        const scope = getScopeInfo(textarea);
+        const requestID = ++scopeRequestID;
+
+        if (!scope.scope) {
+          appScope = emptyAppScope();
+          scopeLoadError = false;
+          refreshSuggestions(false);
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/scripts/scope?scope=${encodeURIComponent(scope.scope)}`, {
+            headers: {
+              "Accept": "application/json"
+            }
+          });
+          if (!res.ok) {
+            throw new Error("scope lookup failed");
+          }
+
+          const payload = await res.json();
+          if (requestID !== scopeRequestID) return;
+          appScope = payload || emptyAppScope();
+          scopeLoadError = false;
+          refreshSuggestions(false);
+        } catch (error) {
+          if (requestID !== scopeRequestID) return;
+          appScope = emptyAppScope();
+          scopeLoadError = true;
+          refreshSuggestions(false);
+        }
+      }
+
+      function refreshSuggestions(forceOpen) {
+        const token = tokenAtCursor();
+        activeToken = token;
+        if (!token && !forceOpen) {
+          const scope = getScopeInfo(textarea);
+          if (popupMeta) {
+            popupMeta.textContent = scopeMetaText(scope, appScope, scopeLoadError);
+          }
+          if (status) {
+            status.textContent = scopeStatusText(scope, appScope, scopeLoadError);
+          }
+          closePopup();
+          return;
+        }
+
+        const scope = getScopeInfo(textarea);
+        const prefixText = textarea.value.slice(0, textarea.selectionStart || 0);
+        const contextual = buildContextualQueryCompletions(scope, appScope, prefixText);
+        const completions = contextual && Array.isArray(contextual.items) && contextual.items.length > 0
+          ? contextual.items
+          : buildCompletions(scope, appScope);
+        if (contextual && token) {
+          activeToken = {
+            text: token.text,
+            from: (textarea.selectionStart || 0) - Number(contextual.replaceLength || 0),
+            to: textarea.selectionStart || 0
+          };
+        }
+        const query = token ? token.text.toLowerCase() : "";
+        suggestions = completions.filter((item) => {
+          if (forceOpen && !query) return true;
+          return item.label.toLowerCase().includes(query) || item.insertText.toLowerCase().includes(query);
+        }).slice(0, 20);
+        activeIndex = 0;
+
+        if (popupMeta) {
+          popupMeta.textContent = scopeMetaText(scope, appScope, scopeLoadError);
+        }
+        if (status) {
+          status.textContent = scopeStatusText(scope, appScope, scopeLoadError);
+        }
+        renderPopup();
+      }
+
+      textarea.addEventListener("scroll", syncGutter);
+      textarea.addEventListener("input", function () {
+        syncGutter();
+        refreshSuggestions(false);
+      });
+      textarea.addEventListener("click", function () {
+        refreshSuggestions(false);
+      });
+      textarea.addEventListener("keydown", function (event) {
+        if (event.key === "Tab") {
+          event.preventDefault();
+          const start = textarea.selectionStart || 0;
+          const end = textarea.selectionEnd || 0;
+          const before = textarea.value.slice(0, start);
+          const after = textarea.value.slice(end);
+          textarea.value = before + "\t" + after;
+          textarea.setSelectionRange(start + 1, start + 1);
+          textarea.dispatchEvent(new Event("input", { bubbles: true }));
+          return;
+        }
+
+        if ((event.ctrlKey || event.metaKey) && event.key === " ") {
+          event.preventDefault();
+          refreshSuggestions(true);
+          return;
+        }
+
+        if (suggestions.length > 0) {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            activeIndex = (activeIndex + 1) % suggestions.length;
+            renderPopup();
+            return;
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            activeIndex = (activeIndex - 1 + suggestions.length) % suggestions.length;
+            renderPopup();
+            return;
+          }
+          if (event.key === "Enter" || event.key === "Tab") {
+            event.preventDefault();
+            applySuggestion();
+            return;
+          }
+          if (event.key === "Escape") {
+            closePopup();
+          }
+        }
+      });
+      textarea.addEventListener("blur", function () {
+        window.setTimeout(closePopup, 120);
+      });
+
+      const form = textarea.closest("form");
+      if (form) {
+        ["trigger_type", "table_name", "event_name", "language"].forEach((fieldName) => {
+          const field = form.querySelector(`[name="${fieldName}"]`);
+          if (!field) return;
+          field.addEventListener("change", function () {
+            syncLanguageChip();
+            refreshSuggestions(false);
+          });
+          field.addEventListener("input", function () {
+            syncLanguageChip();
+            refreshSuggestions(false);
+          });
+        });
+
+        const scopeField = form.querySelector('[name="scope"]');
+        if (scopeField) {
+          scopeField.addEventListener("change", function () {
+            syncLanguageChip();
+            refreshAppScope();
+          });
+          scopeField.addEventListener("input", function () {
+            syncLanguageChip();
+            refreshAppScope();
+          });
+        }
+      }
+
+      syncLanguageChip();
+      syncGutter();
+	      refreshAppScope();
+	    });
+	  })();
+
+		  (function () {
+		    const layout = document.querySelector('[data-form-layout-shell="true"]');
+		    const pane = document.querySelector('[data-form-timeline-pane="true"]');
+		    const toggle = document.querySelector('[data-form-timeline-toggle="true"]');
+	    if (!layout || !pane || !toggle) return;
+
+	    const storageKey = `form-timeline:${window.location.pathname}`;
+
+	    function applyCollapsed(collapsed) {
+	      layout.classList.toggle("is-timeline-collapsed", collapsed);
+	      pane.hidden = collapsed;
+	      toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+	      toggle.textContent = collapsed ? "Show Updates" : "Collapse Updates";
+	      try {
+	        window.localStorage.setItem(storageKey, collapsed ? "1" : "0");
+	      } catch (_) {}
+	    }
+
+	    let collapsed = false;
+	    try {
+	      collapsed = window.localStorage.getItem(storageKey) === "1";
+	    } catch (_) {}
+	    applyCollapsed(collapsed);
+
+		    toggle.addEventListener("click", function () {
+		      applyCollapsed(!layout.classList.contains("is-timeline-collapsed"));
+		    });
+		  })();
+
+		  (function () {
+		    const form = recordForm();
+		    const tableName = "{{.FormTable}}";
+		    const recordID = "{{.FormID}}";
+		    const runtimeApp = "{{.FormRuntimeApp}}";
+		    const rawScripts = {{printf "%q" .FormClientScriptsJSON}};
+		    if (!form || !runtimeApp || !rawScripts) return;
+
+		    let scripts = [];
+		    try {
+		      scripts = JSON.parse(rawScripts);
+		    } catch (_) {
+		      return;
+		    }
+		    if (!Array.isArray(scripts) || scripts.length === 0) return;
+
+		    const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+		    function findInput(name) {
+		      if (!name) return null;
+		      return Array.from(form.elements || []).find((element) => element && element.name === name) || null;
+		    }
+
+		    function readInputValue(element) {
+		      if (!element) return "";
+		      if (element.type === "checkbox") {
+		        return !!element.checked;
+		      }
+		      if (element.tagName === "SELECT" && element.multiple) {
+		        return Array.from(element.selectedOptions || []).map((option) => option.value);
+		      }
+		      return element.value;
+		    }
+
+		    function writeInputValue(element, value) {
+		      if (!element) return;
+		      if (element.type === "checkbox") {
+		        element.checked = !!value;
+		        return;
+		      }
+		      if (element.tagName === "SELECT" && element.multiple && Array.isArray(value)) {
+		        Array.from(element.options || []).forEach((option) => {
+		          option.selected = value.includes(option.value);
+		        });
+		        return;
+		      }
+		      element.value = value == null ? "" : String(value);
+		    }
+
+		    function formValues() {
+		      const values = {};
+		      Array.from(form.elements || []).forEach((element) => {
+		        if (!element || !element.name) return;
+		        if (element.name === "csrf_token") return;
+		        values[element.name] = readInputValue(element);
+		      });
+		      return values;
+		    }
+
+		    function patchForm(patch) {
+		      if (!patch || typeof patch !== "object") return;
+		      Object.entries(patch).forEach(([name, value]) => {
+		        const input = findInput(name);
+		        if (input) {
+		          writeInputValue(input, value);
+		        }
+		      });
+		    }
+
+		    async function callServer(methodCall, payload, eventMeta) {
+		      const body = {
+		        app: runtimeApp,
+		        call: methodCall,
+		        table_name: tableName,
+		        input: {
+		          event: eventMeta || {},
+		          form: formValues()
+		        },
+		        payload: payload == null ? {} : payload
+		      };
+		      if (recordID && recordID !== "new") {
+		        body.record_id = recordID;
+		      }
+		      const response = await fetch("/api/app-runtime/call", {
+		        method: "POST",
+		        credentials: "same-origin",
+		        headers: {
+		          "Content-Type": "application/json",
+		          "X-Requested-With": "XMLHttpRequest"
+		        },
+		        body: JSON.stringify(body)
+		      });
+		      const envelope = await response.json().catch(() => ({}));
+		      if (!response.ok || envelope.ok === false) {
+		        const message = envelope.error || `service-call-${response.status}`;
+		        throw new Error(message);
+		      }
+		      return envelope.result;
+		    }
+
+		    function scriptMatches(script, eventType, fieldName) {
+		      const targetEvent = String(script.event || "").trim().toLowerCase();
+		      if (targetEvent !== eventType) return false;
+		      if (eventType !== "field.change" && eventType !== "field.input") return true;
+		      return String(script.field || "").trim().toLowerCase() === fieldName;
+		    }
+
+		    async function runScript(script, eventType, fieldName, domEvent) {
+		      if (!scriptMatches(script, eventType, fieldName)) return;
+		      const source = String(script.script || "").trim();
+		      if (!source) return;
+		      const ctx = {
+		        app: { id: runtimeApp },
+		        table: tableName,
+		        recordID: recordID === "new" ? "" : recordID,
+		        event: {
+		          type: eventType,
+		          field: fieldName || "",
+		          domType: domEvent && domEvent.type ? domEvent.type : ""
+		        },
+		        log: function (...args) {
+		          console.log("[client-script]", script.name || "unnamed", ...args);
+		        },
+		        form: {
+		          values: formValues,
+		          getValue: function (name) {
+		            return readInputValue(findInput(String(name || "")));
+		          },
+		          setValue: function (name, value) {
+		            writeInputValue(findInput(String(name || "")), value);
+		          },
+		          patch: patchForm
+		        },
+		        server: {
+		          call: function (methodCall, payload) {
+		            return callServer(methodCall, payload, {
+		              type: eventType,
+		              field: fieldName || ""
+		            });
+		          }
+		        }
+		      };
+
+		      try {
+		        const fn = new AsyncFunction("ctx", `${source}\nif (typeof run !== "function") { throw new Error("client script must define run(ctx)"); }\nreturn await run(ctx);`);
+		        const result = await fn(ctx);
+		        if (result && typeof result === "object" && result.patch) {
+		          patchForm(result.patch);
+		        }
+		      } catch (error) {
+		        console.error(`Client script ${script.name || "unnamed"} failed`, error);
+		      }
+		    }
+
+		    window.setTimeout(function () {
+		      scripts.forEach((script) => {
+		        void runScript(script, "form.load", "", null);
+		      });
+		    }, 0);
+
+		    form.addEventListener("change", function (event) {
+		      const fieldName = String(event.target && event.target.name || "").trim().toLowerCase();
+		      if (!fieldName) return;
+		      scripts.forEach((script) => {
+		        void runScript(script, "field.change", fieldName, event);
+		      });
+		    }, true);
+
+		    form.addEventListener("input", function (event) {
+		      const fieldName = String(event.target && event.target.name || "").trim().toLowerCase();
+		      if (!fieldName) return;
+		      scripts.forEach((script) => {
+		        void runScript(script, "field.input", fieldName, event);
+		      });
+		    }, true);
+		  })();
+
+		  (function () {
+		    const form = recordForm();
+		    const tableName = "{{.FormTable}}";
+		    const recordID = "{{.FormID}}";
+		    const currentUserID = "{{.User.ID}}";
+		    const realtimeDisabled = {{if .FormDisableRealtime}}true{{else}}false{{end}};
+		    const commentDraftInput = document.getElementById("record-comment-body");
+		    const presenceWrap = document.querySelector('[data-record-presence="true"]');
+		    const presenceList = document.querySelector('[data-record-presence-list="true"]');
+		    const reloadButton = form ? form.querySelector('[data-form-live-reload="true"]') : null;
+		    if (!form || realtimeDisabled || !window.EventSource || !tableName || !recordID || recordID === "new") return;
+
+		    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+		    const clientID = realtimeClientID();
+		    document.querySelectorAll('[data-realtime-client-id-field="true"]').forEach((field) => {
+		      field.value = clientID;
+		    });
+		    const streamURL = `/api/realtime/stream?table=${encodeURIComponent(tableName)}&record_id=${encodeURIComponent(recordID)}`;
+		    const source = new EventSource(streamURL);
+		    let heartbeatTimer = 0;
+		    let heartbeatInFlight = false;
+		    let heartbeatQueued = false;
+		    let pendingReload = false;
+		    let recordVersion = String(form.querySelector('input[name="expected_version"]')?.value || "").trim();
+		    let baseline = snapshotForm(form);
+		    let formDirty = false;
+		    let recordVersionCheck = null;
+
+		    function snapshotForm(target) {
+		      const entries = [];
+		      const data = new FormData(target);
+		      for (const [key, value] of data.entries()) {
+		        if (key === "csrf_token" || key === "expected_version" || key === "expected_updated_at") continue;
+		        entries.push([key, String(value)]);
+		      }
+		      entries.sort((a, b) => {
+		        if (a[0] === b[0]) return a[1].localeCompare(b[1]);
+		        return a[0].localeCompare(b[0]);
+		      });
+		      return entries.map(([key, value]) => `${key}=${value}`).join("&");
+		    }
+
+		    function escapeRealtimeText(value) {
+		      return String(value || "")
+		        .replaceAll("&", "&amp;")
+		        .replaceAll("<", "&lt;")
+		        .replaceAll(">", "&gt;")
+		        .replaceAll('"', "&quot;")
+		        .replaceAll("'", "&#39;");
+		    }
+
+		    function currentPresenceStatus() {
+		      return hasUnsavedDraft() ? "editing" : "viewing";
+		    }
+
+		    function setRecordVersion(nextVersion) {
+		      recordVersion = String(nextVersion || "").trim();
+		      const versionField = form.querySelector('input[name="expected_version"]');
+		      if (versionField) {
+		        versionField.value = recordVersion;
+		      }
+		    }
+
+		    function responseRecordVersion(xhr) {
+		      return String(xhr?.getResponseHeader?.("X-Velm-Record-Version") || "").trim();
+		    }
+
+		    async function fetchRecordVersion() {
+		      const params = new URLSearchParams({
+		        table: tableName,
+		        record_id: recordID
+		      });
+		      const response = await fetch(`/api/realtime/record-version?${params.toString()}`, {
+		        credentials: "same-origin",
+		        headers: {
+		          "X-Requested-With": "XMLHttpRequest"
+		        }
+		      });
+		      if (response.status === 404) {
+		        return { found: false, updatedAt: "" };
+		      }
+		      if (!response.ok) {
+		        throw new Error(`record-version-${response.status}`);
+		      }
+		      const payload = await response.json().catch(() => ({}));
+		      return {
+		        found: true,
+		        updatedAt: String(payload.version || payload.updated_at || "").trim()
+		      };
+		    }
+
+		    async function recordVersionHasChanged() {
+		      if (!recordVersion) return true;
+		      if (!recordVersionCheck) {
+		        recordVersionCheck = fetchRecordVersion().finally(() => {
+		          recordVersionCheck = null;
+		        });
+		      }
+		      try {
+		        const latest = await recordVersionCheck;
+		        if (!latest.found) return true;
+		        if ((latest.updatedAt || "") === recordVersion) {
+		          return false;
+		        }
+		        if (latest.updatedAt) {
+		          setRecordVersion(latest.updatedAt);
+		        }
+		        return true;
+		      } catch (_) {
+		        return true;
+		      }
+		    }
+
+		    function updateDirtyState() {
+		      const nextFormDirty = snapshotForm(form) !== baseline;
+		      const changed = nextFormDirty !== formDirty;
+		      formDirty = nextFormDirty;
+		      if (!changed && !commentDraftInput) return;
+		      if (!hasUnsavedDraft() && pendingReload && document.visibilityState !== "hidden") {
+		        window.location.reload();
+		        return;
+		      }
+		      if (!pendingReload) {
+		        hideRecordLiveBanner(form);
+		      }
+		      scheduleHeartbeat(120);
+		    }
+
+		    function setPendingReload(message) {
+		      pendingReload = true;
+		      showRecordLiveBanner(form, message);
+		    }
+
+		    function hasCommentDraft() {
+		      return !!commentDraftInput && String(commentDraftInput.value || "").trim() !== "";
+		    }
+
+		    function hasUnsavedDraft() {
+		      return formDirty || hasCommentDraft();
+		    }
+
+		    function renderPresence(items) {
+		      if (!presenceWrap || !presenceList) return;
+		      const list = Array.isArray(items) ? items : [];
+		      if (list.length === 0) {
+		        presenceWrap.classList.add("hidden");
+		        presenceList.innerHTML = "";
+		        return;
+		      }
+		      presenceWrap.classList.remove("hidden");
+		      presenceList.innerHTML = list.map((item) => {
+		        const isCurrentUser = String(item.user_id || "") === currentUserID;
+		        const label = isCurrentUser ? "You" : (item.user_name || item.user_id || "Someone");
+		        const status = item.status === "editing" ? "editing" : "viewing";
+		        return `
+		          <span class="ui-badge ui-badge-neutral ui-record-presence-pill ${status === "editing" ? "is-editing" : ""}">
+		            <span>${escapeRealtimeText(label)}</span>
+		            <span class="ui-record-presence-state">${escapeRealtimeText(status)}</span>
+		          </span>
+		        `;
+		      }).join("");
+		    }
+
+		    function parsePayload(event) {
+		      try {
+		        return JSON.parse(event.data || "{}");
+		      } catch (_) {
+		        return {};
+		      }
+		    }
+
+		    async function sendHeartbeat() {
+		      if (document.visibilityState === "hidden") return;
+		      if (heartbeatInFlight) {
+		        heartbeatQueued = true;
+		        return;
+		      }
+		      heartbeatInFlight = true;
+		      try {
+		        const body = new URLSearchParams({
+		          table_name: tableName,
+		          record_id: recordID,
+		          client_id: clientID,
+		          status: currentPresenceStatus()
+		        });
+		        await fetch("/api/realtime/presence/heartbeat", {
+		          method: "POST",
+		          headers: {
+		            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+		            "X-CSRF-Token": csrf
+		          },
+		          body: body.toString(),
+		          credentials: "same-origin",
+		          keepalive: true
+		        });
+		      } catch (_) {
+		      } finally {
+		        heartbeatInFlight = false;
+		        if (heartbeatQueued) {
+		          heartbeatQueued = false;
+		          window.setTimeout(sendHeartbeat, 150);
+		        }
+		      }
+		    }
+
+		    function scheduleHeartbeat(delay) {
+		      window.clearTimeout(heartbeatTimer);
+		      heartbeatTimer = window.setTimeout(sendHeartbeat, delay || 0);
+		    }
+
+		    function refreshLatest() {
+		      window.location.reload();
+		    }
+
+		    source.addEventListener("record.changed", async function (event) {
+		      const payload = parsePayload(event);
+		      if ((payload.record_id || "") !== recordID) return;
+		      if ((payload.kind || "") === "comment") return;
+		      if ((payload.actor_client_id || "") === clientID) return;
+		      if ((payload.actor_user_id || "") === currentUserID && !(payload.actor_client_id || "")) return;
+		      if (!(await recordVersionHasChanged())) return;
+		      if (!hasUnsavedDraft() && document.visibilityState !== "hidden") {
+		        refreshLatest();
+		        return;
+		      }
+		      const message = hasUnsavedDraft()
+		        ? "This record changed elsewhere while you were editing. Reload to review the latest values."
+		        : "Updates are available for this record. Reload to view the latest data.";
+		      setPendingReload(message);
+		    });
+
+		    source.addEventListener("presence.updated", function (event) {
+		      const payload = parsePayload(event);
+		      if ((payload.record_id || "") !== recordID) return;
+		      renderPresence(payload.presence || []);
+		    });
+
+		    form.addEventListener("input", updateDirtyState, true);
+		    form.addEventListener("change", updateDirtyState, true);
+		    if (commentDraftInput) {
+		      commentDraftInput.addEventListener("input", updateDirtyState);
+		      commentDraftInput.addEventListener("change", updateDirtyState);
+		    }
+
+		    if (reloadButton) {
+		      reloadButton.addEventListener("click", refreshLatest);
+		    }
+
+		    document.addEventListener("visibilitychange", function () {
+		      if (document.visibilityState === "hidden") return;
+		      scheduleHeartbeat(0);
+		      if (pendingReload && !hasUnsavedDraft()) {
+		        refreshLatest();
+		      }
+		    });
+
+		    document.addEventListener("htmx:afterRequest", function (event) {
+		      if (!event.detail || !event.detail.requestConfig || event.detail.requestConfig.elt !== form) {
+		        return;
+		      }
+		      if (!event.detail.successful) {
+		        return;
+		      }
+		      const responseVersion = responseRecordVersion(event.detail.xhr);
+		      if (responseVersion) {
+		        setRecordVersion(responseVersion);
+		      }
+		      baseline = snapshotForm(form);
+		      formDirty = false;
+		      if (!pendingReload) {
+		        hideRecordLiveBanner(form);
+		      }
+		      scheduleHeartbeat(0);
+		    });
+
+		    const interval = window.setInterval(function () {
+		      if (document.visibilityState !== "hidden") {
+		        scheduleHeartbeat(0);
+		      }
+		    }, 15000);
+
+		    scheduleHeartbeat(0);
+
+		    window.addEventListener("pagehide", function () {
+		      window.clearInterval(interval);
+		      window.clearTimeout(heartbeatTimer);
+		      source.close();
+		    }, { once: true });
+		  })();
+
+		</script>
+{{end}}

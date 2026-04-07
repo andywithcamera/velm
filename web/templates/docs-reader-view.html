@@ -1,0 +1,215 @@
+{{define "docs-reader-view"}}
+<style>
+  .ui-docs-reader-page {
+    --docs-ink: var(--text-primary);
+    --docs-copy: var(--text-secondary);
+    --docs-dim: var(--text-dim);
+    --docs-paper: var(--bg-surface);
+    --docs-surface: var(--bg-elevated);
+    --docs-line: var(--border);
+    --docs-line-bright: var(--border-bright);
+    --docs-pill: var(--surface-soft);
+    --docs-accent: rgba(231, 197, 111, 0.18);
+    --docs-accent-line: rgba(231, 197, 111, 0.32);
+    padding: 1.5rem;
+  }
+
+  .ui-docs-reader-frame {
+    display: grid;
+    gap: 1rem;
+    max-width: 92rem;
+    margin: 0 auto;
+  }
+
+  .ui-docs-reader-chrome,
+  .ui-docs-reader-path,
+  .ui-docs-reader-meta,
+  .ui-docs-tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .ui-docs-reader-chrome {
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .ui-docs-reader-path {
+    color: var(--docs-dim);
+    font-size: 0.88rem;
+  }
+
+  .ui-docs-reader-path a {
+    color: inherit;
+  }
+
+  .ui-docs-reader-focus {
+    padding: clamp(1.4rem, 2vw, 2.2rem);
+    border: 1px solid var(--docs-accent-line);
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at top right, var(--docs-accent), transparent 32%),
+      linear-gradient(180deg, var(--bg-surface), var(--docs-paper));
+  }
+
+  .ui-docs-reader-head {
+    display: grid;
+    gap: 0.9rem;
+    margin-bottom: 1.4rem;
+    padding-bottom: 1.3rem;
+    border-bottom: 1px solid var(--docs-line);
+  }
+
+  .ui-docs-permalink,
+  .ui-docs-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: fit-content;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--docs-line);
+    border-radius: 999px;
+    background: var(--docs-pill);
+    color: var(--docs-ink);
+    font-size: 0.82rem;
+  }
+
+  .ui-docs-reader-title,
+  .ui-docs-backlinks-title,
+  .ui-docs-backlink-title {
+    margin: 0;
+    font-family: "Syne", sans-serif;
+    letter-spacing: -0.03em;
+    color: var(--docs-ink);
+  }
+
+  .ui-docs-reader-title {
+    font-size: clamp(2.1rem, 4vw, 4.2rem);
+    line-height: 0.94;
+  }
+
+  .ui-docs-reader-meta {
+    color: var(--docs-dim);
+    font-size: 0.92rem;
+  }
+
+  .ui-docs-reader-prose {
+    max-width: 82ch;
+  }
+
+  .ui-docs-backlinks {
+    padding: 1.3rem;
+  }
+
+  .ui-docs-backlinks-copy {
+    margin: 0.3rem 0 0;
+    color: var(--docs-dim);
+  }
+
+  .ui-docs-backlink-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .ui-docs-backlink-card {
+    display: grid;
+    gap: 0.7rem;
+    padding: 1rem;
+    border: 1px solid var(--docs-line);
+    border-radius: 18px;
+    background: var(--docs-surface);
+    transition: transform 0.16s ease, border-color 0.16s ease;
+  }
+
+  .ui-docs-backlink-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--docs-line-bright);
+  }
+
+  .ui-docs-backlink-number,
+  .ui-docs-backlink-meta,
+  .ui-docs-backlink-excerpt {
+    color: var(--docs-dim);
+  }
+
+  .ui-docs-backlink-number {
+    font-size: 0.82rem;
+  }
+
+  .ui-docs-backlink-excerpt {
+    margin: 0;
+  }
+
+  @media (max-width: 640px) {
+    .ui-docs-reader-page {
+      padding: 1rem;
+    }
+  }
+</style>
+
+<section class="ui-docs-reader-page">
+  <div class="ui-docs-reader-frame">
+    <div class="ui-docs-reader-chrome">
+      <div class="ui-docs-reader-path">
+        <a href="/docs">Docs</a>
+        <span>/</span>
+        <a href="/docs?library={{.DocsArticleSelected.LibrarySlug}}">{{.DocsArticleSelected.LibraryName}}</a>
+      </div>
+      <div class="ui-toolbar-group">
+        {{if .DocsCanManage}}
+          <a class="ui-btn ui-btn-secondary" href="{{.DocsManageHref}}">Edit Doc</a>
+        {{end}}
+      </div>
+    </div>
+
+    <article class="ui-docs-reader-focus">
+      <header class="ui-docs-reader-head">
+        {{if .DocsArticleSelected.Number}}
+          <a class="ui-docs-permalink" href="{{.DocsArticleSelected.ReaderHref}}">{{.DocsArticleSelected.Number}}</a>
+        {{end}}
+        <h1 class="ui-docs-reader-title">{{.DocsArticleSelected.Title}}</h1>
+        <div class="ui-docs-reader-meta">
+          <span>{{.DocsLibrarySelected.Name}}</span>
+          <span>v{{.DocsArticleSelected.VersionNum}}</span>
+          {{if .DocsArticleSelected.PublishedAt}}
+            <span>{{.DocsArticleSelected.PublishedAt}}</span>
+          {{end}}
+          <span>{{.DocsArticleSelected.Status}}</span>
+        </div>
+        {{if .DocsArticleSelected.TagItems}}
+          <div class="ui-docs-tag-row">
+            {{range .DocsArticleSelected.TagItems}}
+              <span class="ui-docs-tag">{{.}}</span>
+            {{end}}
+          </div>
+        {{end}}
+      </header>
+
+      <div class="ui-content-prose ui-docs-reader-prose">{{.DocsArticleRendered}}</div>
+    </article>
+
+    {{if .DocsBacklinks}}
+      <section class="ui-card ui-docs-backlinks">
+        <div>
+          <h2 class="ui-docs-backlinks-title">Backlinks</h2>
+          <p class="ui-docs-backlinks-copy">Other readable docs that point to this page.</p>
+        </div>
+        <div class="ui-docs-backlink-grid">
+          {{range .DocsBacklinks}}
+            <a class="ui-docs-backlink-card" href="{{.ReaderHref}}">
+              <span class="ui-docs-backlink-number">{{if .Number}}{{.Number}}{{else}}Doc{{end}}</span>
+              <div>
+                <p class="ui-docs-backlink-title"><strong>{{.Title}}</strong></p>
+                <p class="ui-docs-backlink-meta">{{.LibraryName}}</p>
+              </div>
+              <p class="ui-docs-backlink-excerpt">{{.Excerpt}}</p>
+            </a>
+          {{end}}
+        </div>
+      </section>
+    {{end}}
+  </div>
+</section>
+{{end}}

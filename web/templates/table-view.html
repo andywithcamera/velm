@@ -1,0 +1,1559 @@
+{{define "table-view"}}
+{{if .TaskBoard}}
+  {{template "task-board-view" .}}
+{{else}}
+	<section class="ui-stack">
+	  <div class="ui-panel ui-domain-table-wrap">
+	    <div class="ui-simple-table-head">
+	      <div>
+	        <h1 class="ui-simple-table-title">{{if .TableLabel}}{{.TableLabel}}{{else}}{{.TableName}}{{end}}</h1>
+	        {{if .TableDescription}}<p class="ui-simple-table-subtitle">{{.TableDescription}}</p>{{end}}
+	      </div>
+	      <div class="ui-toolbar-group">
+	        {{if .TableCanCreate}}
+	        <a href="{{.TableCreateURL}}" class="ui-btn ui-btn-primary">New</a>
+	        {{end}}
+	        {{if .TaskBoardURL}}
+	        <a href="{{.TaskBoardURL}}" class="ui-btn ui-btn-secondary">Kanban</a>
+	        {{end}}
+	        <span id="rowCountBadge" class="ui-badge ui-badge-neutral">0 rows</span>
+	      </div>
+	    </div>
+
+    <form id="serverListControlsForm" method="GET" action="/t/{{if .TableRouteName}}{{.TableRouteName}}{{else}}{{.TableName}}{{end}}" class="ui-toolbar">
+      <div class="ui-toolbar-group ui-query-bar" data-grow="true">
+        <input id="serverFilterInput" class="ui-input ui-toolbar-search" type="text" name="q" placeholder="Try Name=Andy* && Age < 50 || Name=*Doyle*" value="{{.ServerQuery}}" autocomplete="off" />
+        <div id="querySuggestions" class="ui-query-suggestions hidden"></div>
+        <input type="hidden" name="page" value="1" />
+      </div>
+      <div class="ui-toolbar-group">
+        <details class="relative">
+          <summary class="list-none">
+            <span class="ui-icon-btn" title="Select columns" aria-label="Select columns">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 6h16"></path>
+                <path d="M4 12h16"></path>
+                <path d="M4 18h16"></path>
+                <circle cx="8" cy="6" r="1"></circle>
+                <circle cx="16" cy="12" r="1"></circle>
+                <circle cx="10" cy="18" r="1"></circle>
+              </svg>
+            </span>
+          </summary>
+          <div class="ui-dropdown-menu ui-table-column-picker">
+            <div class="ui-stack ui-table-column-picker-list">
+              {{range $i, $col := .QueryColumns}}
+              <label class="ui-checkbox">
+                <input type="checkbox" class="column-toggle" data-col-index="{{$i}}" checked />
+                <span>{{$col.Label}}</span>
+              </label>
+              {{end}}
+            </div>
+          </div>
+        </details>
+        <button type="submit" class="ui-btn ui-btn-secondary">Search</button>
+      </div>
+    </form>
+
+    <div class="ui-table-shell ui-domain-table">
+      <div class="ui-table-scroll">
+        <table id="recordsTable" data-table-name="{{.TableName}}" class="ui-table">
+          <thead>
+            <tr>
+              {{range $i, $col := .QueryColumns}}
+              <th scope="col" data-col-index="{{$i}}" data-col-name="{{$col.Name}}" data-col-label="{{$col.Label}}">
+                <button type="button" class="sort-trigger" data-col-index="{{$i}}">
+                  <span class="sort-label">{{$col.Label}}</span>
+                  <span class="sort-icon" data-sort-indicator="{{$i}}">↕</span>
+                </button>
+              </th>
+              {{end}}
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Rows}} {{ $row := . }}
+            <tr class="cursor-pointer" data-record-table="{{index $row "_record_table"}}" data-record-url="{{index $row "_record_url"}}" onclick="return window.navigateWithTransition(this.dataset.recordUrl)">
+              {{range $i, $col := $.QueryColumns}}
+              <td data-col-index="{{$i}}" data-col-name="{{$col.Name}}" data-col-label="{{$col.Label}}">
+                {{index $row $col.Name}}
+              </td>
+              {{end}}
+            </tr>
+            {{else}}
+            <tr>
+              <td colspan="{{len .QueryColumns}}" class="ui-table-empty">No rows found.</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p id="noRowsMessage" class="hidden ui-simple-table-subtitle" style="margin-top: 0.6rem;">No matching rows found.</p>
+
+    <div class="ui-paginator">
+      <div class="ui-paginator-copy">
+        {{if .PaginationCountExact}}
+          Page {{.Page}} of {{.TotalPages}} · {{.TotalRows}} total rows
+        {{else}}
+          Page {{.Page}} of at least {{.TotalPages}} · at least {{.TotalRows}} readable rows
+        {{end}}
+      </div>
+      <div class="ui-toolbar-group">
+        {{if .HasPrev}}
+          <a href="{{.PrevPageURL}}" class="ui-btn ui-btn-secondary">Previous</a>
+        {{else}}
+          <span class="ui-btn ui-btn-secondary opacity-50 pointer-events-none">Previous</span>
+        {{end}}
+        {{if .HasNext}}
+          <a href="{{.NextPageURL}}" class="ui-btn ui-btn-secondary">Next</a>
+        {{else}}
+          <span class="ui-btn ui-btn-secondary opacity-50 pointer-events-none">Next</span>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</section>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const table = document.getElementById('recordsTable');
+    if (!table) return;
+
+    const queryColumns = [
+      {{range $index, $col := .QueryColumns}}{{if $index}},{{end}}{
+        name: {{printf "%q" $col.Name}},
+        label: {{printf "%q" $col.Label}},
+        dataType: {{printf "%q" $col.DataType}},
+        isDateLike: {{if $col.IsDateLike}}true{{else}}false{{end}},
+        isNumber: {{if $col.IsNumber}}true{{else}}false{{end}},
+        isBoolean: {{if $col.IsBoolean}}true{{else}}false{{end}},
+        inputKind: {{printf "%q" $col.InputKind}}
+      }{{end}}
+    ];
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter((row) => row.querySelector('td'));
+    const sortTriggers = Array.from(table.querySelectorAll('.sort-trigger'));
+    const columnToggles = Array.from(document.querySelectorAll('.column-toggle'));
+    const serverFilterInput = document.getElementById('serverFilterInput');
+    const querySuggestions = document.getElementById('querySuggestions');
+    const rowCountBadge = document.getElementById('rowCountBadge');
+    const noRowsMessage = document.getElementById('noRowsMessage');
+    let currentIndex = -1;
+    let sortState = { colIndex: null, direction: 1 };
+    let suggestionItems = [];
+    let activeSuggestionIndex = -1;
+
+    function inferNumericColumns() {
+      const headers = Array.from(table.querySelectorAll('th[data-col-index]'));
+      headers.forEach((header) => {
+        const index = Number(header.dataset.colIndex);
+        const name = (header.dataset.colName || '').toLowerCase();
+        const values = rows
+          .map((row) => row.querySelector(`td[data-col-index="${index}"]`)?.textContent.trim() || '')
+          .filter(Boolean)
+          .slice(0, 12);
+        const numericName = /(^id$|_id$|count|total|amount|price|qty|quantity|size|number|index|age|score|rate)/.test(name);
+        const numericValues = values.length > 0 && values.every((value) => /^-?\d+(\.\d+)?$/.test(value.replaceAll(',', '')));
+        if (numericName || numericValues) {
+          header.setAttribute('data-align', 'right');
+          rows.forEach((row) => {
+            const cell = row.querySelector(`td[data-col-index="${index}"]`);
+            if (cell) cell.setAttribute('data-align', 'right');
+          });
+        }
+      });
+    }
+
+    function getVisibleRows() {
+      return rows.filter((row) => row.style.display !== 'none');
+    }
+
+    function updateRowStateUI() {
+      const count = getVisibleRows().length;
+      if (rowCountBadge) {
+        rowCountBadge.textContent = `${count} rows`;
+      }
+      if (noRowsMessage) {
+        noRowsMessage.classList.toggle('hidden', count > 0);
+      }
+    }
+
+    function highlightVisibleRow(index) {
+      const visibleRows = getVisibleRows();
+      rows.forEach((row) => {
+        const visibleIndex = visibleRows.indexOf(row);
+        row.classList.toggle('is-selected', visibleIndex === index);
+      });
+    }
+
+    function getCellValue(row, colIndex) {
+      const cell = row.querySelector(`td[data-col-index="${colIndex}"]`);
+      return cell ? cell.textContent.trim() : '';
+    }
+
+    function compareValues(a, b) {
+      const numA = Number(a.replaceAll(',', ''));
+      const numB = Number(b.replaceAll(',', ''));
+      const isNumA = !Number.isNaN(numA) && a !== '';
+      const isNumB = !Number.isNaN(numB) && b !== '';
+      if (isNumA && isNumB) return numA - numB;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    }
+
+    function updateSortIndicators() {
+      const headers = Array.from(table.querySelectorAll('th[data-col-index]'));
+      const indicators = Array.from(table.querySelectorAll('[data-sort-indicator]'));
+      headers.forEach((header) => header.classList.remove('is-sorted'));
+      indicators.forEach((el) => {
+        const idx = Number(el.dataset.sortIndicator);
+        if (idx === sortState.colIndex) {
+          el.textContent = sortState.direction === 1 ? '↑' : '↓';
+          el.closest('th')?.classList.add('is-sorted');
+        } else {
+          el.textContent = '↕';
+        }
+      });
+    }
+
+    function currentClauseInfo() {
+      if (!serverFilterInput) return null;
+      const value = serverFilterInput.value || '';
+      const cursor = serverFilterInput.selectionStart ?? value.length;
+      const before = value.slice(0, cursor);
+      let start = Math.max(before.lastIndexOf('&&'), before.lastIndexOf('||'));
+      start = start >= 0 ? start + 2 : 0;
+      const rawClause = value.slice(start, cursor);
+      const match = rawClause.match(/^\s*\(*\s*(.*?)\s*(?:(=|!=|<=|>=|<|>)\s*(.*))?$/);
+      return {
+        start,
+        end: cursor,
+        rawClause,
+        column: (match?.[1] || '').trim(),
+        operator: match?.[2] || '',
+        valueFragment: (match?.[3] || '').trim(),
+      };
+    }
+
+    function normalizeQueryToken(value) {
+      return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    function hideSuggestions() {
+      if (!querySuggestions) return;
+      querySuggestions.classList.add('hidden');
+      querySuggestions.innerHTML = '';
+      suggestionItems = [];
+      activeSuggestionIndex = -1;
+    }
+
+    function applySuggestion(item) {
+      if (!serverFilterInput) return;
+      const info = currentClauseInfo();
+      if (!info) return;
+      const fullValue = serverFilterInput.value || '';
+      const prefix = fullValue.slice(0, info.start);
+      const suffix = fullValue.slice(info.end);
+      const clausePrefix = (info.rawClause.match(/^(\s*\(*\s*)/) || [''])[0];
+      let nextClause = '';
+      if (item.kind === 'column') {
+        nextClause = `${clausePrefix}${item.value}`;
+      } else if (item.kind === 'operator') {
+        nextClause = `${clausePrefix}${info.column} ${item.value} `;
+      } else if (item.kind === 'value') {
+        nextClause = `${clausePrefix}${info.column} ${info.operator} ${item.value}`;
+      }
+      serverFilterInput.value = prefix + nextClause + suffix;
+      const cursorPosition = (prefix + nextClause).length;
+      serverFilterInput.focus();
+      serverFilterInput.setSelectionRange(cursorPosition, cursorPosition);
+      hideSuggestions();
+    }
+
+    function renderSuggestions(items) {
+      if (!querySuggestions || items.length === 0) {
+        hideSuggestions();
+        return;
+      }
+      suggestionItems = items;
+      activeSuggestionIndex = -1;
+      querySuggestions.innerHTML = items.map((item, index) => (
+        `<button type="button" class="ui-query-suggestion" data-index="${index}"><strong>${item.value}</strong><span>${item.hint}</span></button>`
+      )).join('');
+      querySuggestions.classList.remove('hidden');
+      querySuggestions.querySelectorAll('.ui-query-suggestion').forEach((button) => {
+        button.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          const index = Number(button.dataset.index);
+          if (!Number.isNaN(index) && suggestionItems[index]) {
+            applySuggestion(suggestionItems[index]);
+          }
+        });
+      });
+    }
+
+    function updateSuggestions() {
+      if (!serverFilterInput) return;
+      const info = currentClauseInfo();
+      if (!info) return;
+      if (info.operator) {
+        hideSuggestions();
+        return;
+      }
+      const fieldEditMatch = info.rawClause.match(/^(\s*\(*\s*)(.*?)$/);
+      if (!fieldEditMatch) {
+        hideSuggestions();
+        return;
+      }
+      const fragment = (fieldEditMatch[2] || '').trim();
+      if (!fragment) {
+        hideSuggestions();
+        return;
+      }
+      const normalizedFragment = normalizeQueryToken(fragment);
+      const scored = queryColumns
+        .map((col) => {
+          const name = col.name.toLowerCase();
+          const label = col.label.toLowerCase();
+          const normalizedName = normalizeQueryToken(col.name);
+          const normalizedLabel = normalizeQueryToken(col.label);
+          const labelWords = label.split(/[\s_]+/).filter(Boolean);
+          let score = -1;
+          if (normalizedName.startsWith(normalizedFragment)) {
+            score = 120 - (normalizedName.length - normalizedFragment.length);
+          } else if (normalizedLabel.startsWith(normalizedFragment)) {
+            score = 110 - (normalizedLabel.length - normalizedFragment.length);
+          } else if (labelWords.some((word) => normalizeQueryToken(word).startsWith(normalizedFragment))) {
+            score = 100;
+          } else if (normalizedName.includes(normalizedFragment)) {
+            score = 80 - normalizedName.indexOf(normalizedFragment);
+          } else if (normalizedLabel.includes(normalizedFragment)) {
+            score = 70 - normalizedLabel.indexOf(normalizedFragment);
+          } else if (name.includes(fragment.toLowerCase())) {
+            score = 60 - name.indexOf(fragment.toLowerCase());
+          } else if (label.includes(fragment.toLowerCase())) {
+            score = 50 - label.indexOf(fragment.toLowerCase());
+          }
+          return { col, score };
+        })
+        .filter((item) => item.score >= 0)
+        .sort((a, b) => b.score - a.score || a.col.name.localeCompare(b.col.name))
+        .slice(0, 8)
+        .map((item) => ({
+          kind: 'column',
+          value: item.col.label,
+          hint: item.col.label !== item.col.name ? item.col.name : item.col.dataType,
+        }));
+      renderSuggestions(scored);
+    }
+
+    function sortByColumn(colIndex, direction = null) {
+      if (direction === 1 || direction === -1) {
+        sortState = { colIndex, direction };
+      } else if (sortState.colIndex === colIndex) {
+        sortState.direction *= -1;
+      } else {
+        sortState.colIndex = colIndex;
+        sortState.direction = 1;
+      }
+
+      const sorted = [...rows].sort((rowA, rowB) => {
+        const a = getCellValue(rowA, colIndex);
+        const b = getCellValue(rowB, colIndex);
+        return compareValues(a, b) * sortState.direction;
+      });
+
+      sorted.forEach((row) => tbody.appendChild(row));
+      updateSortIndicators();
+      currentIndex = -1;
+      highlightVisibleRow(currentIndex);
+      updateRowStateUI();
+    }
+
+    function applyColumnVisibility(colIndex, visible) {
+      const display = visible ? '' : 'none';
+      const header = table.querySelector(`th[data-col-index="${colIndex}"]`);
+      if (header) header.style.display = display;
+      const cells = table.querySelectorAll(`td[data-col-index="${colIndex}"]`);
+      cells.forEach((cell) => {
+        cell.style.display = display;
+      });
+    }
+
+    inferNumericColumns();
+    updateSortIndicators();
+    updateRowStateUI();
+
+    columnToggles.forEach((toggle) => {
+      const colIndex = Number(toggle.dataset.colIndex);
+      applyColumnVisibility(colIndex, toggle.checked);
+      toggle.addEventListener('change', () => {
+        applyColumnVisibility(colIndex, toggle.checked);
+        updateRowStateUI();
+      });
+    });
+
+    sortTriggers.forEach((trigger) => {
+      trigger.addEventListener('click', () => {
+        const colIndex = Number(trigger.dataset.colIndex);
+        sortByColumn(colIndex);
+      });
+    });
+
+	    if (serverFilterInput) {
+	      serverFilterInput.addEventListener('input', updateSuggestions);
+	      serverFilterInput.addEventListener('click', updateSuggestions);
+      serverFilterInput.addEventListener('keydown', (event) => {
+        if (!querySuggestions || querySuggestions.classList.contains('hidden')) return;
+        const buttons = Array.from(querySuggestions.querySelectorAll('.ui-query-suggestion'));
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          activeSuggestionIndex = Math.min(activeSuggestionIndex + 1, buttons.length - 1);
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          activeSuggestionIndex = Math.max(activeSuggestionIndex - 1, 0);
+        } else if (event.key === 'Enter' && suggestionItems.length > 0) {
+          event.preventDefault();
+          if (activeSuggestionIndex < 0) {
+            activeSuggestionIndex = 0;
+          }
+          applySuggestion(suggestionItems[activeSuggestionIndex]);
+          return;
+        } else if (event.key === 'Escape') {
+          hideSuggestions();
+          return;
+        } else {
+          return;
+        }
+        buttons.forEach((button, index) => {
+          button.classList.toggle('is-active', index === activeSuggestionIndex);
+        });
+      });
+	      serverFilterInput.addEventListener('blur', () => {
+	        setTimeout(hideSuggestions, 120);
+	      });
+	    }
+
+	    const realtimeTables = [
+	      {{range $index, $tableName := .ListSourceTables}}{{if $index}},{{end}}{{printf "%q" $tableName}}{{end}}
+	    ].filter(Boolean);
+	    if (window.EventSource && realtimeTables.length > 0) {
+	      const sources = realtimeTables.map((tableName) => new EventSource(`/api/realtime/stream?table=${encodeURIComponent(tableName)}`));
+	      let pendingReload = false;
+	      let reloadTimer = 0;
+
+	      function parsePayload(event) {
+	        try {
+	          return JSON.parse(event.data || '{}');
+	        } catch (_) {
+	          return {};
+	        }
+	      }
+
+	      function triggerReload() {
+	        if (reloadTimer) return;
+	        reloadTimer = window.setTimeout(() => {
+	          window.location.reload();
+	        }, 220);
+	      }
+
+	      function scheduleReload() {
+	        if (document.visibilityState === 'hidden') {
+	          pendingReload = true;
+	          return;
+	        }
+	        triggerReload();
+	      }
+
+	      sources.forEach((source) => {
+	        source.addEventListener('record.changed', (event) => {
+	          const payload = parsePayload(event);
+	          if ((payload.kind || '') === 'comment') return;
+	          scheduleReload();
+	        });
+	      });
+
+	      document.addEventListener('visibilitychange', () => {
+	        if (document.visibilityState !== 'hidden' && pendingReload) {
+	          pendingReload = false;
+	          triggerReload();
+	        }
+	      });
+
+	      window.addEventListener('pagehide', () => {
+	        window.clearTimeout(reloadTimer);
+	        sources.forEach((source) => source.close());
+	      }, { once: true });
+	    }
+
+	    document.addEventListener('keydown', (e) => {
+	      const visibleRows = getVisibleRows();
+      if (visibleRows.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        currentIndex = (currentIndex + 1) % visibleRows.length;
+        highlightVisibleRow(currentIndex);
+        visibleRows[currentIndex].scrollIntoView({ block: 'nearest' });
+      }
+
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        currentIndex = (currentIndex - 1 + visibleRows.length) % visibleRows.length;
+        highlightVisibleRow(currentIndex);
+        visibleRows[currentIndex].scrollIntoView({ block: 'nearest' });
+      }
+
+      if (e.key === 'Enter' && currentIndex >= 0) {
+        visibleRows[currentIndex].click();
+      }
+    });
+  });
+</script>
+{{end}}
+{{end}}
+
+{{define "task-board-view"}}
+<style>
+  #taskBoard .ui-simple-table-head,
+  .ui-task-board-toolbar {
+    border-bottom: 0;
+  }
+
+  .ui-task-board-toolbar {
+    align-items: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding-top: 0.45rem;
+  }
+
+  .ui-task-board-toolbar-row,
+  .ui-task-board-query-row {
+    align-items: flex-start;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+
+  .ui-task-board-filters {
+    align-items: flex-start;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .ui-task-board-toolbar-actions {
+    align-items: flex-end;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .ui-task-board-filter {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 12.75rem;
+    position: relative;
+  }
+
+  .ui-task-board-filter-label {
+    color: var(--text-ghost);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .ui-task-board-filter::after {
+    border-bottom: 1.5px solid var(--text-ghost);
+    border-right: 1.5px solid var(--text-ghost);
+    content: "";
+    height: 0.55rem;
+    pointer-events: none;
+    position: absolute;
+    right: 0.95rem;
+    top: calc(50% + 0.45rem);
+    transform: rotate(45deg) translateY(-50%);
+    width: 0.55rem;
+  }
+
+  .ui-task-board-select,
+  .ui-task-board-assignment-select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background: var(--bg-base);
+    padding-right: 2.4rem;
+  }
+
+  .ui-task-board-insights {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+    margin: 0;
+  }
+
+  .ui-task-board-query-row .ui-query-bar {
+    flex: 1 1 32rem;
+    min-width: 20rem;
+  }
+
+  .ui-task-board-query-row {
+    align-items: center;
+  }
+
+  .ui-task-board-scroll {
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+  }
+
+  .ui-task-board-grid {
+    display: grid;
+    gap: 1rem;
+    min-width: max-content;
+  }
+
+  .ui-task-board-lane {
+    background: transparent;
+    border: 0;
+    border-radius: 1.25rem;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.95rem;
+    min-width: 17rem;
+    padding: 1.05rem;
+  }
+
+  .ui-task-board-lane-head {
+    align-items: flex-start;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+
+  .ui-task-board-lane-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .ui-task-board-lane-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .ui-task-board-lane-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    min-height: 8rem;
+  }
+
+  .ui-task-board-card {
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+  }
+
+  .ui-task-board-card[draggable="true"] {
+    cursor: grab;
+  }
+
+  .ui-task-board-card-link {
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    text-decoration: none;
+  }
+
+  .ui-task-board-card-link:hover {
+    color: inherit;
+  }
+
+  .ui-task-board-card.is-dragging {
+    opacity: 0.52;
+    cursor: grabbing;
+  }
+
+  .ui-task-board-card.is-saving {
+    opacity: 0.7;
+    pointer-events: none;
+  }
+
+  .ui-task-board-card:hover,
+  .ui-task-board-card:focus-visible {
+    background: var(--bg-base);
+    border-color: var(--border-bright);
+    box-shadow: none;
+    transform: translateY(-1px);
+  }
+
+  .ui-task-board-card.is-locked {
+    border-style: dashed;
+  }
+
+  .ui-task-board-card-head {
+    align-items: flex-start;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+  }
+
+  .ui-task-board-card-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    justify-content: flex-end;
+  }
+
+  .ui-task-board-card-number {
+    color: var(--text-ghost);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.77rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .ui-task-board-card-title {
+    font-size: 0.98rem;
+    line-height: 1.45;
+  }
+
+  .ui-task-board-card-meta-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .ui-task-board-card-meta {
+    color: var(--text-dim);
+    font-size: 0.82rem;
+    margin: 0;
+  }
+
+  .ui-task-board-card-assignment {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+  }
+
+  .ui-task-board-assignment-picker {
+    display: inline-flex;
+    position: relative;
+  }
+
+  .ui-task-board-assignment-trigger {
+    background: transparent;
+    border: 0;
+    border-bottom: 1px dashed var(--border-bright);
+    border-radius: 0;
+    color: var(--text-primary);
+    cursor: pointer;
+    font: inherit;
+    padding: 0;
+  }
+
+  .ui-task-board-assignment-trigger:hover,
+  .ui-task-board-assignment-trigger:focus-visible {
+    border-bottom-color: var(--text-primary);
+    color: var(--text-primary);
+    outline: none;
+  }
+
+  .ui-task-board-assignment-popover {
+    background: var(--bg-base);
+    border: 1px solid var(--border);
+    border-radius: 0.9rem;
+    box-shadow: none;
+    left: 0;
+    min-width: 12rem;
+    opacity: 0;
+    padding: 0.7rem;
+    pointer-events: none;
+    position: absolute;
+    top: calc(100% + 0.18rem);
+    transform: translateY(-0.2rem);
+    transition: opacity 140ms ease, transform 140ms ease, visibility 0s linear 140ms;
+    visibility: hidden;
+    z-index: 20;
+  }
+
+  .ui-task-board-assignment-picker::after {
+    content: "";
+    height: 0.5rem;
+    left: 0;
+    position: absolute;
+    right: 0;
+    top: 100%;
+  }
+
+  .ui-task-board-assignment-picker.is-open .ui-task-board-assignment-popover,
+  .ui-task-board-assignment-picker:hover .ui-task-board-assignment-popover,
+  .ui-task-board-assignment-picker:focus-within .ui-task-board-assignment-popover {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    transition-delay: 0s;
+    visibility: visible;
+  }
+
+  .ui-task-board-assignment-select {
+    font-size: 0.82rem;
+    min-width: 100%;
+  }
+
+  .ui-task-board-empty {
+    align-items: center;
+    background: var(--surface-soft);
+    border: 0;
+    border-radius: 1rem;
+    color: var(--text-ghost);
+    display: flex;
+    justify-content: center;
+    min-height: 7rem;
+    padding: 1rem;
+  }
+
+  .ui-task-board-lane.is-drop-target {
+    box-shadow: inset 0 0 0 1px var(--border-bright);
+  }
+
+  @media (max-width: 820px) {
+    .ui-task-board-filter {
+      min-width: 100%;
+    }
+
+    .ui-task-board-query-row .ui-query-bar {
+      min-width: 100%;
+    }
+
+    .ui-task-board-lane {
+      min-width: 16rem;
+    }
+  }
+</style>
+
+<section
+  id="taskBoard"
+  class="ui-stack"
+  data-update-url="{{.TaskBoardUpdateURL}}"
+  data-can-update="{{if .TaskBoardCanUpdate}}true{{else}}false{{end}}"
+>
+  <div class="ui-panel ui-domain-table-wrap">
+    <div class="ui-simple-table-head">
+      <div>
+        <h1 class="ui-simple-table-title">{{if .TableLabel}}{{.TableLabel}}{{else}}{{.TableName}}{{end}}</h1>
+        <p class="ui-simple-table-subtitle">{{.TaskBoardSummary}}{{if .TableDescription}} | {{.TableDescription}}{{end}}</p>
+      </div>
+      <div class="ui-toolbar-group">
+        {{if .TableCanCreate}}
+        <a href="{{.TableCreateURL}}" class="ui-btn ui-btn-primary">New</a>
+        {{end}}
+        <a href="{{.TaskBoardListURL}}" class="ui-btn ui-btn-secondary">List</a>
+        <span class="ui-badge ui-badge-neutral">{{.TaskBoardTotalTasks}} tasks</span>
+      </div>
+    </div>
+
+    <form id="taskBoardFiltersForm" method="GET" action="{{.TaskBoardPath}}" class="ui-toolbar ui-task-board-toolbar">
+      <div class="ui-task-board-toolbar-row">
+        <div class="ui-toolbar-group ui-task-board-filters">
+          <label class="ui-task-board-filter">
+            <span class="ui-task-board-filter-label">Scope</span>
+            <select id="taskBoardScope" class="ui-input ui-task-board-select" name="scope">
+              <option value="mine" {{if eq .TaskBoardScope "mine"}}selected{{end}}>My Tasks</option>
+              <option value="groups" {{if eq .TaskBoardScope "groups"}}selected{{end}}>My Groups' Tasks</option>
+            </select>
+          </label>
+          <label class="ui-task-board-filter">
+            <span class="ui-task-board-filter-label">Group</span>
+            <select id="taskBoardGroup" class="ui-input ui-task-board-select" name="group_id" {{if not .TaskBoardHasGroups}}disabled{{end}}>
+              <option value="" {{if eq .TaskBoardSelectedGroupID ""}}selected{{end}}>All My Groups</option>
+              {{range .TaskBoardGroups}}
+              <option value="{{.ID}}" {{if eq $.TaskBoardSelectedGroupID .ID}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </label>
+          <label class="ui-task-board-filter">
+            <span class="ui-task-board-filter-label">Priority</span>
+            <select id="taskBoardPriority" class="ui-input ui-task-board-select" name="priority">
+              {{range .TaskBoardPriorityOptions}}
+              <option value="{{.Value}}" {{if eq $.TaskBoardPriority .Value}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </label>
+          <label class="ui-task-board-filter">
+            <span class="ui-task-board-filter-label">Type</span>
+            <select id="taskBoardType" class="ui-input ui-task-board-select" name="work_type">
+              {{range .TaskBoardTypeOptions}}
+              <option value="{{.Value}}" {{if eq $.TaskBoardType .Value}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </label>
+          <label class="ui-task-board-filter">
+            <span class="ui-task-board-filter-label">Assigned To</span>
+            <select id="taskBoardAssignedTo" class="ui-input ui-task-board-select" name="assigned_to">
+              {{range .TaskBoardAssigneeOptions}}
+              <option value="{{.Value}}" {{if eq $.TaskBoardAssignedTo .Value}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </label>
+        </div>
+        <div class="ui-toolbar-group ui-task-board-toolbar-actions">
+          {{if .TaskBoardHasActiveFilters}}
+          <a href="{{.TaskBoardResetURL}}" class="ui-btn ui-btn-secondary">Reset</a>
+          {{end}}
+        </div>
+      </div>
+      <div class="ui-task-board-query-row">
+        <div class="ui-toolbar-group ui-query-bar ui-task-board-query-bar" data-grow="true">
+          <input id="serverFilterInput" class="ui-input ui-toolbar-search" type="text" name="q" placeholder="Filter tasks" value="{{.ServerQuery}}" autocomplete="off" />
+          <div id="querySuggestions" class="ui-query-suggestions hidden"></div>
+        </div>
+        <div class="ui-toolbar-group">
+          <button type="submit" class="ui-btn ui-btn-secondary">Filter</button>
+        </div>
+      </div>
+    </form>
+    {{if .TaskBoardInsights}}
+    <div class="ui-task-board-insights">
+      {{range .TaskBoardInsights}}
+      <span class="ui-badge {{.Class}}">{{if gt .Count 0}}{{.Count}} {{end}}{{.Label}}</span>
+      {{end}}
+    </div>
+    {{end}}
+
+    <div class="ui-task-board-scroll">
+      <div class="ui-task-board-grid" style="grid-template-columns: repeat({{len .TaskBoardLanes}}, minmax(18rem, 1fr));">
+        {{range .TaskBoardLanes}}
+        {{$lane := .}}
+        <section
+          class="ui-card ui-task-board-lane{{if $lane.CanDrop}} is-droppable{{end}}"
+          data-state="{{$lane.Value}}"
+          data-droppable="{{if $lane.CanDrop}}true{{else}}false{{end}}"
+        >
+          <div class="ui-task-board-lane-head">
+            <div class="ui-task-board-lane-title-wrap">
+              <h2 class="ui-task-board-lane-title">{{.Label}}</h2>
+            </div>
+            <span class="ui-badge ui-badge-neutral" data-lane-count>{{.Count}}</span>
+          </div>
+          <div class="ui-task-board-lane-body" data-lane-body>
+            {{range $lane.Cards}}
+            {{$members := index $.TaskBoardGroupMembers .GroupID}}
+            <article
+              class="ui-task-board-card{{if not .CanDrag}} is-locked{{end}}"
+              data-task-id="{{.ID}}"
+              data-state="{{$lane.Value}}"
+              data-group-id="{{.GroupID}}"
+              data-assigned-user-id="{{.AssignedUserID}}"
+              data-update-url="{{.UpdateURL}}"
+              {{if and $.TaskBoardCanUpdate .CanDrag}}draggable="true"{{end}}
+            >
+              <a href="{{.Href}}" class="ui-task-board-card-link">
+                <div class="ui-task-board-card-head">
+                  <span class="ui-task-board-card-number">{{.Number}}</span>
+                  <div class="ui-task-board-card-badges">
+                    {{if .AttentionLabel}}
+                    <span class="ui-badge {{.AttentionClass}}">{{.AttentionLabel}}</span>
+                    {{end}}
+                    {{if .PriorityLabel}}
+                    <span class="ui-badge {{.PriorityClass}}">{{.PriorityLabel}}</span>
+                    {{end}}
+                  </div>
+                </div>
+                <strong class="ui-task-board-card-title">{{.Title}}</strong>
+              </a>
+              <div class="ui-task-board-card-meta-stack">
+                {{if and $.TaskBoardCanUpdate .GroupID (eq .AssignedUserID "") (gt (len $members) 0)}}
+                <div class="ui-task-board-card-meta ui-task-board-card-assignment">
+                  {{if .GroupLabel}}<span>{{.GroupLabel}} |</span>{{end}}
+                  <div class="ui-task-board-assignment-picker">
+                    <button type="button" class="ui-task-board-assignment-trigger">Unassigned</button>
+                    <div class="ui-task-board-assignment-popover">
+                      <label class="ui-sr-only" for="taskBoardAssign-{{.ID}}">Assign task</label>
+                      <select id="taskBoardAssign-{{.ID}}" class="ui-input ui-task-board-assignment-select" data-assignee-select>
+                        <option value="">Assign to...</option>
+                        {{range $members}}
+                        <option value="{{.ID}}">{{.Label}}</option>
+                        {{end}}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                {{else if or .GroupLabel .AssigneeLabel}}
+                <p class="ui-task-board-card-meta">
+                  {{if and .GroupLabel .AssigneeLabel}}{{.GroupLabel}} | {{.AssigneeLabel}}
+                  {{else if .GroupLabel}}{{.GroupLabel}} | Unassigned
+                  {{else}}{{.AssigneeLabel}}{{end}}
+                </p>
+                {{else}}
+                <p class="ui-task-board-card-meta">Unassigned</p>
+                {{end}}
+                {{if .DueAtLabel}}
+                <p class="ui-task-board-card-meta">{{.DueAtLabel}}</p>
+                {{end}}
+              </div>
+            </article>
+            {{end}}
+            <div class="ui-task-board-empty" data-lane-empty{{if gt $lane.Count 0}} hidden{{end}}>No tasks</div>
+          </div>
+        </section>
+        {{end}}
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const queryColumns = [
+      {{range $index, $col := .QueryColumns}}{{if $index}},{{end}}{
+        name: {{printf "%q" $col.Name}},
+        label: {{printf "%q" $col.Label}},
+        dataType: {{printf "%q" $col.DataType}},
+        isDateLike: {{if $col.IsDateLike}}true{{else}}false{{end}},
+        isNumber: {{if $col.IsNumber}}true{{else}}false{{end}},
+        isBoolean: {{if $col.IsBoolean}}true{{else}}false{{end}},
+        inputKind: {{printf "%q" $col.InputKind}}
+      }{{end}}
+    ];
+    const board = document.getElementById('taskBoard');
+    const form = document.getElementById('taskBoardFiltersForm');
+    const scope = document.getElementById('taskBoardScope');
+    const group = document.getElementById('taskBoardGroup');
+    const taskType = document.getElementById('taskBoardType');
+    const priority = document.getElementById('taskBoardPriority');
+    const assignedTo = document.getElementById('taskBoardAssignedTo');
+    const serverFilterInput = document.getElementById('serverFilterInput');
+    const querySuggestions = document.getElementById('querySuggestions');
+    let suggestionItems = [];
+    let activeSuggestionIndex = -1;
+
+    const submitFilters = () => {
+      if (!form) return;
+      if (typeof form.requestSubmit === 'function') {
+        form.requestSubmit();
+        return;
+      }
+      form.submit();
+    };
+
+    function currentClauseInfo() {
+      if (!serverFilterInput) return null;
+      const value = serverFilterInput.value || '';
+      const cursor = serverFilterInput.selectionStart ?? value.length;
+      const before = value.slice(0, cursor);
+      let start = Math.max(before.lastIndexOf('&&'), before.lastIndexOf('||'));
+      start = start >= 0 ? start + 2 : 0;
+      const rawClause = value.slice(start, cursor);
+      const match = rawClause.match(/^\s*\(*\s*(.*?)\s*(?:(=|!=|<=|>=|<|>)\s*(.*))?$/);
+      return {
+        start,
+        end: cursor,
+        rawClause,
+        column: (match?.[1] || '').trim(),
+        operator: match?.[2] || '',
+        valueFragment: (match?.[3] || '').trim(),
+      };
+    }
+
+    function normalizeQueryToken(value) {
+      return (value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    function hideSuggestions() {
+      if (!querySuggestions) return;
+      querySuggestions.classList.add('hidden');
+      querySuggestions.innerHTML = '';
+      suggestionItems = [];
+      activeSuggestionIndex = -1;
+    }
+
+    function applySuggestion(item) {
+      if (!serverFilterInput) return;
+      const info = currentClauseInfo();
+      if (!info) return;
+      const fullValue = serverFilterInput.value || '';
+      const prefix = fullValue.slice(0, info.start);
+      const suffix = fullValue.slice(info.end);
+      const clausePrefix = (info.rawClause.match(/^(\s*\(*\s*)/) || [''])[0];
+      let nextClause = '';
+      if (item.kind === 'column') {
+        nextClause = `${clausePrefix}${item.value}`;
+      } else if (item.kind === 'operator') {
+        nextClause = `${clausePrefix}${info.column} ${item.value} `;
+      } else if (item.kind === 'value') {
+        nextClause = `${clausePrefix}${info.column} ${info.operator} ${item.value}`;
+      }
+      serverFilterInput.value = prefix + nextClause + suffix;
+      const cursorPosition = (prefix + nextClause).length;
+      serverFilterInput.focus();
+      serverFilterInput.setSelectionRange(cursorPosition, cursorPosition);
+      hideSuggestions();
+    }
+
+    function renderSuggestions(items) {
+      if (!querySuggestions || items.length === 0) {
+        hideSuggestions();
+        return;
+      }
+      suggestionItems = items;
+      activeSuggestionIndex = -1;
+      querySuggestions.innerHTML = items.map((item, index) => (
+        `<button type="button" class="ui-query-suggestion" data-index="${index}"><strong>${item.value}</strong><span>${item.hint}</span></button>`
+      )).join('');
+      querySuggestions.classList.remove('hidden');
+      querySuggestions.querySelectorAll('.ui-query-suggestion').forEach((button) => {
+        button.addEventListener('mousedown', (event) => {
+          event.preventDefault();
+          const index = Number(button.dataset.index);
+          if (!Number.isNaN(index) && suggestionItems[index]) {
+            applySuggestion(suggestionItems[index]);
+          }
+        });
+      });
+    }
+
+    function updateSuggestions() {
+      if (!serverFilterInput) return;
+      const info = currentClauseInfo();
+      if (!info) return;
+      if (info.operator) {
+        hideSuggestions();
+        return;
+      }
+      const fieldEditMatch = info.rawClause.match(/^(\s*\(*\s*)(.*?)$/);
+      if (!fieldEditMatch) {
+        hideSuggestions();
+        return;
+      }
+      const fragment = (fieldEditMatch[2] || '').trim();
+      if (!fragment) {
+        hideSuggestions();
+        return;
+      }
+      const normalizedFragment = normalizeQueryToken(fragment);
+      const scored = queryColumns
+        .map((col) => {
+          const name = col.name.toLowerCase();
+          const label = col.label.toLowerCase();
+          const normalizedName = normalizeQueryToken(col.name);
+          const normalizedLabel = normalizeQueryToken(col.label);
+          const labelWords = label.split(/[\s_]+/).filter(Boolean);
+          let score = -1;
+          if (normalizedName.startsWith(normalizedFragment)) {
+            score = 120 - (normalizedName.length - normalizedFragment.length);
+          } else if (normalizedLabel.startsWith(normalizedFragment)) {
+            score = 110 - (normalizedLabel.length - normalizedFragment.length);
+          } else if (labelWords.some((word) => normalizeQueryToken(word).startsWith(normalizedFragment))) {
+            score = 100;
+          } else if (normalizedName.includes(normalizedFragment)) {
+            score = 80 - normalizedName.indexOf(normalizedFragment);
+          } else if (normalizedLabel.includes(normalizedFragment)) {
+            score = 70 - normalizedLabel.indexOf(normalizedFragment);
+          } else if (name.includes(fragment.toLowerCase())) {
+            score = 60 - name.indexOf(fragment.toLowerCase());
+          } else if (label.includes(fragment.toLowerCase())) {
+            score = 50 - label.indexOf(fragment.toLowerCase());
+          }
+          return { col, score };
+        })
+        .filter((item) => item.score >= 0)
+        .sort((a, b) => b.score - a.score || a.col.name.localeCompare(b.col.name))
+        .slice(0, 8)
+        .map((item) => ({
+          kind: 'column',
+          value: item.col.label,
+          hint: item.col.label !== item.col.name ? item.col.name : item.col.dataType,
+        }));
+      renderSuggestions(scored);
+    }
+
+    if (form && scope) {
+      scope.addEventListener('change', submitFilters);
+      if (group && !group.disabled) {
+        group.addEventListener('change', submitFilters);
+      }
+      if (taskType) {
+        taskType.addEventListener('change', submitFilters);
+      }
+      if (priority) {
+        priority.addEventListener('change', submitFilters);
+      }
+      if (assignedTo) {
+        assignedTo.addEventListener('change', submitFilters);
+      }
+    }
+    if (serverFilterInput) {
+      serverFilterInput.addEventListener('input', updateSuggestions);
+      serverFilterInput.addEventListener('click', updateSuggestions);
+      serverFilterInput.addEventListener('keydown', (event) => {
+        if (!querySuggestions || querySuggestions.classList.contains('hidden')) return;
+        const buttons = Array.from(querySuggestions.querySelectorAll('.ui-query-suggestion'));
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          activeSuggestionIndex = Math.min(activeSuggestionIndex + 1, buttons.length - 1);
+        } else if (event.key === 'ArrowUp') {
+          event.preventDefault();
+          activeSuggestionIndex = Math.max(activeSuggestionIndex - 1, 0);
+        } else if (event.key === 'Enter' && suggestionItems.length > 0) {
+          event.preventDefault();
+          if (activeSuggestionIndex < 0) {
+            activeSuggestionIndex = 0;
+          }
+          applySuggestion(suggestionItems[activeSuggestionIndex]);
+          return;
+        } else if (event.key === 'Escape') {
+          hideSuggestions();
+          return;
+        } else {
+          return;
+        }
+        buttons.forEach((button, index) => {
+          button.classList.toggle('is-active', index === activeSuggestionIndex);
+        });
+      });
+      serverFilterInput.addEventListener('blur', () => {
+        setTimeout(hideSuggestions, 120);
+      });
+    }
+
+    if (board && serverFilterInput) {
+      document.addEventListener('keydown', (event) => {
+        const target = event.target;
+        const tagName = target && target.tagName ? String(target.tagName).toUpperCase() : '';
+        const editable = target && (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT');
+        if (editable || event.key !== '/') return;
+        event.preventDefault();
+        serverFilterInput.focus();
+        serverFilterInput.select();
+      });
+    }
+    if (!board) return;
+
+    const lanes = Array.from(board.querySelectorAll('.ui-task-board-lane'));
+    function updateLaneUI(lane) {
+      const body = lane?.querySelector('[data-lane-body]');
+      if (!body) return;
+      const count = body.querySelectorAll('.ui-task-board-card').length;
+      const badge = lane.querySelector('[data-lane-count]');
+      const empty = body.querySelector('[data-lane-empty]');
+      if (badge) {
+        badge.textContent = String(count);
+      }
+      if (empty) {
+        empty.hidden = count > 0;
+      }
+    }
+    lanes.forEach(updateLaneUI);
+
+    const realtimeTables = [
+      {{range $index, $tableName := .TaskBoardSourceTables}}{{if $index}},{{end}}{{printf "%q" $tableName}}{{end}}
+    ].filter(Boolean);
+    if (window.EventSource && realtimeTables.length > 0) {
+      const sources = realtimeTables.map((tableName) => new EventSource(`/api/realtime/stream?table=${encodeURIComponent(tableName)}`));
+      let pendingReload = false;
+      let reloadTimer = 0;
+
+      function parsePayload(event) {
+        try {
+          return JSON.parse(event.data || '{}');
+        } catch (_) {
+          return {};
+        }
+      }
+
+      function triggerReload() {
+        if (reloadTimer) return;
+        reloadTimer = window.setTimeout(() => {
+          window.location.reload();
+        }, 220);
+      }
+
+      function scheduleReload() {
+        if (document.visibilityState === 'hidden') {
+          pendingReload = true;
+          return;
+        }
+        triggerReload();
+      }
+
+      sources.forEach((source) => {
+        source.addEventListener('record.changed', (event) => {
+          const payload = parsePayload(event);
+          if ((payload.kind || '') === 'comment') return;
+          scheduleReload();
+        });
+      });
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'hidden' && pendingReload) {
+          pendingReload = false;
+          triggerReload();
+        }
+      });
+
+      window.addEventListener('pagehide', () => {
+        window.clearTimeout(reloadTimer);
+        sources.forEach((source) => source.close());
+      }, { once: true });
+    }
+
+    const canUpdate = board.dataset.canUpdate === 'true';
+    const defaultUpdateURL = board.dataset.updateUrl || '';
+    if (!canUpdate) return;
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const cards = Array.from(board.querySelectorAll('.ui-task-board-card[draggable="true"]'));
+    let draggedCard = null;
+    let sourceLane = null;
+    let pendingUpdate = false;
+
+    board.querySelectorAll('.ui-task-board-assignment-picker').forEach((picker) => {
+      let closeTimer = 0;
+
+      const openPicker = () => {
+        if (closeTimer) {
+          window.clearTimeout(closeTimer);
+          closeTimer = 0;
+        }
+        picker.classList.add('is-open');
+      };
+
+      const closePicker = () => {
+        if (closeTimer) {
+          window.clearTimeout(closeTimer);
+        }
+        closeTimer = window.setTimeout(() => {
+          picker.classList.remove('is-open');
+          closeTimer = 0;
+        }, 220);
+      };
+
+      picker.addEventListener('mouseenter', openPicker);
+      picker.addEventListener('mouseleave', closePicker);
+      picker.addEventListener('focusin', openPicker);
+      picker.addEventListener('focusout', () => {
+        window.setTimeout(() => {
+          if (!picker.contains(document.activeElement)) {
+            closePicker();
+          }
+        }, 0);
+      });
+    });
+
+    function showBoardError(message) {
+      const banner = document.getElementById('global-error-banner');
+      if (banner) {
+        banner.textContent = message || 'Failed to update task state';
+        banner.classList.remove('hidden');
+        window.setTimeout(() => banner.classList.add('hidden'), 3200);
+        return;
+      }
+      window.alert(message || 'Failed to update task state');
+    }
+
+    function laneBody(lane) {
+      return lane?.querySelector('[data-lane-body]');
+    }
+
+    function moveCardToLane(card, lane) {
+      const body = laneBody(lane);
+      if (!body) return;
+      const empty = body.querySelector('[data-lane-empty]');
+      if (empty) {
+        body.insertBefore(card, empty);
+        return;
+      }
+      body.appendChild(card);
+    }
+
+    function resetLaneHighlights() {
+      lanes.forEach((lane) => {
+        lane.classList.remove('is-drop-target');
+        lane.dataset.dragDepth = '0';
+      });
+    }
+
+    function clearCardDragState(card) {
+      if (card) {
+        card.classList.remove('is-dragging');
+      }
+    }
+
+    function cleanupDragState() {
+      clearCardDragState(draggedCard);
+      draggedCard = null;
+      sourceLane = null;
+      resetLaneHighlights();
+    }
+
+    async function persistTaskUpdate(updateURL, taskID, fields) {
+      if (!updateURL) {
+        throw new Error('Missing task update route');
+      }
+      const response = await fetch(updateURL, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrfToken
+        },
+        body: JSON.stringify({
+          ids: [taskID],
+          fields
+        })
+      });
+
+      if (response.ok) {
+        return;
+      }
+
+      const message = (await response.text()).trim();
+      throw new Error(message || 'Failed to update task');
+    }
+
+    cards.forEach((card) => {
+      card.addEventListener('dragstart', (event) => {
+        if (pendingUpdate) {
+          event.preventDefault();
+          return;
+        }
+        draggedCard = card;
+        sourceLane = card.closest('.ui-task-board-lane');
+        card.classList.add('is-dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', card.dataset.taskId || '');
+        }
+      });
+
+      card.addEventListener('dragend', () => {
+        if (pendingUpdate) {
+          clearCardDragState(card);
+          resetLaneHighlights();
+          return;
+        }
+        cleanupDragState();
+      });
+    });
+
+    lanes.forEach((lane) => {
+      const isDroppable = lane.dataset.droppable === 'true';
+      lane.dataset.dragDepth = '0';
+
+      lane.addEventListener('dragenter', (event) => {
+        if (!draggedCard || !isDroppable) return;
+        event.preventDefault();
+        const depth = Number(lane.dataset.dragDepth || '0') + 1;
+        lane.dataset.dragDepth = String(depth);
+        lane.classList.add('is-drop-target');
+      });
+
+      lane.addEventListener('dragover', (event) => {
+        if (!draggedCard || !isDroppable) return;
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'move';
+        }
+      });
+
+      lane.addEventListener('dragleave', () => {
+        if (!draggedCard || !isDroppable) return;
+        const depth = Math.max(Number(lane.dataset.dragDepth || '0') - 1, 0);
+        lane.dataset.dragDepth = String(depth);
+        if (depth === 0) {
+          lane.classList.remove('is-drop-target');
+        }
+      });
+
+      lane.addEventListener('drop', async (event) => {
+        if (!draggedCard || !isDroppable || pendingUpdate) return;
+        event.preventDefault();
+
+        const nextState = lane.dataset.state || '';
+        const currentState = draggedCard.dataset.state || '';
+        const taskID = draggedCard.dataset.taskId || '';
+        const activeUpdateURL = draggedCard.dataset.updateUrl || defaultUpdateURL;
+        const activeCard = draggedCard;
+        if (!taskID || !nextState || nextState === currentState || !sourceLane) {
+          cleanupDragState();
+          return;
+        }
+
+        pendingUpdate = true;
+        const previousLane = sourceLane;
+        moveCardToLane(activeCard, lane);
+        activeCard.dataset.state = nextState;
+        activeCard.classList.add('is-saving');
+        updateLaneUI(previousLane);
+        updateLaneUI(lane);
+
+        try {
+          await persistTaskUpdate(activeUpdateURL, taskID, { state: nextState });
+        } catch (error) {
+          moveCardToLane(activeCard, previousLane);
+          activeCard.dataset.state = currentState;
+          updateLaneUI(previousLane);
+          updateLaneUI(lane);
+          showBoardError(error instanceof Error ? error.message : 'Failed to update task state');
+        } finally {
+          pendingUpdate = false;
+          activeCard.classList.remove('is-saving');
+          clearCardDragState(activeCard);
+          cleanupDragState();
+        }
+      });
+    });
+
+    board.querySelectorAll('[data-assignee-select]').forEach((select) => {
+      select.addEventListener('change', async () => {
+        const assigneeID = (select.value || '').trim();
+        if (!assigneeID || pendingUpdate) {
+          select.value = '';
+          return;
+        }
+
+        const card = select.closest('.ui-task-board-card');
+        const taskID = card?.dataset.taskId || '';
+        const groupID = card?.dataset.groupId || '';
+        const updateURL = card?.dataset.updateUrl || defaultUpdateURL;
+        if (!card || !taskID || !groupID) {
+          select.value = '';
+          return;
+        }
+
+        pendingUpdate = true;
+        card.classList.add('is-saving');
+        select.disabled = true;
+
+        try {
+          await persistTaskUpdate(updateURL, taskID, {
+            assignment_group_id: groupID,
+            assigned_user_id: assigneeID
+          });
+          window.location.reload();
+        } catch (error) {
+          select.disabled = false;
+          select.value = '';
+          card.classList.remove('is-saving');
+          pendingUpdate = false;
+          showBoardError(error instanceof Error ? error.message : 'Failed to assign task');
+        }
+      });
+    });
+
+  });
+</script>
+{{end}}

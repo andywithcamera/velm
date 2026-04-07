@@ -1,0 +1,200 @@
+{{define "navbar"}}
+<nav class="ui-topnav">
+    <div class="ui-topnav-left">
+        <button
+            id="burgerBtn"
+            type="button"
+            class="ui-topnav-icon"
+            aria-label="Open navigation"
+            aria-controls="menu"
+            aria-expanded="false"
+            data-disclosure-target="menu"
+            data-disclosure-icon="burgerIcon"
+            data-disclosure-icon-open-class="open"
+        >
+            <svg
+                id="burgerIcon"
+                class="ui-topnav-burger"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            >
+                <path class="line1 transition-all duration-300" d="M4 6h16" />
+                <path class="line2 transition-all duration-300" d="M4 12h16" />
+                <path class="line3 transition-all duration-300" d="M4 18h16" />
+            </svg>
+        </button>
+
+        <div
+            id="menu"
+            class="ui-nav-drawer hidden"
+            hx-get="/api/menu"
+            hx-trigger="load"
+            hx-swap="innerHTML"
+        >
+            <span class="ui-dropdown-label">Navigation</span>
+            <a href="/" class="ui-menu-link" data-nav>Loading menu...</a>
+        </div>
+
+        <a href="/" class="ui-topnav-brand" data-nav>
+            <span class="ui-topnav-brand-text">velm.dev</span>
+        </a>
+    </div>
+
+        <div class="ui-topnav-center">
+        <div class="ui-topnav-search-shell">
+            <label class="ui-sr-only" for="searchInput">Global search</label>
+            <input
+                id="searchInput"
+                name="q"
+                type="text"
+                placeholder="Search records, docs, tables, and tools"
+                class="ui-topnav-search"
+                hx-get="/api/search"
+                hx-trigger="keyup changed delay:200ms"
+                hx-target="#searchResults"
+                hx-swap="innerHTML"
+                autocomplete="off"
+            />
+            <div
+                id="searchResults"
+                class="ui-topnav-search-results hidden"
+                _="on htmx:afterSettle if #searchResults.innerHTML.trim() != '' then remove .hidden else add .hidden"
+            ></div>
+        </div>
+    </div>
+
+    <div class="ui-topnav-actions">
+        <button
+            type="button"
+            class="ui-topnav-mobile-search"
+            aria-controls="mobileSearchPanel"
+            aria-expanded="false"
+            data-disclosure-target="mobileSearchPanel"
+        >
+            Search
+        </button>
+
+        <div
+            id="notification-menu-container"
+            class="ui-topnav-notifications"
+            hx-get="/api/notifications/panel?return_to={{urlquery .Uri}}"
+            hx-trigger="load, every 30s, notifications:refresh from:body"
+            hx-swap="outerHTML"
+        >
+            <button
+                type="button"
+                class="ui-topnav-icon"
+                disabled
+                aria-label="Notifications"
+            >
+                <svg class="ui-topnav-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V4a2 2 0 10-4 0v1.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0m6 0H9" />
+                </svg>
+            </button>
+        </div>
+
+        <div class="ui-topnav-user">
+            <button
+                type="button"
+                class="ui-topnav-user-trigger"
+                aria-controls="user-menu"
+                aria-expanded="false"
+                data-disclosure-target="user-menu"
+            >
+                <span class="ui-topnav-user-name">{{.User.Name}}</span>
+                <svg class="ui-topnav-user-caret" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M19 9l-7 7-7-7"
+                    />
+                </svg>
+            </button>
+
+            <div id="user-menu" class="ui-dropdown-menu ui-user-menu hidden">
+                <div class="ui-dropdown-label">Operations</div>
+                <a
+                    _="on click toggle .hidden on #user-menu"
+                    href="{{if .User.ID}}/f/_user/{{.User.ID}}{{else}}/t/_user{{end}}"
+                    class="ui-menu-link"
+                    data-nav
+                >Profile</a>
+                <a
+                    _="on click toggle .hidden on #user-menu"
+                    href="/t/preferences"
+                    class="ui-menu-link"
+                    data-nav
+                >Preferences</a>
+                {{if eq .User.Role "admin"}}
+                <div class="ui-dropdown-label">Admin</div>
+                <a _="on click toggle .hidden on #user-menu" href="/t/_user" class="ui-menu-link" data-nav>Users</a>
+                <a _="on click toggle .hidden on #user-menu" href="/t/_group" class="ui-menu-link" data-nav>Groups</a>
+                <a _="on click toggle .hidden on #user-menu" href="/t/_group_membership" class="ui-menu-link" data-nav>Group memberships</a>
+                <a _="on click toggle .hidden on #user-menu" href="/t/_role" class="ui-menu-link" data-nav>Roles</a>
+                <a _="on click toggle .hidden on #user-menu" href="/t/_group_role" class="ui-menu-link" data-nav>Role assignments</a>
+                <a _="on click toggle .hidden on #user-menu" href="/t/_user_preference" class="ui-menu-link" data-nav>User preferences</a>
+                <a _="on click toggle .hidden on #user-menu" href="/t/_property" class="ui-menu-link" data-nav>System properties</a>
+                <a _="on click toggle .hidden on #user-menu" href="/admin/access" class="ui-menu-link" data-nav>Access control</a>
+                <a _="on click toggle .hidden on #user-menu" href="/admin/audit" class="ui-menu-link" data-nav>System log</a>
+                <a _="on click toggle .hidden on #user-menu" href="/admin/monitoring" class="ui-menu-link" data-nav>Request metrics</a>
+                <a _="on click toggle .hidden on #user-menu" href="/admin/run-script" class="ui-menu-link" data-nav>Run script</a>
+                <a _="on click toggle .hidden on #user-menu" href="/admin/app-editor" class="ui-menu-link" data-nav>Application editor</a>
+                {{end}}
+                <div class="ui-dropdown-label">Appearance</div>
+                <button
+                    type="button"
+                    class="ui-theme-toggle"
+                    data-theme-toggle
+                    role="switch"
+                    aria-checked="false"
+                >
+                    <span class="ui-theme-toggle-copy">
+                        <strong>Dark mode</strong>
+                        <small data-theme-toggle-hint>White background / black text</small>
+                    </span>
+                    <span class="ui-theme-toggle-switch" aria-hidden="true">
+                        <span class="ui-theme-toggle-thumb"></span>
+                    </span>
+                </button>
+                <div class="ui-dropdown-label">Session</div>
+                <form method="POST" action="/logout">
+                    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                    <button
+                        type="submit"
+                        _="on click toggle .hidden on #user-menu"
+                        class="ui-menu-button"
+                    >
+                        Logout
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<div id="mobileSearchPanel" class="ui-topnav-mobile-panel hidden">
+    <label class="ui-sr-only" for="mobileSearchInput">Global search</label>
+    <input
+        id="mobileSearchInput"
+        name="q"
+        type="text"
+        placeholder="Search records, docs, tables, and tools"
+        class="ui-topnav-search"
+        hx-get="/api/search"
+        hx-trigger="keyup changed delay:200ms"
+        hx-target="#searchResultsMobile"
+        hx-swap="innerHTML"
+        autocomplete="off"
+    />
+    <div
+        id="searchResultsMobile"
+        class="ui-topnav-search-results hidden"
+        _="on htmx:afterSettle if #searchResultsMobile.innerHTML.trim() != '' then remove .hidden else add .hidden"
+    ></div>
+</div>
+{{end}}

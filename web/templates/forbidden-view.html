@@ -1,0 +1,19 @@
+{{define "forbidden-view"}}
+<section class="ui-stack" style="max-width: 44rem; margin: 0 auto;">
+  <div class="ui-alert ui-alert-danger">
+    <span class="ui-kicker" style="color: #912018;">Access Blocked</span>
+    <h1 class="ui-title" style="color: #912018; margin-top: 0;">Permission Denied</h1>
+    <p>Your account does not currently have access to perform this action.</p>
+    {{if .Required}}
+      <p>Required permission: <code>{{.Required}}</code></p>
+    {{end}}
+    {{if .AppID}}
+      <p>App scope: <code>{{.AppID}}</code></p>
+    {{end}}
+  </div>
+  <div class="ui-form-actions" style="justify-content: flex-start;">
+    <a href="/" class="ui-btn ui-btn-primary">Return Home</a>
+    <a href="/admin/access" class="ui-btn ui-btn-secondary">Access Control</a>
+  </div>
+</section>
+{{end}}

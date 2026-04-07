@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: velm
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: velm
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U velm -d velm"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://velm:${DATABASE_PASSWORD}@db:5432/velm?sslmode=disable
+      PORT: "3000"
+      BOOTSTRAP_USER_EMAIL: ${BOOTSTRAP_USER_EMAIL:-}
+      BOOTSTRAP_USER_NAME: ${BOOTSTRAP_USER_NAME:-}
+      BOOTSTRAP_USER_PASSWORD: ${BOOTSTRAP_USER_PASSWORD:-}
+      BOOTSTRAP_USER_PASSWORD_FILE: ${BOOTSTRAP_USER_PASSWORD_FILE:-}
+      BOOTSTRAP_USER_ADMIN: ${BOOTSTRAP_USER_ADMIN:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

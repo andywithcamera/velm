@@ -1,0 +1,318 @@
+{{define "docs-manage-view"}}
+<section class="ui-stack">
+  <div class="ui-panel">
+    <div class="ui-section-header">
+      <div>
+        <span class="ui-kicker">Docs Workspace</span>
+        <h2 class="ui-title">Manage Docs</h2>
+        <p class="ui-section-copy">Edit libraries, author docs, and preview markdown without cluttering the reader-facing catalog.</p>
+      </div>
+      <div class="ui-list-state">
+        <a class="ui-action-link" href="{{if .DocsArticleSelected.ID}}{{.DocsArticleSelected.ReaderHref}}{{else if .DocsLibrarySelected.Slug}}/docs?library={{.DocsLibrarySelected.Slug}}{{else}}/docs{{end}}">Back To Catalog</a>
+        {{if .DocsSaved}}
+          <span class="ui-badge">Saved</span>
+        {{end}}
+        {{if .DocsLibrarySelected.Name}}
+          <span class="ui-badge ui-badge-neutral">Library: {{.DocsLibrarySelected.Name}}</span>
+        {{end}}
+        {{if .DocsArticleSelected.Number}}
+          <span class="ui-badge ui-badge-neutral">{{.DocsArticleSelected.Number}}</span>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="ui-workbench">
+    <aside class="ui-card ui-explorer">
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>Libraries</span>
+          <a class="ui-action-link" href="/docs/manage?new_library=1">New</a>
+        </div>
+        <div class="ui-explorer-list">
+          {{range .DocsLibraries}}
+            <a href="/docs/manage?library={{.Slug}}" class="ui-explorer-link {{if eq $.DocsLibrarySelected.Slug .Slug}}is-active{{end}}">
+              <span>
+                <strong>{{.Name}}</strong><br />
+                <span class="ui-explorer-meta">{{if .AppName}}{{if .AppLabel}}{{.AppLabel}}{{else}}{{.AppName}}{{end}} · {{end}}{{.Visibility}}{{if .IsDefault}} · default{{end}}</span>
+              </span>
+            </a>
+          {{else}}
+            <div class="ui-empty-state">
+              <strong>No libraries yet</strong>
+              <span>Docs libraries will appear here once apps are initialized.</span>
+            </div>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>{{if .DocsLibrarySelected.Slug}}Docs In {{.DocsLibrarySelected.Name}}{{else}}Search Results{{end}}</span>
+          {{if and .DocsLibrarySelected.Slug .DocsLibrarySelected.CanCreate}}
+            <a class="ui-action-link" href="/docs/manage?library={{.DocsLibrarySelected.Slug}}&new_article=1">New</a>
+          {{end}}
+        </div>
+        <form method="GET" action="/docs/manage" class="ui-stack" style="gap: 0.65rem;">
+          {{if .DocsLibrarySelected.Slug}}
+            <input type="hidden" name="library" value="{{.DocsLibrarySelected.Slug}}">
+          {{end}}
+          <input type="hidden" name="size" value="{{.DocsPageSize}}">
+          <input class="ui-input" name="q" value="{{.DocsSearch}}" placeholder="Search readable docs" />
+          <button type="submit" class="ui-btn ui-btn-secondary">Search</button>
+        </form>
+        <div class="ui-explorer-list" style="margin-top: 0.9rem;">
+          {{range .DocsArticles}}
+            <a href="/docs/manage?library={{.LibrarySlug}}&article={{.Slug}}&q={{$.DocsSearch}}&page={{$.DocsPage}}&size={{$.DocsPageSize}}" class="ui-explorer-link {{if and (eq $.DocsLibrarySelected.Slug .LibrarySlug) (eq $.DocsArticleSelected.Slug .Slug)}}is-active{{end}}">
+              <span>
+                <strong>{{.Title}}</strong><br />
+                <span class="ui-explorer-meta">{{if .Number}}{{.Number}} · {{end}}{{if ne $.DocsLibrarySelected.Slug .LibrarySlug}}{{.LibraryName}} · {{end}}v{{.VersionNum}} · {{.Status}}</span>
+              </span>
+            </a>
+          {{else}}
+            <div class="ui-empty-state">
+              <strong>No docs found</strong>
+              <span>{{if .DocsSearch}}Try a broader search.{{else}}Pick a library or start a new doc.{{end}}</span>
+            </div>
+          {{end}}
+        </div>
+        <div class="ui-paginator" style="padding-top: 0.9rem;">
+          <div class="ui-paginator-copy">{{.DocsTotal}} result(s) · page {{.DocsPage}} of {{.DocsTotalPages}}</div>
+          <div class="ui-toolbar-group">
+            {{if .DocsHasPrev}}
+              <a class="ui-btn ui-btn-secondary" href="/docs/manage{{if .DocsLibrarySelected.Slug}}?library={{.DocsLibrarySelected.Slug}}&{{else}}?{{end}}q={{.DocsSearch}}&page={{.DocsPrevPage}}&size={{.DocsPageSize}}">Prev</a>
+            {{end}}
+            {{if .DocsHasNext}}
+              <a class="ui-btn ui-btn-secondary" href="/docs/manage{{if .DocsLibrarySelected.Slug}}?library={{.DocsLibrarySelected.Slug}}&{{else}}?{{end}}q={{.DocsSearch}}&page={{.DocsNextPage}}&size={{.DocsPageSize}}">Next</a>
+            {{end}}
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="ui-workbench-editor ui-stack">
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h3 class="ui-section-title">Library</h3>
+            <p class="ui-section-copy">Each app gets a default docs library. Additional libraries can be app-specific or shared.</p>
+          </div>
+          {{if .DocsLibrarySelected.IsDefault}}
+            <span class="ui-badge ui-badge-neutral">Default</span>
+          {{end}}
+        </div>
+        <form method="POST" action="/api/docs/library/save" class="ui-form-grid">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="original_slug" value="{{.DocsLibrarySelected.Slug}}">
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-slug">Slug</label>
+            <input id="docs-library-slug" class="ui-input" name="slug" value="{{.DocsLibrarySelected.Slug}}" placeholder="library-slug" required {{if .DocsLibrarySelected.IsDefault}}readonly{{end}} />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-name">Name</label>
+            <input id="docs-library-name" class="ui-input" name="name" value="{{.DocsLibrarySelected.Name}}" placeholder="Library name" required />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-app">App</label>
+            <select id="docs-library-app" class="ui-select" name="app_name" {{if .DocsLibrarySelected.IsDefault}}disabled{{end}}>
+              {{range .DocsApps}}
+                <option value="{{.Name}}" {{if eq $.DocsLibrarySelected.AppName .Name}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+            {{if .DocsLibrarySelected.IsDefault}}
+              <input type="hidden" name="app_name" value="{{.DocsLibrarySelected.AppName}}">
+            {{end}}
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-visibility">Read Fallback</label>
+            <select id="docs-library-visibility" class="ui-select" name="visibility">
+              <option value="private" {{if eq .DocsLibrarySelected.Visibility "private"}}selected{{end}}>Private</option>
+              <option value="app" {{if or (eq .DocsLibrarySelected.Visibility "") (eq .DocsLibrarySelected.Visibility "app")}}selected{{end}}>App</option>
+              <option value="public" {{if eq .DocsLibrarySelected.Visibility "public"}}selected{{end}}>Public</option>
+            </select>
+          </div>
+          <div class="ui-field" data-span="full">
+            <label class="ui-field-label" for="docs-library-description">Description</label>
+            <textarea id="docs-library-description" class="ui-textarea" name="description" placeholder="What lives in this library?">{{.DocsLibrarySelected.Description}}</textarea>
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-create-roles">Create Roles</label>
+            <input id="docs-library-create-roles" class="ui-input" name="create_roles" value="{{.DocsLibrarySelected.CreateRolesText}}" placeholder="editor, writer" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-read-roles">Read Roles</label>
+            <input id="docs-library-read-roles" class="ui-input" name="read_roles" value="{{.DocsLibrarySelected.ReadRolesText}}" placeholder="reader, operator" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-edit-roles">Edit Roles</label>
+            <input id="docs-library-edit-roles" class="ui-input" name="edit_roles" value="{{.DocsLibrarySelected.EditRolesText}}" placeholder="editor, maintainer" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="docs-library-delete-roles">Delete Roles</label>
+            <input id="docs-library-delete-roles" class="ui-input" name="delete_roles" value="{{.DocsLibrarySelected.DeleteRolesText}}" placeholder="admin" />
+          </div>
+          <div class="ui-form-actions" style="grid-column: 1 / -1;">
+            <button type="submit" class="ui-btn ui-btn-primary">{{if .DocsLibrarySelected.Slug}}Save Library{{else}}Create Library{{end}}</button>
+          </div>
+        </form>
+        {{if and .DocsLibrarySelected.Slug .DocsLibrarySelected.CanDelete}}
+          <form method="POST" action="/api/docs/library/archive" class="ui-inline-form" style="margin-top: 1rem;">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
+            <button type="submit" class="ui-btn ui-btn-secondary" onclick="return confirm('Archive this library? Existing docs stay in history but the library is removed from active navigation.');">Archive Library</button>
+          </form>
+        {{end}}
+      </section>
+
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h3 class="ui-section-title">Doc Editor</h3>
+            <p class="ui-section-copy">Write markdown and see the reading experience render live below. No split pane, just one authoring flow.</p>
+          </div>
+          {{if and .DocsLibrarySelected.Slug .DocsArticleSelected.Slug}}
+            <span class="ui-badge ui-badge-neutral">v{{.DocsArticleSelected.VersionNum}} · {{.DocsArticleSelected.Status}}</span>
+          {{end}}
+        </div>
+        {{if .DocsLibrarySelected.Slug}}
+          <form method="POST" action="/api/docs/article/save" class="ui-form-grid">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
+            <input type="hidden" name="original_slug" value="{{.DocsArticleSelected.Slug}}">
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-slug">Slug</label>
+              <input id="docs-article-slug" class="ui-input" name="slug" value="{{.DocsArticleSelected.Slug}}" placeholder="doc-slug" required />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-title">Title</label>
+              <input id="docs-article-title" class="ui-input" name="title" value="{{.DocsArticleSelected.Title}}" placeholder="Doc title" required />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-status">Status</label>
+              <select id="docs-article-status" class="ui-select" name="status">
+                <option value="draft" {{if or (eq .DocsArticleSelected.Status "") (eq .DocsArticleSelected.Status "draft")}}selected{{end}}>Draft</option>
+                <option value="published" {{if eq .DocsArticleSelected.Status "published"}}selected{{end}}>Published</option>
+                <option value="archived" {{if eq .DocsArticleSelected.Status "archived"}}selected{{end}}>Archived</option>
+              </select>
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-tags">Tags</label>
+              <input id="docs-article-tags" class="ui-input" name="tags" value="{{.DocsArticleSelected.Tags}}" placeholder="ops, onboarding, api" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-read-roles">Read Roles</label>
+              <input id="docs-article-read-roles" class="ui-input" name="read_roles" value="{{.DocsArticleSelected.ReadRolesText}}" placeholder="inherits library when blank" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-edit-roles">Edit Roles</label>
+              <input id="docs-article-edit-roles" class="ui-input" name="edit_roles" value="{{.DocsArticleSelected.EditRolesText}}" placeholder="inherits library when blank" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-delete-roles">Delete Roles</label>
+              <input id="docs-article-delete-roles" class="ui-input" name="delete_roles" value="{{.DocsArticleSelected.DeleteRolesText}}" placeholder="inherits library when blank" />
+            </div>
+            <div class="ui-field" data-span="full">
+              <label class="ui-field-label" for="docs-article-body">Markdown</label>
+              <textarea id="docs-article-body" class="ui-textarea font-mono" name="markdown_body" rows="18" placeholder="# Heading&#10;Write the doc here..." data-docs-markdown-input="true">{{.DocsArticleSelected.MarkdownBody}}</textarea>
+            </div>
+            <div class="ui-form-actions" style="grid-column: 1 / -1;">
+              <button type="submit" class="ui-btn ui-btn-primary">{{if .DocsArticleSelected.Slug}}Save Doc{{else}}Create Doc{{end}}</button>
+            </div>
+          </form>
+          {{if and .DocsArticleSelected.Slug .DocsArticleSelected.CanDelete}}
+            <form method="POST" action="/api/docs/article/archive" class="ui-inline-form" style="margin-top: 1rem;">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
+              <input type="hidden" name="article_slug" value="{{.DocsArticleSelected.Slug}}">
+              <button type="submit" class="ui-btn ui-btn-secondary" onclick="return confirm('Archive this doc? Current and historical versions will be retained.');">Archive Doc</button>
+            </form>
+          {{end}}
+          <div class="ui-card ui-form-section" style="margin-top: 1rem;">
+            <div class="ui-section-header">
+              <div>
+                <h4 class="ui-section-title">Rendered View</h4>
+                <p class="ui-section-copy">This updates live from the markdown above.</p>
+              </div>
+              {{if .DocsVersionSelected}}
+                <span class="ui-badge ui-badge-neutral">Previewing v{{.DocsVersionSelected}}</span>
+              {{end}}
+            </div>
+            <article class="ui-content-prose" data-docs-preview-target="true">{{.DocsPreviewRendered}}</article>
+          </div>
+        {{else}}
+          <div class="ui-empty-state">
+            <strong>Select a library first</strong>
+            <span>Docs are created inside libraries. Pick one from the left, or create a new library.</span>
+          </div>
+        {{end}}
+      </section>
+
+      {{if .DocsArticleSelected.Slug}}
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <h3 class="ui-section-title">Version History</h3>
+              <p class="ui-section-copy">Every save retains a historical markdown snapshot.</p>
+            </div>
+          </div>
+          <div class="ui-explorer-list">
+            {{range .DocsVersions}}
+              <a href="{{.Href}}" class="ui-explorer-link {{if .Selected}}is-active{{end}}">
+                <span>
+                  <strong>v{{.VersionNum}}</strong><br />
+                  <span class="ui-explorer-meta">{{.Status}} · {{.CreatedAt}}</span>
+                </span>
+              </a>
+            {{else}}
+              <div class="ui-empty-state">
+                <strong>No version history yet</strong>
+                <span>The first save will create version history automatically.</span>
+              </div>
+            {{end}}
+          </div>
+        </section>
+      {{end}}
+    </div>
+  </div>
+</section>
+
+<script>
+  (function () {
+    const input = document.querySelector("[data-docs-markdown-input='true']");
+    const preview = document.querySelector("[data-docs-preview-target='true']");
+    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+    if (!input || !preview) return;
+
+    let timer = null;
+
+    function renderPreview(markdown) {
+      const formData = new FormData();
+      formData.set("csrf_token", tokenMeta ? tokenMeta.content : "");
+      formData.set("markdown_body", markdown);
+
+      fetch("/api/docs/preview", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "X-Requested-With": "XMLHttpRequest"
+        },
+        body: formData
+      }).then((response) => {
+        if (!response.ok) throw new Error("preview");
+        return response.json();
+      }).then((payload) => {
+        preview.innerHTML = payload && payload.html ? payload.html : "<p>Nothing to preview yet.</p>";
+      }).catch(() => {
+        preview.innerHTML = "<p>Unable to render preview right now.</p>";
+      });
+    }
+
+    input.addEventListener("input", function () {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(function () {
+        renderPreview(input.value || "");
+      }, 180);
+    });
+  })();
+</script>
+{{end}}

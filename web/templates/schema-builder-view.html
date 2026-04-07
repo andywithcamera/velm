@@ -1,0 +1,422 @@
+{{define "schema-builder-view"}}
+<section class="ui-stack">
+  <div class="ui-panel">
+    <div class="ui-section-header">
+      <div>
+        <span class="ui-kicker">Builder Workbench</span>
+        <h2 class="ui-title">Schema Builder</h2>
+        <p class="ui-section-copy">Manage app tables and columns in a split editor layout. Core and system tables remain protected.</p>
+      </div>
+      <div class="ui-list-state">
+        {{if .BuilderTableCreated}}
+          <span class="ui-badge">Table created</span>
+        {{end}}
+        {{if .BuilderColumnCreated}}
+          <span class="ui-badge">Column created</span>
+        {{end}}
+        {{if .BuilderSchemaPlanned}}
+          <span class="ui-badge ui-badge-warn">Dry run ready</span>
+        {{end}}
+        {{if .BuilderSchemaApplied}}
+          <span class="ui-badge">Schema applied</span>
+        {{end}}
+      </div>
+    </div>
+  </div>
+
+  <div class="ui-workbench">
+    <aside class="ui-card ui-explorer">
+      <div class="ui-section-header">
+        <div>
+          <h3 class="ui-section-title">Explorer</h3>
+          <p class="ui-section-copy">Open a table to edit metadata, columns, and schema plans.</p>
+        </div>
+      </div>
+
+      <div class="ui-explorer-group">
+        <form method="GET" action="/builder/schema" class="ui-field">
+          <label class="ui-field-label" for="builder-app-selector">Application</label>
+          <select id="builder-app-selector" name="app" class="ui-select" onchange="this.form.submit()">
+            {{range .BuilderApps}}
+              <option value="{{.Name}}" {{if eq $.BuilderSelectedApp .Name}}selected{{end}}>{{if .Label}}{{.Label}}{{else}}{{.Name}}{{end}}</option>
+            {{else}}
+              <option value="">No apps</option>
+            {{end}}
+          </select>
+        </form>
+      </div>
+
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>Tables</span>
+          <span>{{len .BuilderTables}}</span>
+        </div>
+        <div class="ui-explorer-list">
+          {{range .BuilderTables}}
+            <a class="ui-explorer-link {{if eq $.BuilderSelectedTable .Name}}is-active{{end}}" href="/builder/schema?app={{$.BuilderSelectedApp}}&table={{.Name}}">
+              <span>
+                <strong class="font-mono text-sm">{{.Name}}</strong><br />
+                <span class="ui-explorer-meta">{{if .LabelPlural}}{{.LabelPlural}}{{else}}No label yet{{end}}</span>
+              </span>
+              <span class="ui-badge ui-badge-neutral">{{.ColumnCount}}</span>
+            </a>
+          {{else}}
+            <div class="ui-empty-state">
+              <strong>No app tables yet</strong>
+              <span>Create your first table from the panel below to start the schema.</span>
+            </div>
+          {{end}}
+        </div>
+      </div>
+
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>Create</span>
+          <span>New</span>
+        </div>
+        <div class="ui-stack">
+          <form method="POST" action="/api/builder/table/create" class="ui-stack" style="gap: 0.75rem;">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="app_name" value="{{.BuilderSelectedApp}}">
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-create-table-name">Table name</label>
+              <input id="builder-create-table-name" class="ui-input" name="name" placeholder="table_name" required />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-create-table-label-singular">Singular label</label>
+              <input id="builder-create-table-label-singular" class="ui-input" name="label_singular" placeholder="Work item" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-create-table-label-plural">Plural label</label>
+              <input id="builder-create-table-label-plural" class="ui-input" name="label_plural" placeholder="Work items" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-create-table-description">Description</label>
+              <textarea id="builder-create-table-description" class="ui-textarea" name="description" placeholder="Describe what this table owns."></textarea>
+            </div>
+            <button type="submit" class="ui-btn ui-btn-primary">Create Table</button>
+          </form>
+        </div>
+      </div>
+    </aside>
+
+    <div class="ui-workbench-editor">
+      {{if .BuilderSelectedTable}}
+        <div class="ui-tab-strip">
+          <span class="ui-tab is-active">Table</span>
+          <span class="ui-tab">Columns</span>
+          <span class="ui-tab">Schema Apply</span>
+        </div>
+
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <span class="ui-kicker">Active Table</span>
+              <h3 class="ui-section-title">{{.BuilderSelectedTable}}</h3>
+              <p class="ui-section-copy">Metadata and schema controls for the selected table. Use the explorer to switch context.</p>
+            </div>
+            <div class="ui-split-actions">
+              <a class="ui-btn ui-btn-secondary" href="/t/{{.BuilderSelectedTable}}">Open Table View</a>
+              <form method="POST" action="/api/builder/table/delete" onsubmit="return confirm('Delete table {{.BuilderSelectedTable}}? Table must be empty.');">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
+                <input type="hidden" name="table_name" value="{{.BuilderSelectedTable}}">
+                <button type="submit" class="ui-btn ui-btn-danger">Delete Table</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="ui-metadata-grid">
+            <div class="ui-metadata-item">
+              <span class="ui-metadata-label">Table key</span>
+              <span class="ui-metadata-value font-mono">{{.BuilderSelectedTableMeta.Name}}</span>
+            </div>
+            <div class="ui-metadata-item">
+              <span class="ui-metadata-label">Plural label</span>
+              <span class="ui-metadata-value">{{if .BuilderSelectedTableMeta.LabelPlural}}{{.BuilderSelectedTableMeta.LabelPlural}}{{else}}Unset{{end}}</span>
+            </div>
+            <div class="ui-metadata-item">
+              <span class="ui-metadata-label">Column count</span>
+              <span class="ui-metadata-value">{{len .BuilderColumns}}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <h3 class="ui-section-title">Table Metadata</h3>
+              <p class="ui-section-copy">Control labels and description independently from the physical schema.</p>
+            </div>
+          </div>
+          <form method="POST" action="/api/builder/table/update" class="ui-form-grid">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
+            <input type="hidden" name="table_name" value="{{.BuilderSelectedTableMeta.Name}}">
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-label-singular">Label singular</label>
+              <input id="builder-label-singular" class="ui-input" name="label_singular" value="{{.BuilderSelectedTableMeta.LabelSingular}}" placeholder="Label singular" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-label-plural">Label plural</label>
+              <input id="builder-label-plural" class="ui-input" name="label_plural" value="{{.BuilderSelectedTableMeta.LabelPlural}}" placeholder="Label plural" />
+            </div>
+            <div class="ui-field" data-span="full">
+              <label class="ui-field-label" for="builder-description">Description</label>
+              <textarea id="builder-description" class="ui-textarea" name="description" placeholder="Describe the table purpose">{{.BuilderSelectedTableMeta.Description}}</textarea>
+            </div>
+            <div class="ui-form-actions" style="grid-column: 1 / -1;">
+              <button type="submit" class="ui-btn ui-btn-primary">Save Table Metadata</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <h3 class="ui-section-title">Add Column</h3>
+              <p class="ui-section-copy">New fields appear immediately in metadata and can then be applied to the physical schema.</p>
+            </div>
+          </div>
+          <form method="POST" action="/api/builder/column/create" class="ui-form-grid">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
+            <input type="hidden" name="table_name" value="{{.BuilderSelectedTable}}">
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-column-name">Column name</label>
+              <input id="builder-column-name" class="ui-input" name="name" placeholder="column_name" required />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-column-label">Label</label>
+              <input id="builder-column-label" class="ui-input" name="label" placeholder="Human readable label" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-column-type">Data type</label>
+              <select id="builder-column-type" class="ui-select" name="data_type" required>
+                <option value="">Select data type...</option>
+                <option value="text">text</option>
+                <option value="varchar(255)">varchar(255)</option>
+                <option value="int">int</option>
+                <option value="numeric">numeric</option>
+                <option value="bool">bool</option>
+                <option value="date">date</option>
+                <option value="timestamptz">timestamptz</option>
+                <option value="uuid">uuid</option>
+                <option value="jsonb">jsonb</option>
+                <option value="reference">reference</option>
+                <option value="choice">choice</option>
+                <option value="longtext">longtext</option>
+                <option value="richtext">richtext</option>
+                <option value="markdown">markdown</option>
+                <option value="code">code</option>
+                <option value="code:javascript">code:javascript</option>
+                <option value="code:sql">code:sql</option>
+                <option value="email">email</option>
+                <option value="url">url</option>
+                <option value="phone">phone</option>
+                <option value="autnumber">autnumber</option>
+                <option value="reference:_user">reference:_user</option>
+                <option value="enum:new|in_progress|done">enum:new|in_progress|done</option>
+              </select>
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-column-prefix">Prefix</label>
+              <input id="builder-column-prefix" class="ui-input" name="prefix" placeholder="TASK" maxlength="4" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-reference-table">Reference table</label>
+              <input id="builder-reference-table" class="ui-input" name="reference_table" placeholder="task_work" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="builder-default-value">Default value</label>
+              <input id="builder-default-value" class="ui-input" name="default_value" placeholder="Metadata default value" />
+            </div>
+            <div class="ui-field" data-span="full">
+              <label class="ui-field-label" for="builder-column-choices">Choices JSON</label>
+              <textarea id="builder-column-choices" class="ui-textarea font-mono" name="choices" placeholder='[{"value":"new","label":"New"},{"value":"done","label":"Done"}]'></textarea>
+            </div>
+            <div class="ui-field" data-span="full">
+              <label class="ui-field-label" for="builder-validation-regex">Validation regex</label>
+              <input id="builder-validation-regex" class="ui-input font-mono" name="validation_regex" placeholder="Optional validation pattern" />
+            </div>
+            <div class="ui-field" data-span="full">
+              <label class="ui-field-label" for="builder-validation-expr">Validation expression</label>
+              <textarea id="builder-validation-expr" class="ui-textarea font-mono" name="validation_expr" placeholder='Examples:&#10;end_date &gt;= start_date&#10;len(value) &lt;= 2000&#10;status != "done" || completed_at != empty'></textarea>
+            </div>
+            <div class="ui-field" data-span="full">
+              <label class="ui-field-label" for="builder-condition-expr">Condition expression</label>
+              <textarea id="builder-condition-expr" class="ui-textarea font-mono" name="condition_expr" placeholder='Example: status = "done"'></textarea>
+            </div>
+            <div class="ui-field" data-span="full">
+              <label class="ui-field-label" for="builder-validation-message">Validation message</label>
+              <input id="builder-validation-message" class="ui-input" name="validation_message" placeholder="Shown when validation expression fails" />
+            </div>
+            <label class="ui-checkbox" data-span="full">
+              <input type="checkbox" name="is_nullable" checked />
+              Nullable column
+            </label>
+            <div class="ui-form-actions" style="grid-column: 1 / -1;">
+              <button type="submit" class="ui-btn ui-btn-primary">Add Column</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <h3 class="ui-section-title">Schema Apply</h3>
+              <p class="ui-section-copy">Generate the DDL plan first, then apply only after reviewing SQL and rollback steps.</p>
+            </div>
+            <div class="ui-split-actions">
+              <form method="POST" action="/api/builder/schema/apply">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
+                <input type="hidden" name="table_name" value="{{.BuilderSelectedTable}}">
+                <input type="hidden" name="mode" value="dry_run">
+                <button type="submit" class="ui-btn ui-btn-primary">Dry Run Plan</button>
+              </form>
+              <form method="POST" action="/api/builder/schema/apply" onsubmit="return confirm('Apply planned schema changes for {{.BuilderSelectedTable}}?');">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
+                <input type="hidden" name="table_name" value="{{.BuilderSelectedTable}}">
+                <input type="hidden" name="mode" value="apply">
+                <button type="submit" class="ui-btn ui-btn-secondary">Apply Changes</button>
+              </form>
+            </div>
+          </div>
+
+          {{if .BuilderSchemaJob}}
+            <div class="ui-note">
+              Job #{{.BuilderSchemaJob.ID}} | status={{.BuilderSchemaJob.Status}} | dry_run={{.BuilderSchemaJob.DryRun}}
+              {{if .BuilderSchemaJob.ErrorText}}<br />Error: {{.BuilderSchemaJob.ErrorText}}{{end}}
+            </div>
+            <div class="ui-table-shell" style="margin-top: 1rem;">
+              <div class="ui-table-scroll">
+                <table class="ui-table">
+                  <caption>Planned schema steps for {{.BuilderSelectedTable}}</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Seq</th>
+                      <th scope="col">Action</th>
+                      <th scope="col">SQL</th>
+                      <th scope="col">Rollback</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {{range .BuilderSchemaJobSteps}}
+                      <tr>
+                        <td>{{.Sequence}}</td>
+                        <td>{{.Action}}</td>
+                        <td class="font-mono text-xs">{{.Statement}}</td>
+                        <td class="font-mono text-xs">{{.RollbackSQL}}</td>
+                        <td>{{.Status}}</td>
+                      </tr>
+                    {{else}}
+                      <tr>
+                        <td colspan="5" class="ui-table-empty">No steps generated.</td>
+                      </tr>
+                    {{end}}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          {{else}}
+            <div class="ui-empty-state">
+              <strong>No schema plan loaded</strong>
+              <span>Run a dry plan to inspect SQL and rollback commands before applying.</span>
+            </div>
+          {{end}}
+        </section>
+
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <h3 class="ui-section-title">Columns in {{.BuilderSelectedTable}}</h3>
+              <p class="ui-section-copy">Edit column labels, defaults, validation, and nullability inline.</p>
+            </div>
+          </div>
+
+          <div class="ui-stack">
+            {{range .BuilderColumns}}
+              <article class="ui-panel ui-panel-muted">
+                <div class="ui-section-header">
+                  <div>
+                    <h4 class="ui-section-title font-mono">{{.Name}}</h4>
+                    <p class="ui-section-copy">Type: {{.DataType}} | {{if .IsNullable}}Nullable{{else}}Required{{end}}</p>
+                  </div>
+                  <form method="POST" action="/api/builder/column/delete" onsubmit="return confirm('Delete column {{.Name}} from {{$.BuilderSelectedTable}}? Table must be empty.');">
+                    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                    <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
+                    <input type="hidden" name="table_name" value="{{$.BuilderSelectedTable}}">
+                    <input type="hidden" name="column_name" value="{{.Name}}">
+                    <button type="submit" class="ui-btn ui-btn-danger">Delete</button>
+                  </form>
+                </div>
+
+                <form method="POST" action="/api/builder/column/update" class="ui-form-grid">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
+                  <input type="hidden" name="table_name" value="{{$.BuilderSelectedTable}}">
+                  <input type="hidden" name="column_name" value="{{.Name}}">
+                  <div class="ui-field">
+                    <label class="ui-field-label" for="builder-column-label-{{.Name}}">Label</label>
+                    <input id="builder-column-label-{{.Name}}" class="ui-input" name="label" value="{{.Label}}" />
+                  </div>
+                  <div class="ui-field">
+                    <label class="ui-field-label" for="builder-column-default-{{.Name}}">Default</label>
+                    <input id="builder-column-default-{{.Name}}" class="ui-input" name="default_value" value="{{.DefaultValue}}" />
+                  </div>
+                  <div class="ui-field">
+                    <label class="ui-field-label" for="builder-column-prefix-{{.Name}}">Prefix</label>
+                    <input id="builder-column-prefix-{{.Name}}" class="ui-input" name="prefix" value="{{.Prefix}}" maxlength="4" />
+                  </div>
+                  <div class="ui-field">
+                    <label class="ui-field-label" for="builder-column-reference-{{.Name}}">Reference table</label>
+                    <input id="builder-column-reference-{{.Name}}" class="ui-input" name="reference_table" value="{{.ReferenceTable}}" />
+                  </div>
+                  <div class="ui-field" data-span="full">
+                    <label class="ui-field-label" for="builder-column-validation-{{.Name}}">Validation regex</label>
+                    <input id="builder-column-validation-{{.Name}}" class="ui-input font-mono text-xs" name="validation_regex" value="{{.ValidationRule}}" />
+                  </div>
+                  <div class="ui-field" data-span="full">
+                    <label class="ui-field-label" for="builder-column-validation-expr-{{.Name}}">Validation expression</label>
+                    <textarea id="builder-column-validation-expr-{{.Name}}" class="ui-textarea font-mono text-xs" name="validation_expr">{{.ValidationExpr}}</textarea>
+                  </div>
+                  <div class="ui-field" data-span="full">
+                    <label class="ui-field-label" for="builder-column-condition-expr-{{.Name}}">Condition expression</label>
+                    <textarea id="builder-column-condition-expr-{{.Name}}" class="ui-textarea font-mono text-xs" name="condition_expr">{{.ConditionExpr}}</textarea>
+                  </div>
+                  <div class="ui-field" data-span="full">
+                    <label class="ui-field-label" for="builder-column-validation-msg-{{.Name}}">Validation message</label>
+                    <input id="builder-column-validation-msg-{{.Name}}" class="ui-input text-xs" name="validation_message" value="{{.ValidationMessage}}" />
+                  </div>
+                  <label class="ui-checkbox" data-span="full">
+                    <input type="checkbox" name="is_nullable" {{if .IsNullable}}checked{{end}} />
+                    Nullable column
+                  </label>
+                  <div class="ui-form-actions" style="grid-column: 1 / -1;">
+                    <button type="submit" class="ui-btn ui-btn-primary">Save Column</button>
+                  </div>
+                </form>
+              </article>
+            {{else}}
+              <div class="ui-empty-state">
+                <strong>No columns defined yet</strong>
+                <span>Add the first column above, then run a dry schema plan.</span>
+              </div>
+            {{end}}
+          </div>
+        </section>
+      {{else}}
+        <section class="ui-card ui-form-section">
+          <div class="ui-empty-state">
+            <strong>Select a table from the explorer</strong>
+            <span>The right pane becomes the active editor for metadata, columns, and schema apply steps.</span>
+          </div>
+        </section>
+      {{end}}
+    </div>
+  </div>
+</section>
+{{end}}

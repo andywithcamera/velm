@@ -1,0 +1,155 @@
+{{define "audit-log-view"}}
+<section class="ui-stack">
+  <div class="ui-panel">
+    <div class="ui-section-header">
+      <div>
+        <span class="ui-kicker">Admin Workspace</span>
+        <h1 class="ui-title">Audit Log</h1>
+        <p class="ui-section-copy">Filter request history by user, path, method, date, and status to investigate behavior and security events.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ui-workbench">
+    <aside class="ui-card ui-explorer">
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>Admin Console</span>
+        </div>
+        <div class="ui-explorer-list">
+          <a href="/t/_user" class="ui-explorer-link">
+            <span>
+              <strong>Users</strong><br />
+              <span class="ui-explorer-meta">Manage accounts in the system table</span>
+            </span>
+          </a>
+          <a href="/admin/access" class="ui-explorer-link">
+            <span>
+              <strong>Groups</strong><br />
+              <span class="ui-explorer-meta">Roles, permissions, and assignments</span>
+            </span>
+          </a>
+          <a href="/t/_user_preference" class="ui-explorer-link">
+            <span>
+              <strong>Preferences</strong><br />
+              <span class="ui-explorer-meta">Inspect saved user UI settings</span>
+            </span>
+          </a>
+          <span class="ui-explorer-link is-active">
+            <span>
+              <strong>Audit Log</strong><br />
+              <span class="ui-explorer-meta">Review request history and security events</span>
+            </span>
+          </span>
+          <a href="/admin/app-editor" class="ui-explorer-link">
+            <span>
+              <strong>Application Editor</strong><br />
+              <span class="ui-explorer-meta">Edit pages and route config like a workbench</span>
+            </span>
+          </a>
+        </div>
+      </div>
+    </aside>
+
+    <div class="ui-workbench-editor">
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h2 class="ui-section-title">Filters</h2>
+            <p class="ui-section-copy">Narrow the log set before reviewing the table below.</p>
+          </div>
+        </div>
+
+        <form method="GET" action="/admin/audit" class="ui-form-grid">
+          <div class="ui-field">
+            <label class="ui-field-label" for="audit-user-id">User ID</label>
+            <input id="audit-user-id" class="ui-input" name="user_id" placeholder="User ID" value="{{index .AuditFilter "UserID"}}" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="audit-method">Method</label>
+            <select id="audit-method" class="ui-select" name="method">
+              <option value="">Any method</option>
+              <option value="GET" {{if eq (index .AuditFilter "Method") "GET"}}selected{{end}}>GET</option>
+              <option value="POST" {{if eq (index .AuditFilter "Method") "POST"}}selected{{end}}>POST</option>
+              <option value="PUT" {{if eq (index .AuditFilter "Method") "PUT"}}selected{{end}}>PUT</option>
+              <option value="PATCH" {{if eq (index .AuditFilter "Method") "PATCH"}}selected{{end}}>PATCH</option>
+              <option value="DELETE" {{if eq (index .AuditFilter "Method") "DELETE"}}selected{{end}}>DELETE</option>
+            </select>
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="audit-path">Path contains</label>
+            <input id="audit-path" class="ui-input" name="path" placeholder="Path contains..." value="{{index .AuditFilter "Path"}}" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="audit-status">Status</label>
+            <input id="audit-status" class="ui-input" name="status" type="number" placeholder="Status" value="{{index .AuditFilter "Status"}}" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="audit-from">From</label>
+            <input id="audit-from" class="ui-input" name="from" type="date" value="{{index .AuditFilter "From"}}" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="audit-to">To</label>
+            <input id="audit-to" class="ui-input" name="to" type="date" value="{{index .AuditFilter "To"}}" />
+          </div>
+          <div class="ui-field">
+            <label class="ui-field-label" for="audit-limit">Limit</label>
+            <input id="audit-limit" class="ui-input" name="limit" type="number" min="1" max="500" value="{{index .AuditFilter "Limit"}}" />
+          </div>
+          <div class="ui-form-actions" style="grid-column: 1 / -1;">
+            <button type="submit" class="ui-btn ui-btn-primary">Apply Filters</button>
+            <a href="/admin/audit" class="ui-btn ui-btn-secondary">Reset</a>
+          </div>
+        </form>
+      </section>
+
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h2 class="ui-section-title">Events</h2>
+            <p class="ui-section-copy">Matching request records ordered by the current audit query.</p>
+          </div>
+        </div>
+
+        <div class="ui-table-shell">
+          <div class="ui-table-scroll">
+            <table class="ui-table">
+              <caption>Audit records for the current filter set</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Time</th>
+                  <th scope="col">User</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Method</th>
+                  <th scope="col">Path</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">IP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{if .AuditLogs}}
+                  {{range .AuditLogs}}
+                  <tr>
+                    <td class="text-xs">{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td>
+                    <td class="text-xs">{{.UserEmail}}{{if .UserID}}<br><span class="ui-field-help">{{.UserID}}</span>{{end}}</td>
+                    <td class="text-xs">{{.UserRole}}</td>
+                    <td class="text-xs">{{.Method}}</td>
+                    <td class="text-xs break-all">{{.Path}}</td>
+                    <td class="text-xs">{{.Status}}</td>
+                    <td class="text-xs">{{.IP}}</td>
+                  </tr>
+                  {{end}}
+                {{else}}
+                  <tr>
+                    <td colspan="7" class="ui-table-empty">No audit records found for the selected filters.</td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+{{end}}

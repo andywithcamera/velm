@@ -1,0 +1,10 @@
+{{range .Menu}}
+  <a
+    href="{{.Href}}"
+    _="on click toggle .hidden on #menu"
+    class="ui-menu-link"
+    data-nav
+  >
+   {{.Title}}
+  </a>
+{{end}}

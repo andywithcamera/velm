@@ -1,0 +1,96 @@
+{{range $index, $el := .Results}}
+<a
+  href="{{.Href}}"
+  class="ui-search-result"
+  data-index="{{$index}}"
+  data-search-result="true"
+  data-nav
+>
+  {{.Title}}
+</a>
+{{else}}
+<p class="ui-search-empty">No results found.</p>
+{{end}}
+<script>
+(function () {
+  if (window.__velmSearchResultsBound) {
+    return;
+  }
+  window.__velmSearchResultsBound = true;
+
+  function bindSearchResults(inputId, resultsId) {
+    const input = document.getElementById(inputId);
+    const results = document.getElementById(resultsId);
+    if (!input || !results || input.dataset.searchBound === "1") {
+      return;
+    }
+    input.dataset.searchBound = "1";
+
+    let index = -1;
+
+    function highlight(newIndex) {
+      const items = results.querySelectorAll("[data-search-result]");
+      items.forEach((el, i) => {
+        el.classList.toggle("is-active", i === newIndex);
+      });
+    }
+
+    input.addEventListener("keydown", (e) => {
+      const items = results.querySelectorAll("[data-search-result]");
+      if (!items.length) return;
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          index = (index + 1) % items.length;
+          highlight(index);
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          index = (index - 1 + items.length) % items.length;
+          highlight(index);
+          break;
+        case "Enter":
+          if (index >= 0 && index < items.length) {
+            const href = items[index].getAttribute("href");
+            if (window.navigateWithTransition) {
+              window.navigateWithTransition(href);
+            } else {
+              window.location.href = href;
+            }
+          }
+          break;
+        case "Escape":
+          results.classList.add("hidden");
+          index = -1;
+          break;
+      }
+    });
+
+    document.body.addEventListener("htmx:afterSwap", (e) => {
+      if (e.target.id !== resultsId) return;
+      index = -1;
+      highlight(-1);
+      const hasResults = e.target.querySelectorAll("[data-search-result]").length > 0;
+      results.classList.toggle("hidden", !hasResults);
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!results.contains(e.target) && e.target !== input) {
+        results.classList.add("hidden");
+        index = -1;
+      }
+    });
+  }
+
+  function boot() {
+    bindSearchResults("searchInput", "searchResults");
+    bindSearchResults("mobileSearchInput", "searchResultsMobile");
+  }
+
+  boot();
+  document.body.addEventListener("htmx:afterSwap", function () {
+    boot();
+  });
+})();
+</script>

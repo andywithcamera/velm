@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="csrf-token" content="{{.CSRFToken}}" />
+        <meta name="request-id" content="{{.RequestID}}" />
+        <title>{{.Title}}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+        <script>
+            (function () {
+                try {
+                    const storedTheme = localStorage.getItem("velm-theme");
+                    document.documentElement.dataset.theme = storedTheme === "dark" ? "dark" : "light";
+                } catch (error) {
+                    document.documentElement.dataset.theme = "light";
+                }
+            })();
+        </script>
+        <script src="https://unpkg.com/htmx.org@1.9.2"></script>
+        <script src="https://unpkg.com/hyperscript.org@0.9.11"></script>
+        <script src="/static/js/maintain-base-url.js"></script>
+        <script src="/static/js/request-monitoring.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+        <link rel="stylesheet" href="/static/css/ui.css?v=20260401a" />
+        <style>
+            #burgerIcon.open .line1 {
+                transform: rotate(45deg) translate(5px, 5px);
+                transform-origin: center;
+            }
+
+            #burgerIcon.open .line2 {
+                opacity: 0;
+            }
+
+            #burgerIcon.open .line3 {
+                transform: rotate(-45deg) translate(5px, -5px);
+                transform-origin: center;
+            }
+        </style>
+    </head>
+        <body class="flex flex-col min-h-screen ui-view-{{.View}}">
+            <div id="progress-bar"></div>
+            <div id="global-error-banner" class="ui-global-banner hidden" role="alert"></div>
+            {{if and (not (eq .View "login")) (not (eq .Section "Public"))}}
+                {{template "navbar" .}}
+            {{end}}
+        <main
+            id="page-content"
+            class="ui-shell ui-main-shell flex-1"
+        >
+            {{if .PageData.Content}}
+                {{template "page-view" .}}
+            {{end}}
+            {{if .TableName}}
+                {{template "table-view" .}}
+            {{end}}
+            {{if .FormTable}}
+                {{template "form-view" .}}
+            {{end}}
+            {{if eq .View "login"}}
+                {{template "login-view" .}}
+            {{end}}
+            {{if eq .View "access-control"}}
+                {{template "access-control-view" .}}
+            {{end}}
+            {{if eq .View "audit-log"}}
+                {{template "audit-log-view" .}}
+            {{end}}
+            {{if eq .View "script-registry"}}
+                {{template "script-registry-view" .}}
+            {{end}}
+            {{if eq .View "run-script"}}
+                {{template "run-script-view" .}}
+            {{end}}
+            {{if eq .View "schema-builder"}}
+                {{template "schema-builder-view" .}}
+            {{end}}
+            {{if eq .View "page-builder"}}
+                {{template "page-builder-view" .}}
+            {{end}}
+            {{if eq .View "map"}}
+                {{template "map-view" .}}
+            {{end}}
+            {{if eq .View "docs"}}
+                {{template "docs-view" .}}
+            {{end}}
+            {{if eq .View "docs-reader"}}
+                {{template "docs-reader-view" .}}
+            {{end}}
+            {{if eq .View "docs-manage"}}
+                {{template "docs-manage-view" .}}
+            {{end}}
+            {{if eq .View "forbidden"}}
+                {{template "forbidden-view" .}}
+            {{end}}
+        </main>
+        {{template "footer" .}}
+
+        <script>
+            history.pushState({}, "", "{{.Uri | js}}");
+
+            document.body.addEventListener("htmx:configRequest", function (event) {
+                const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+                const token = tokenMeta ? tokenMeta.content : "";
+                if (token) {
+                    event.detail.headers["X-CSRF-Token"] = token;
+                }
+            });
+
+            (function () {
+                const pageContent = document.getElementById("page-content");
+                const progressBar = document.getElementById("progress-bar");
+                const errorBanner = document.getElementById("global-error-banner");
+                const themeStorageKey = "velm-theme";
+                let navigationTimer = null;
+                let navigationInFlight = false;
+
+                function normaliseTheme(theme) {
+                    return theme === "dark" ? "dark" : "light";
+                }
+
+                function getActiveTheme() {
+                    return normaliseTheme(document.documentElement.dataset.theme);
+                }
+
+                function persistTheme(theme) {
+                    try {
+                        localStorage.setItem(themeStorageKey, theme);
+                    } catch (error) {
+                        // Ignore storage failures and keep the in-memory theme.
+                    }
+                }
+
+                function syncThemeToggles() {
+                    const isDark = getActiveTheme() === "dark";
+                    document.querySelectorAll("[data-theme-toggle]").forEach((toggle) => {
+                        toggle.setAttribute("aria-checked", isDark ? "true" : "false");
+
+                        const hint = toggle.querySelector("[data-theme-toggle-hint]");
+                        if (hint) {
+                            hint.textContent = isDark ? "Black background / white text" : "White background / black text";
+                        }
+                    });
+                }
+
+                function applyTheme(theme) {
+                    const resolved = normaliseTheme(theme);
+                    document.documentElement.dataset.theme = resolved;
+                    syncThemeToggles();
+                    return resolved;
+                }
+
+                function startProgressBar() {
+                    if (!progressBar) return;
+                    progressBar.style.opacity = "1";
+                    progressBar.style.width = "62%";
+                }
+
+                function finishProgressBar() {
+                    if (!progressBar) return;
+                    progressBar.style.width = "100%";
+                    setTimeout(() => {
+                        progressBar.style.width = "0";
+                        progressBar.style.opacity = "0";
+                    }, 180);
+                }
+
+                function showError(message) {
+                    if (!errorBanner) return;
+                    errorBanner.textContent = message || "Request failed";
+                    errorBanner.classList.remove("hidden");
+                    setTimeout(() => errorBanner.classList.add("hidden"), 3200);
+                }
+
+                function setDisclosureState(button, expanded) {
+                    if (!button) return;
+                    const targetId = button.dataset.disclosureTarget;
+                    if (!targetId) return;
+
+                    const panel = document.getElementById(targetId);
+                    if (!panel) return;
+
+                    button.setAttribute("aria-expanded", expanded ? "true" : "false");
+                    panel.classList.toggle("hidden", !expanded);
+
+                    const iconId = button.dataset.disclosureIcon;
+                    if (!iconId) return;
+
+                    const icon = document.getElementById(iconId);
+                    if (!icon) return;
+
+                    icon.classList.toggle(button.dataset.disclosureIconOpenClass || "open", expanded);
+                }
+
+                function closeDisclosures(exceptButton) {
+                    document.querySelectorAll("[data-disclosure-target][aria-expanded='true']").forEach((button) => {
+                        if (button === exceptButton) return;
+                        setDisclosureState(button, false);
+                    });
+                }
+
+                function animatePageIn() {
+                    if (!pageContent) return;
+                    pageContent.classList.remove("page-exit");
+                    pageContent.classList.add("page-enter");
+                    setTimeout(() => pageContent.classList.remove("page-enter"), 320);
+                }
+
+                function resolveNavigationDestination(rawHref) {
+                    const href = String(rawHref || "").trim();
+                    if (href === "" || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("javascript:")) {
+                        return null;
+                    }
+
+                    try {
+                        const destination = new URL(href, window.location.href);
+                        if (destination.origin !== window.location.origin) return null;
+                        if (destination.pathname === window.location.pathname && destination.search === window.location.search && destination.hash !== "") {
+                            return null;
+                        }
+                        if (destination.pathname === window.location.pathname && destination.search === window.location.search && destination.hash === window.location.hash) {
+                            return null;
+                        }
+                        return destination;
+                    } catch (error) {
+                        return null;
+                    }
+                }
+
+                function beginPageExit() {
+                    startProgressBar();
+                    if (pageContent) {
+                        pageContent.classList.add("page-exit");
+                    }
+                }
+
+                window.navigateWithTransition = function navigateWithTransition(rawHref) {
+                    const destination = resolveNavigationDestination(rawHref);
+                    if (!destination) {
+                        if (rawHref) {
+                            window.location.href = rawHref;
+                        }
+                        return false;
+                    }
+                    if (navigationInFlight) {
+                        return false;
+                    }
+                    navigationInFlight = true;
+                    beginPageExit();
+                    window.clearTimeout(navigationTimer);
+                    navigationTimer = window.setTimeout(() => {
+                        window.location.href = destination.toString();
+                    }, 140);
+                    return false;
+                };
+
+                function shouldInterceptNavigation(link, event) {
+                    if (!link || event.defaultPrevented) return false;
+                    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+                    if (link.target && link.target !== "_self") return false;
+                    if (link.hasAttribute("download") || link.dataset.noNav === "true") return false;
+                    if (link.closest("[data-no-nav]")) return false;
+                    if (link.hasAttribute("hx-get") || link.hasAttribute("hx-post") || link.hasAttribute("hx-put") || link.hasAttribute("hx-delete") || link.hasAttribute("hx-patch")) return false;
+                    return resolveNavigationDestination(link.href) !== null;
+                }
+
+                document.addEventListener("click", function (event) {
+                    const disclosureButton = event.target.closest("[data-disclosure-target]");
+                    if (disclosureButton) {
+                        event.preventDefault();
+                        const expanded = disclosureButton.getAttribute("aria-expanded") === "true";
+                        closeDisclosures(disclosureButton);
+                        setDisclosureState(disclosureButton, !expanded);
+                        return;
+                    }
+
+                    const themeToggle = event.target.closest("[data-theme-toggle]");
+                    if (themeToggle) {
+                        event.preventDefault();
+                        const nextTheme = getActiveTheme() === "dark" ? "light" : "dark";
+                        persistTheme(nextTheme);
+                        applyTheme(nextTheme);
+                        return;
+                    }
+
+                    document.querySelectorAll("[data-disclosure-target][aria-expanded='true']").forEach((button) => {
+                        const panel = document.getElementById(button.dataset.disclosureTarget || "");
+                        if (!panel) return;
+                        if (panel.contains(event.target) || button.contains(event.target)) return;
+                        setDisclosureState(button, false);
+                    });
+
+                    const disclosureAction = event.target.closest(".ui-menu-link, .ui-menu-button");
+                    if (disclosureAction && disclosureAction.closest(".ui-dropdown-menu, .ui-nav-drawer, .ui-topnav-mobile-panel")) {
+                        closeDisclosures();
+                    }
+
+                    const link = event.target.closest("a[href]");
+                    if (!shouldInterceptNavigation(link, event)) return;
+
+                    event.preventDefault();
+                    window.navigateWithTransition(link.href);
+                });
+
+                document.addEventListener("keydown", function (event) {
+                    if (event.key !== "Escape") return;
+                    closeDisclosures();
+                });
+
+                document.body.addEventListener("htmx:beforeRequest", startProgressBar);
+                document.body.addEventListener("htmx:afterRequest", finishProgressBar);
+                document.body.addEventListener("htmx:responseError", function (event) {
+                    const status = event?.detail?.xhr?.status;
+                    showError(status ? `Request failed (${status})` : "Request failed");
+                    finishProgressBar();
+                });
+                document.body.addEventListener("htmx:sendError", function () {
+                    showError("Connection lost");
+                    finishProgressBar();
+                });
+
+                applyTheme(getActiveTheme());
+                animatePageIn();
+            })();
+        </script>
+
+    </body>
+</html>

@@ -1,0 +1,249 @@
+{{define "script-registry-view"}}
+<section class="ui-stack">
+  <div class="ui-panel">
+    <div class="ui-section-header">
+      <div>
+        <span class="ui-kicker">Automation Workbench</span>
+        <h2 class="ui-title">Server Methods</h2>
+        <p class="ui-section-copy">Server automation now lives as service methods in app YAML. Use this registry to inspect method source, dry-run it, and jump into the Application Editor.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="ui-workbench">
+    <aside class="ui-card ui-explorer">
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>Methods</span>
+          <span>{{len .ScriptRegistry}}</span>
+        </div>
+        <div class="ui-explorer-list">
+          {{range .ScriptRegistry}}
+            <a href="/admin/scripts?script_id={{.ID}}" class="ui-explorer-link {{if eq $.ScriptSelectedID .ID}}is-active{{end}}">
+              <span>
+                <strong>{{.Label}}</strong><br />
+                <span class="ui-explorer-meta">{{.AppLabel}} | {{.Call}} | {{.Visibility}}</span>
+              </span>
+              <span class="ui-badge ui-badge-neutral">{{.LatestVersion}}</span>
+            </a>
+          {{else}}
+            <div class="ui-empty-state">
+              <strong>No YAML server methods found</strong>
+              <span>Create service methods in the Application Editor to populate this registry.</span>
+            </div>
+          {{end}}
+        </div>
+      </div>
+    </aside>
+
+    <div class="ui-workbench-editor">
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h3 class="ui-section-title">Source Of Truth</h3>
+            <p class="ui-section-copy">Service methods, endpoints, triggers, schedules, and client scripts are all stored in app YAML. This registry only lists server methods.</p>
+          </div>
+        </div>
+        <div class="ui-form-actions">
+          <a href="/admin/app-editor" class="ui-btn ui-btn-primary">Open Application Editor</a>
+          {{with .ScriptSelected}}
+            <a href="/admin/app-editor?app={{.AppName | urlquery}}&active={{.EditorObject | urlquery}}" class="ui-btn ui-btn-secondary">Open Selected Method</a>
+          {{end}}
+        </div>
+      </section>
+
+      {{with .ScriptSelected}}
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <h3 class="ui-section-title">Selected Method</h3>
+              <p class="ui-section-copy">Current draft definition loaded from <strong>{{.AppLabel}}</strong>.</p>
+            </div>
+          </div>
+          <div class="ui-table-shell">
+            <div class="ui-table-scroll">
+              <table class="ui-table">
+                <tbody>
+                  <tr><th scope="row">App</th><td>{{.AppLabel}} ({{.AppName}})</td></tr>
+                  <tr><th scope="row">Service</th><td>{{.ServiceName}}</td></tr>
+                  <tr><th scope="row">Method</th><td>{{.MethodName}}</td></tr>
+                  <tr><th scope="row">Call</th><td><code>{{.Call}}</code></td></tr>
+                  <tr><th scope="row">Visibility</th><td>{{.Visibility}}</td></tr>
+                  <tr><th scope="row">Language</th><td>{{if .Language}}{{.Language}}{{else}}javascript{{end}}</td></tr>
+                  <tr><th scope="row">Bindings</th><td>{{.BindingCount}}</td></tr>
+                  <tr><th scope="row">Definition</th><td>{{.EditorObject}}</td></tr>
+                  <tr><th scope="row">Published</th><td>{{if .PublishedAt}}{{.PublishedAt}}{{else}}-{{end}}</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      {{end}}
+
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h3 class="ui-section-title">Dry Run Test</h3>
+            <p class="ui-section-copy">Load a YAML service method, adjust the source if needed, and execute it inside the JavaScript sandbox.</p>
+          </div>
+        </div>
+        <div class="ui-stack">
+          <select id="scriptDryRunDef" class="ui-select">
+            <option value="">Select method...</option>
+            {{range .ScriptRegistry}}
+              <option value="{{.ID}}" {{if eq $.ScriptSelectedID .ID}}selected{{end}}>{{.AppLabel}} / {{.Call}}</option>
+            {{end}}
+          </select>
+          <textarea id="scriptDryRunCode" class="ui-textarea font-mono" rows="14" placeholder="Script source code...">{{with .ScriptSelected}}{{.LatestCode}}{{else}}async function run(ctx) {
+  return null;
+}{{end}}</textarea>
+          <textarea id="scriptDryRunPayload" class="ui-textarea font-mono" rows="8" placeholder='{"record":{"id":"123"}}'>{}</textarea>
+          <div class="ui-form-actions">
+            <button type="button" class="ui-btn ui-btn-primary" onclick="runScriptDryRun()">Run Dry Test</button>
+            {{with .ScriptSelected}}
+              <a href="/admin/app-editor?app={{.AppName | urlquery}}&active={{.EditorObject | urlquery}}" class="ui-btn ui-btn-secondary">Edit In App Editor</a>
+            {{end}}
+          </div>
+          <pre id="scriptDryRunResult" class="ui-code-block ui-code-block-light whitespace-pre-wrap"></pre>
+        </div>
+      </section>
+
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h3 class="ui-section-title">Registry</h3>
+            <p class="ui-section-copy">Current draft method source across all active apps.</p>
+          </div>
+        </div>
+        <div class="ui-table-shell">
+          <div class="ui-table-scroll">
+            <table class="ui-table">
+              <caption>YAML server method registry</caption>
+              <thead>
+                <tr>
+                  <th scope="col">App</th>
+                  <th scope="col">Service</th>
+                  <th scope="col">Method</th>
+                  <th scope="col">Call</th>
+                  <th scope="col">Visibility</th>
+                  <th scope="col">Version</th>
+                  <th scope="col">Bindings</th>
+                  <th scope="col">Published</th>
+                </tr>
+              </thead>
+              <tbody>
+                {{if .ScriptRegistry}}
+                  {{range .ScriptRegistry}}
+                    <tr>
+                      <td>{{.AppLabel}}</td>
+                      <td>{{.ServiceName}}</td>
+                      <td><a href="/admin/scripts?script_id={{.ID}}">{{.MethodName}}</a></td>
+                      <td><code>{{.Call}}</code></td>
+                      <td>{{.Visibility}}</td>
+                      <td>{{.LatestVersion}}</td>
+                      <td>{{.BindingCount}}</td>
+                      <td>{{if .PublishedAt}}{{.PublishedAt}}{{else}}-{{end}}</td>
+                    </tr>
+                  {{end}}
+                {{else}}
+                  <tr>
+                    <td colspan="8" class="ui-table-empty">No YAML server methods found.</td>
+                  </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {{if .ScriptVersions}}
+        <section class="ui-card ui-form-section">
+          <div class="ui-section-header">
+            <div>
+              <h3 class="ui-section-title">Version Snapshot</h3>
+              <p class="ui-section-copy">YAML-backed server methods expose the current source snapshot as a single definition version.</p>
+            </div>
+          </div>
+          <div class="ui-table-shell">
+            <div class="ui-table-scroll">
+              <table class="ui-table">
+                <caption>Version snapshot for the selected method</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Version</th>
+                    <th scope="col">Published</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">By</th>
+                    <th scope="col">Checksum</th>
+                    <th scope="col">Code</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {{range .ScriptVersions}}
+                    <tr>
+                      <td>v{{.VersionNum}}</td>
+                      <td>{{if .PublishedAt}}{{.PublishedAt}}{{else}}Draft{{end}}</td>
+                      <td>{{.CreatedAt}}</td>
+                      <td>{{.CreatedBy}}</td>
+                      <td class="font-mono text-xs">{{.Checksum}}</td>
+                      <td><pre class="ui-code-block whitespace-pre-wrap">{{.Code}}</pre></td>
+                    </tr>
+                  {{end}}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      {{end}}
+    </div>
+  </div>
+</section>
+<script>
+  (function () {
+    const select = document.getElementById("scriptDryRunDef");
+    if (!select) return;
+    select.addEventListener("change", function () {
+      const value = (select.value || "").trim();
+      if (!value) return;
+      const href = "/admin/scripts?script_id=" + encodeURIComponent(value);
+      if (window.navigateWithTransition) {
+        window.navigateWithTransition(href);
+      } else {
+        window.location = href;
+      }
+    });
+  })();
+
+  async function runScriptDryRun() {
+    const out = document.getElementById("scriptDryRunResult");
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+    const scriptDefID = Number(document.getElementById("scriptDryRunDef").value || "0");
+    const code = document.getElementById("scriptDryRunCode").value || "";
+    const samplePayloadRaw = document.getElementById("scriptDryRunPayload").value || "{}";
+
+    let samplePayload;
+    try {
+      samplePayload = JSON.parse(samplePayloadRaw);
+    } catch (e) {
+      out.textContent = "Invalid sample payload JSON";
+      return;
+    }
+
+    const res = await fetch("/api/scripts/test", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf
+      },
+      body: JSON.stringify({
+        script_def_id: scriptDefID,
+        code: code,
+        sample_payload: samplePayload
+      })
+    });
+
+    const text = await res.text();
+    out.textContent = text;
+  }
+</script>
+{{end}}

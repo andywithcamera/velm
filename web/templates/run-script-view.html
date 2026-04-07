@@ -1,0 +1,559 @@
+{{define "run-script-view"}}
+<section class="ui-stack">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.css" />
+  <style>
+    .ui-run-script-editor {
+      border: 1px solid rgba(15, 23, 42, 0.12);
+      border-radius: 1rem;
+      overflow: hidden;
+      background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+    }
+
+    .ui-run-script-editor .CodeMirror {
+      height: 28rem;
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: "SFMono-Regular", "Menlo", "Monaco", monospace;
+      font-size: 14px;
+    }
+
+    .ui-run-script-editor .CodeMirror-gutters {
+      background: #0b1220;
+      border-right: 1px solid rgba(148, 163, 184, 0.3);
+    }
+
+    .ui-run-script-editor .CodeMirror-linenumber {
+      color: #94a3b8;
+    }
+
+    .ui-run-script-editor .CodeMirror-activeline-background {
+      background: rgba(30, 41, 59, 0.88);
+    }
+
+    .ui-run-script-editor .CodeMirror-selected {
+      background: rgba(96, 165, 250, 0.28);
+    }
+
+    .ui-run-script-editor .CodeMirror-focused .CodeMirror-selected {
+      background: rgba(96, 165, 250, 0.34);
+    }
+
+    .ui-run-script-editor .CodeMirror pre.CodeMirror-line,
+    .ui-run-script-editor .CodeMirror pre.CodeMirror-line-like {
+      color: #f8fafc;
+    }
+
+    .ui-run-script-editor .CodeMirror-cursor {
+      border-left: 2px solid #f8fafc !important;
+      box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.12);
+    }
+
+    .ui-run-script-editor .CodeMirror div.CodeMirror-secondarycursor {
+      border-left: 2px solid #fbbf24;
+    }
+
+    .ui-run-script-editor .CodeMirror-matchingbracket {
+      color: #fde68a !important;
+      text-decoration: underline;
+    }
+
+    .ui-run-script-editor .cm-keyword,
+    .ui-run-script-editor .cm-operator {
+      color: #c084fc;
+    }
+
+    .ui-run-script-editor .cm-def,
+    .ui-run-script-editor .cm-variable,
+    .ui-run-script-editor .cm-variable-2,
+    .ui-run-script-editor .cm-variable-3 {
+      color: #f8fafc;
+    }
+
+    .ui-run-script-editor .cm-property,
+    .ui-run-script-editor .cm-builtin,
+    .ui-run-script-editor .cm-qualifier {
+      color: #7dd3fc;
+    }
+
+    .ui-run-script-editor .cm-atom,
+    .ui-run-script-editor .cm-number {
+      color: #fbbf24;
+    }
+
+    .ui-run-script-editor .cm-string {
+      color: #86efac;
+    }
+
+    .ui-run-script-editor .cm-comment {
+      color: #94a3b8;
+    }
+
+    .ui-run-script-editor .cm-tag,
+    .ui-run-script-editor .cm-meta,
+    .ui-run-script-editor .cm-error {
+      color: #fca5a5;
+    }
+
+    .CodeMirror-hints {
+      border-radius: 0.8rem;
+      overflow: hidden;
+      border: 1px solid rgba(15, 23, 42, 0.18);
+      background: #f8fafc;
+      color: #0f172a;
+      font-family: "SFMono-Regular", "Menlo", "Monaco", monospace;
+    }
+
+    .CodeMirror-hint {
+      color: #0f172a;
+    }
+
+    li.CodeMirror-hint-active {
+      background: #dbeafe;
+      color: #0f172a;
+    }
+  </style>
+
+  <section class="ui-card ui-form-section">
+    <div class="ui-code-editor-frame ui-run-script-editor" data-span="full">
+      <div class="ui-code-editor-toolbar">
+        <div class="ui-stack-list" style="gap: 0.25rem;">
+          <span class="ui-code-editor-label">Script Editor</span>
+        </div>
+      </div>
+      <textarea id="run-script-code">async function run(ctx) {
+  console.log("Hello, world");
+}</textarea>
+    </div>
+
+	    <div class="ui-stack" style="margin-top: 1rem;">
+	      <div class="ui-note">
+	        Ad hoc scripts run live. Record creates, updates, and deletes persist immediately.
+	      </div>
+      <div class="ui-field">
+        <label class="ui-field-label" for="run-script-scope">App Scope</label>
+        <select id="run-script-scope" class="ui-select">
+          {{if .RunScriptScopeOptions}}
+            {{range .RunScriptScopeOptions}}
+              <option value="{{.Value}}" {{if .Selected}}selected{{end}}>{{.Label}} ({{.Value}})</option>
+            {{end}}
+          {{else}}
+            <option value="">No active apps</option>
+          {{end}}
+        </select>
+        <div id="run-script-scope-meta" class="ui-note" style="margin-top: 0.5rem;">
+          Choose the app whose model classes should be available in the script editor and runtime.
+        </div>
+      </div>
+	      <div class="ui-form-actions">
+	        <button type="button" class="ui-btn ui-btn-primary" onclick="runAdhocScript()">Run Script</button>
+	      </div>
+      <div class="ui-field">
+        <label class="ui-field-label" for="run-script-result">Output</label>
+        <pre id="run-script-result" class="ui-code-block ui-code-block-light whitespace-pre-wrap"></pre>
+      </div>
+    </div>
+  </section>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/javascript/javascript.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/selection/active-line.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.js"></script>
+<script>
+  (function () {
+    if (!window.CodeMirror) return;
+
+    const textarea = document.getElementById("run-script-code");
+    const scopeSelect = document.getElementById("run-script-scope");
+    const scopeMeta = document.getElementById("run-script-scope-meta");
+    if (!textarea) return;
+
+    function emptyAppScope() {
+      return { current_app: {}, dependency_apps: [], objects: [] };
+    }
+
+    function scriptModelClassName(alias) {
+      const raw = String(alias || "").trim().toLowerCase();
+      if (!raw) return "Model";
+      const parts = raw.split(/[^a-z0-9]+/).filter(Boolean);
+      if (parts.length === 0) return "Model";
+      const value = parts.map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("");
+      return /^\d/.test(value) ? `T${value}` : value;
+    }
+
+    function scopeAppObjectName(app) {
+      if (app && app.namespace) return String(app.namespace).trim().toLowerCase();
+      if (app && app.name) return String(app.name).trim().toLowerCase();
+      return "";
+    }
+
+    function scopeObjectClassRef(object, currentAppName) {
+      const className = scriptModelClassName(object && (object.alias || object.table_name));
+      const appName = object && object.app && object.app.name ? String(object.app.name).trim().toLowerCase() : "";
+      if (appName && appName !== String(currentAppName || "").trim().toLowerCase()) {
+        const namespaceName = scopeAppObjectName(object.app);
+        if (namespaceName) return `${namespaceName}.${className}`;
+      }
+      return className;
+    }
+
+    const queryOperatorHints = [
+      { text: "=", displayText: "=", className: "cm-js-hint" },
+      { text: "!=", displayText: "!=", className: "cm-js-hint" },
+      { text: "<", displayText: "<", className: "cm-js-hint" },
+      { text: "<=", displayText: "<=", className: "cm-js-hint" },
+      { text: ">", displayText: ">", className: "cm-js-hint" },
+      { text: ">=", displayText: ">=", className: "cm-js-hint" },
+      { text: "in", displayText: "in", className: "cm-js-hint" },
+      { text: "not in", displayText: "not in", className: "cm-js-hint" }
+    ];
+
+    const queryDirectionHints = [
+      { text: "asc", displayText: "asc", className: "cm-js-hint" },
+      { text: "desc", displayText: "desc", className: "cm-js-hint" }
+    ];
+
+    function scopeObjectsOrdered(appScope) {
+      if (!appScope || !Array.isArray(appScope.objects)) return [];
+      const currentAppName = appScope.current_app && appScope.current_app.name ? String(appScope.current_app.name).trim().toLowerCase() : "";
+      const local = [];
+      const deps = [];
+      appScope.objects.forEach((object) => {
+        const appName = object && object.app && object.app.name ? String(object.app.name).trim().toLowerCase() : "";
+        if (appName === currentAppName) {
+          local.push(object);
+        } else {
+          deps.push(object);
+        }
+      });
+      return local.concat(deps);
+    }
+
+    function queryContextObject(appScope, prefixText) {
+      const prefix = String(prefixText || "");
+      const currentAppName = appScope && appScope.current_app && appScope.current_app.name ? appScope.current_app.name : "";
+      let winner = null;
+      let winnerIndex = -1;
+      scopeObjectsOrdered(appScope).forEach((object) => {
+        const classRef = scopeObjectClassRef(object, currentAppName);
+        if (!classRef) return;
+        const index = prefix.lastIndexOf(`${classRef}.query(`);
+        if (index >= 0 && index >= winnerIndex) {
+          winnerIndex = index;
+          winner = object;
+        }
+      });
+      return winner || defaultScopeObject(appScope);
+    }
+
+    function detectQueryCompletionContext(prefixText) {
+      const prefix = String(prefixText || "");
+      const patterns = [
+        { type: "group-operator", match: prefix.match(/\.where(?:Any|All)\([\s\S]*\{\s*column\s*:\s*["'][^"']*["']\s*,\s*operator\s*:\s*["']([^"']*)$/) },
+        { type: "group-column", match: prefix.match(/\.where(?:Any|All)\([\s\S]*\{\s*column\s*:\s*["']([^"']*)$/) },
+        { type: "where-operator", match: prefix.match(/\.where\(\s*["'][^"']*["']\s*,\s*["']([^"']*)$/) },
+        { type: "where-column", match: prefix.match(/\.where\(\s*["']([^"']*)$/) },
+        { type: "order-direction", match: prefix.match(/\.orderBy\(\s*["'][^"']*["']\s*,\s*["']([^"']*)$/) },
+        { type: "order-column", match: prefix.match(/\.orderBy\(\s*["']([^"']*)$/) }
+      ];
+      for (const candidate of patterns) {
+        if (candidate.match) {
+          return {
+            type: candidate.type,
+            replaceLength: String(candidate.match[1] || "").length
+          };
+        }
+      }
+      return null;
+    }
+
+    function buildContextualQueryCompletions(prefixText, appScope) {
+      const context = detectQueryCompletionContext(prefixText);
+      if (!context) return null;
+
+      if (context.type === "where-operator" || context.type === "group-operator") {
+        return { items: queryOperatorHints, replaceLength: context.replaceLength };
+      }
+      if (context.type === "order-direction") {
+        return { items: queryDirectionHints, replaceLength: context.replaceLength };
+      }
+
+      if (context.type === "where-column" || context.type === "group-column" || context.type === "order-column") {
+        const object = queryContextObject(appScope, prefixText);
+        const currentAppName = appScope && appScope.current_app && appScope.current_app.name ? appScope.current_app.name : "";
+        const items = [];
+        const seen = new Set();
+        const objects = object ? [object].concat(scopeObjectsOrdered(appScope).filter((candidate) => candidate !== object)) : scopeObjectsOrdered(appScope);
+        objects.forEach((item) => {
+          const classRef = scopeObjectClassRef(item, currentAppName);
+          (item.columns || []).forEach((column) => {
+            if (!column || !column.name) return;
+            const key = `${classRef}:${column.name}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            items.push({
+              text: column.name,
+              displayText: `${column.name} (${classRef})`,
+              className: "cm-js-hint"
+            });
+          });
+        });
+        return { items: items, replaceLength: context.replaceLength };
+      }
+
+      return null;
+    }
+
+    function defaultScopeObject(appScope) {
+      if (!appScope || !Array.isArray(appScope.objects) || appScope.objects.length === 0) return null;
+      const currentAppName = appScope.current_app && appScope.current_app.name ? String(appScope.current_app.name).trim().toLowerCase() : "";
+      return appScope.objects.find((object) => {
+        const appName = object && object.app && object.app.name ? String(object.app.name).trim().toLowerCase() : "";
+        return appName === currentAppName;
+      }) || appScope.objects[0];
+    }
+
+    function buildObjectCompletions(appScope) {
+      if (!appScope || !Array.isArray(appScope.objects)) return [];
+
+      const items = [];
+      const currentAppName = appScope.current_app && appScope.current_app.name ? appScope.current_app.name : "";
+      appScope.objects.forEach((object) => {
+        const classRef = scopeObjectClassRef(object, currentAppName);
+        if (!classRef) return;
+
+        const objectScopeDetail = object.app && object.app.name && object.app.name !== currentAppName
+          ? `Dependency app ${object.app.name}`
+          : "Current app model";
+
+        items.push(
+          { text: classRef, displayText: classRef, className: "cm-js-hint" },
+          { text: `new ${classRef}({ field_name: value })`, displayText: `new ${classRef}`, className: "cm-js-hint" },
+          { text: `await ${classRef}.get(id)`, displayText: `${classRef}.get`, className: "cm-js-hint" },
+          { text: `await ${classRef}.query().where("field_name", "=", value).orderBy("field_name", "asc").limit(100).fetch()`, displayText: `${classRef}.query`, className: "cm-js-hint" },
+          { text: `${classRef}.query().where("field_name", "=", value)`, displayText: `${classRef}.query().where`, className: "cm-js-hint" },
+          { text: `${classRef}.query().whereAny([{ column: "field_name", operator: "=", value }, { column: "other_field", operator: "=", value }])`, displayText: `${classRef}.query().whereAny`, className: "cm-js-hint" },
+          { text: `${classRef}.query().whereAll([{ column: "field_name", operator: "=", value }])`, displayText: `${classRef}.query().whereAll`, className: "cm-js-hint" },
+          { text: `${classRef}.query().orderBy("field_name", "asc")`, displayText: `${classRef}.query().orderBy`, className: "cm-js-hint" },
+          { text: `${classRef}.query().limit(100)`, displayText: `${classRef}.query().limit`, className: "cm-js-hint" },
+          { text: `${classRef}.query().includeDeleted()`, displayText: `${classRef}.query().includeDeleted`, className: "cm-js-hint" },
+          { text: `await ${classRef}.query().first()`, displayText: `${classRef}.query().first`, className: "cm-js-hint" },
+          { text: `await ${classRef}.query().listIDs()`, displayText: `${classRef}.query().listIDs`, className: "cm-js-hint" },
+          { text: `await ${classRef}.create({ field_name: value })`, displayText: `${classRef}.create`, className: "cm-js-hint" },
+          { text: `await ${classRef}.query().where("field_name", "=", value).limit(1000).update({ status: "updated" })`, displayText: `${classRef}.query().update`, className: "cm-js-hint" },
+          { text: `await ${classRef}.query().where("field_name", "=", value).limit(1000).delete()`, displayText: `${classRef}.query().delete`, className: "cm-js-hint" },
+          { text: `${classRef}.schema()`, displayText: `${classRef}.schema`, className: "cm-js-hint" }
+        );
+
+        (object.columns || []).forEach((column) => {
+          if (!column || !column.name) return;
+          items.push({
+            text: `${classRef}.schema().columns.find(column => column.name === "${column.name}")`,
+            displayText: `${classRef}.${column.name}`,
+            className: "cm-js-hint"
+          });
+        });
+      });
+
+      return items;
+    }
+
+    function scopeMetaText(currentScope, appScope, scopeLoadError) {
+      if (!currentScope.scope) {
+        return "Choose the app whose model classes should be available in the script editor and runtime.";
+      }
+      if (scopeLoadError) {
+        return `Failed to load script scope for ${currentScope.scope}.`;
+      }
+      if (!appScope || !appScope.current_app || !appScope.current_app.name) {
+        return `Loading script scope for ${currentScope.scope}...`;
+      }
+
+      const dependencyNames = Array.isArray(appScope.dependency_apps)
+        ? appScope.dependency_apps
+            .map((item) => (item && (item.namespace || item.name) ? String(item.namespace || item.name) : ""))
+            .filter(Boolean)
+        : [];
+
+      if (dependencyNames.length > 0) {
+        return `Models from ${appScope.current_app.name} plus dependencies: ${dependencyNames.join(", ")}`;
+      }
+      return `Models from ${appScope.current_app.name}.`;
+    }
+
+    function buildCompletions(currentScope, appScope) {
+      const activeObject = defaultScopeObject(appScope);
+      const modelRef = activeObject
+        ? scopeObjectClassRef(activeObject, appScope && appScope.current_app ? appScope.current_app.name : "")
+        : "Model";
+
+      return [
+        { text: "async function run(ctx) {\n  return null;\n}", displayText: "async function run", className: "cm-js-hint" },
+        { text: "const name = value;", displayText: "const", className: "cm-js-hint" },
+        { text: "let value = null;", displayText: "let", className: "cm-js-hint" },
+        { text: "if (condition) {\n  \n}", displayText: "if", className: "cm-js-hint" },
+        { text: "if (!value) {\n  return null;\n}", displayText: "if (!value)", className: "cm-js-hint" },
+        { text: "for (const item of items) {\n  \n}", displayText: "for...of", className: "cm-js-hint" },
+        { text: "try {\n  \n} catch (error) {\n  ctx.log(\"script failed\", { error: error.message });\n  throw error;\n}", displayText: "try/catch", className: "cm-js-hint" },
+        { text: "await promise", displayText: "await", className: "cm-js-hint" },
+        { text: "console.log(value);", displayText: "console.log", className: "cm-js-hint" },
+        { text: `new ${modelRef}({ field_name: value })`, displayText: `new ${modelRef}`, className: "cm-js-hint" },
+        { text: `await ${modelRef}.get(id)`, displayText: `${modelRef}.get`, className: "cm-js-hint" },
+        { text: `await ${modelRef}.query().where("field_name", "=", value).orderBy("field_name", "asc").limit(100).fetch()`, displayText: `${modelRef}.query`, className: "cm-js-hint" },
+        { text: `${modelRef}.query().where("field_name", "=", value)`, displayText: `${modelRef}.query().where`, className: "cm-js-hint" },
+        { text: `${modelRef}.query().whereAny([{ column: "field_name", operator: "=", value }, { column: "other_field", operator: "=", value }])`, displayText: `${modelRef}.query().whereAny`, className: "cm-js-hint" },
+        { text: `${modelRef}.query().whereAll([{ column: "field_name", operator: "=", value }])`, displayText: `${modelRef}.query().whereAll`, className: "cm-js-hint" },
+        { text: `${modelRef}.query().orderBy("field_name", "asc")`, displayText: `${modelRef}.query().orderBy`, className: "cm-js-hint" },
+        { text: `${modelRef}.query().limit(100)`, displayText: `${modelRef}.query().limit`, className: "cm-js-hint" },
+        { text: `${modelRef}.query().includeDeleted()`, displayText: `${modelRef}.query().includeDeleted`, className: "cm-js-hint" },
+        { text: `await ${modelRef}.query().first()`, displayText: `${modelRef}.query().first`, className: "cm-js-hint" },
+        { text: `await ${modelRef}.query().listIDs()`, displayText: `${modelRef}.query().listIDs`, className: "cm-js-hint" },
+        { text: `await ${modelRef}.create({ field_name: value })`, displayText: `${modelRef}.create`, className: "cm-js-hint" },
+        { text: `await ${modelRef}.query().where("field_name", "=", value).limit(1000).update({ status: "updated" })`, displayText: `${modelRef}.query().update`, className: "cm-js-hint" },
+        { text: `await ${modelRef}.query().where("field_name", "=", value).limit(1000).delete()`, displayText: `${modelRef}.query().delete`, className: "cm-js-hint" },
+        { text: `${modelRef}.schema()`, displayText: `${modelRef}.schema`, className: "cm-js-hint" },
+        { text: "await ctx.jobs.enqueue(\"script_name\", payload)", displayText: "ctx.jobs.enqueue", className: "cm-js-hint" },
+        { text: "await ctx.notifications.send({ title: \"Assigned\", body: \"A new record needs attention\", userID: ctx.user.id, level: \"info\" })", displayText: "ctx.notifications.send", className: "cm-js-hint" },
+        { text: "ctx.log(\"message\", { detail: \"value\" });", displayText: "ctx.log", className: "cm-js-hint" },
+        { text: "ctx.now()", displayText: "ctx.now", className: "cm-js-hint" },
+        { text: "app", displayText: "app", className: "cm-js-hint" },
+        { text: "user", displayText: "user", className: "cm-js-hint" },
+        { text: "input", displayText: "input", className: "cm-js-hint" },
+        { text: "payload", displayText: "payload", className: "cm-js-hint" }
+      ].concat(buildObjectCompletions(appScope));
+    }
+
+    const currentScope = { scope: scopeSelect ? (scopeSelect.value || "") : "" };
+    let appScope = emptyAppScope();
+    let scopeLoadError = false;
+    let scopeRequestID = 0;
+
+    CodeMirror.registerHelper("hint", "javascript", function(editor) {
+      const cursor = editor.getCursor();
+      const token = editor.getTokenAt(cursor);
+      const start = token.start;
+      const end = cursor.ch;
+      const raw = token.string || "";
+      const query = raw.trim().toLowerCase();
+      const prefixText = editor.getValue().slice(0, editor.indexFromPos(cursor));
+      const contextual = buildContextualQueryCompletions(prefixText, appScope);
+      const completions = contextual && Array.isArray(contextual.items) && contextual.items.length > 0
+        ? contextual.items
+        : buildCompletions(currentScope, appScope);
+      const list = completions.filter((item) => {
+        if (!query) return true;
+        return item.displayText.toLowerCase().includes(query) || item.text.toLowerCase().includes(query);
+      });
+
+      return {
+        list: list,
+        from: CodeMirror.Pos(cursor.line, contextual ? Math.max(0, cursor.ch - Number(contextual.replaceLength || 0)) : start),
+        to: CodeMirror.Pos(cursor.line, end)
+      };
+    });
+
+    const editor = CodeMirror.fromTextArea(textarea, {
+      mode: "text/javascript",
+      theme: "default",
+      lineNumbers: true,
+      indentUnit: 2,
+      tabSize: 2,
+      indentWithTabs: true,
+      lineWrapping: true,
+      autoCloseBrackets: true,
+      styleActiveLine: true,
+      extraKeys: {
+        "Ctrl-Space": function(cm) { cm.showHint({ hint: CodeMirror.hint.javascript }); },
+        "Cmd-Space": function(cm) { cm.showHint({ hint: CodeMirror.hint.javascript }); },
+        "Tab": function(cm) {
+          if (cm.state.completionActive) {
+            CodeMirror.commands.pickCompletion(cm);
+            return;
+          }
+          cm.execCommand("insertSoftTab");
+        }
+      }
+    });
+
+    editor.on("inputRead", function(cm, change) {
+      if (change.text && change.text[0] && /[A-Za-z_.]/.test(change.text[0])) {
+        cm.showHint({ hint: CodeMirror.hint.javascript, completeSingle: false });
+      }
+    });
+
+    function syncScopeMeta() {
+      if (!scopeMeta) return;
+      scopeMeta.textContent = scopeMetaText(currentScope, appScope, scopeLoadError);
+    }
+
+    async function loadScope() {
+      currentScope.scope = scopeSelect ? String(scopeSelect.value || "").trim().toLowerCase() : "";
+      appScope = emptyAppScope();
+      scopeLoadError = false;
+      syncScopeMeta();
+      if (!currentScope.scope) {
+        return;
+      }
+
+      const requestID = ++scopeRequestID;
+      try {
+        const response = await fetch(`/api/scripts/scope?scope=${encodeURIComponent(currentScope.scope)}`, {
+          headers: { "Accept": "application/json" }
+        });
+        if (!response.ok) {
+          throw new Error(`Scope request failed with status ${response.status}`);
+        }
+        const payload = await response.json();
+        if (requestID !== scopeRequestID) return;
+        appScope = payload && typeof payload === "object" ? payload : emptyAppScope();
+        scopeLoadError = false;
+      } catch (error) {
+        if (requestID !== scopeRequestID) return;
+        appScope = emptyAppScope();
+        scopeLoadError = true;
+      }
+      syncScopeMeta();
+    }
+
+    if (scopeSelect) {
+      scopeSelect.addEventListener("change", function() {
+        loadScope();
+      });
+    }
+
+    syncScopeMeta();
+    loadScope();
+
+    window.runScriptEditor = editor;
+  })();
+
+	  window.runAdhocScript = async function runAdhocScript() {
+	    const out = document.getElementById("run-script-result");
+	    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+	    const code = window.runScriptEditor ? window.runScriptEditor.getValue() : (document.getElementById("run-script-code").value || "");
+
+	    if (!window.confirm("Run this ad hoc script against live data? Changes will persist immediately.")) {
+	      return;
+	    }
+
+	    out.textContent = "Running...";
+
+    const res = await fetch("/api/scripts/run-adhoc", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf
+      },
+      body: JSON.stringify({
+        code: code,
+        scope: document.getElementById("run-script-scope")?.value || ""
+      })
+    });
+
+    const text = await res.text();
+    out.textContent = text;
+  };
+</script>
+{{end}}

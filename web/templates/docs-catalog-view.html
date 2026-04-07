@@ -1,0 +1,308 @@
+{{define "docs-view"}}
+<style>
+  .ui-docs-catalog {
+    --docs-ink: var(--text-primary);
+    --docs-copy: var(--text-secondary);
+    --docs-dim: var(--text-dim);
+    --docs-ghost: var(--text-ghost);
+    --docs-paper: var(--bg-surface);
+    --docs-surface: var(--bg-elevated);
+    --docs-line: var(--border);
+    --docs-line-strong: var(--border-mid);
+    --docs-line-bright: var(--border-bright);
+    --docs-pill: var(--surface-soft);
+    --docs-accent: rgba(231, 197, 111, 0.18);
+    --docs-accent-line: rgba(231, 197, 111, 0.32);
+    padding: 1.5rem;
+  }
+
+  .ui-docs-search-panel,
+  .ui-docs-section {
+    padding: 1.3rem;
+  }
+
+  .ui-docs-search-panel {
+    background:
+      radial-gradient(circle at top right, var(--docs-accent), transparent 34%),
+      linear-gradient(180deg, var(--bg-surface), var(--docs-paper));
+    border: 1px solid var(--docs-accent-line);
+  }
+
+  .ui-docs-section-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .ui-docs-section-title {
+    margin: 0;
+    font-family: "Syne", sans-serif;
+    letter-spacing: -0.03em;
+    color: var(--docs-ink);
+  }
+
+  .ui-docs-search-form {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .ui-docs-search-row {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ui-docs-search-input {
+    min-height: 52px;
+    border: 1px solid var(--docs-line);
+    border-radius: 18px;
+    background: var(--bg-base);
+    color: var(--docs-ink);
+    font-size: 1rem;
+  }
+
+  .ui-docs-search-input::placeholder {
+    color: var(--docs-ghost);
+  }
+
+  .ui-docs-search-hints,
+  .ui-docs-filter-row,
+  .ui-docs-tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .ui-docs-search-hint,
+  .ui-docs-filter-pill,
+  .ui-docs-tag,
+  .ui-docs-number-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--docs-line);
+    border-radius: 999px;
+    background: var(--docs-pill);
+    color: var(--docs-ink);
+    font-size: 0.82rem;
+  }
+
+  .ui-docs-filter-pill.is-active {
+    border-color: var(--docs-ink);
+    background: var(--docs-ink);
+    color: var(--bg-base);
+  }
+
+  .ui-docs-library-grid,
+  .ui-docs-article-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .ui-docs-library-grid {
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+
+  .ui-docs-article-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .ui-docs-library-card,
+  .ui-docs-article-card {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    border: 1px solid var(--docs-line);
+    border-radius: 18px;
+    background: var(--docs-surface);
+    transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+  }
+
+  .ui-docs-library-card:hover,
+  .ui-docs-article-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--docs-line-bright);
+    background: var(--bg-base);
+  }
+
+  .ui-docs-library-title,
+  .ui-docs-article-title {
+    margin: 0;
+    color: var(--docs-ink);
+  }
+
+  .ui-docs-library-meta,
+  .ui-docs-article-meta,
+  .ui-docs-empty-copy {
+    color: var(--docs-dim);
+  }
+
+  .ui-docs-article-excerpt {
+    margin: 0;
+    color: var(--docs-copy);
+  }
+
+  .ui-docs-article-head {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .ui-docs-empty {
+    padding: 2rem;
+    text-align: center;
+  }
+
+  .ui-docs-empty-title {
+    margin: 0 0 0.5rem;
+    font-family: "Syne", sans-serif;
+    color: var(--docs-ink);
+  }
+
+  @media (max-width: 640px) {
+    .ui-docs-catalog {
+      padding: 1rem;
+    }
+
+    .ui-docs-search-row {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<section class="ui-stack ui-docs-catalog">
+  <section class="ui-card ui-docs-search-panel">
+    <div class="ui-docs-section-head">
+      <div>
+        <h1 class="ui-docs-section-title">Search Docs, Topics, and Platform Features</h1>
+        <p class="ui-section-copy">Find the shortest path to the guidance you can already read.</p>
+      </div>
+      {{if .DocsCanManage}}
+        <a class="ui-action-link" href="{{.DocsManageHref}}">Manage Docs</a>
+      {{end}}
+    </div>
+
+    <form method="GET" action="/docs" class="ui-docs-search-form">
+      {{if .DocsLibrarySelected.Slug}}
+        <input type="hidden" name="library" value="{{.DocsLibrarySelected.Slug}}">
+      {{end}}
+      <div class="ui-docs-search-row">
+        <input class="ui-input ui-docs-search-input" name="q" value="{{.DocsSearch}}" placeholder="Search docs, topics, and platform features" />
+        <button type="submit" class="ui-btn ui-btn-primary">Search Docs</button>
+      </div>
+      <div class="ui-docs-search-hints">
+        <span class="ui-docs-search-hint">{{.DocsPublishedCount}} readable docs</span>
+        <span class="ui-docs-search-hint">{{len .DocsLibraries}} readable libraries</span>
+        {{if .DocsLibrarySelected.Slug}}
+          <span class="ui-docs-search-hint">Filtered to {{.DocsLibrarySelected.Name}}</span>
+        {{end}}
+        {{if or .DocsHasSearch .DocsHasLibraryFilter}}
+          <a class="ui-docs-search-hint" href="/docs">Reset View</a>
+        {{end}}
+      </div>
+    </form>
+  </section>
+
+  <section class="ui-card ui-docs-section">
+    <div class="ui-docs-section-head">
+      <div>
+        <h2 class="ui-docs-section-title">Libraries</h2>
+        <p class="ui-section-copy">Browse by product area when you want structure before search.</p>
+      </div>
+      {{if .DocsLibrarySelected.Slug}}
+        <a class="ui-action-link" href="/docs{{if .DocsHasSearch}}?q={{.DocsSearch}}{{end}}">Clear Library Filter</a>
+      {{end}}
+    </div>
+
+    <div class="ui-docs-library-grid">
+      {{range .DocsLibraries}}
+        <a class="ui-docs-library-card" href="/docs?library={{.Slug}}">
+          <div>
+            <p class="ui-docs-library-title"><strong>{{.Name}}</strong></p>
+            <p class="ui-docs-library-meta">{{if .AppName}}{{if .AppLabel}}{{.AppLabel}}{{else}}{{.AppName}}{{end}} · {{end}}{{.ArticleCount}} published docs{{if .IsDefault}} · default{{end}}</p>
+          </div>
+          <p class="ui-docs-article-excerpt">{{if .Description}}{{.Description}}{{else}}Browse platform guidance and reference material in this library.{{end}}</p>
+          <div class="ui-docs-filter-row">
+            <span class="ui-docs-filter-pill {{if eq $.DocsLibrarySelected.Slug .Slug}}is-active{{end}}">{{.Visibility}}</span>
+          </div>
+        </a>
+      {{else}}
+        <div class="ui-empty-state">
+          <strong>No readable libraries</strong>
+          <span>Once docs libraries exist, they will appear here.</span>
+        </div>
+      {{end}}
+    </div>
+  </section>
+
+  <section class="ui-card ui-docs-section">
+    <div class="ui-docs-section-head">
+      <div>
+        <h2 class="ui-docs-section-title">
+          {{if .DocsHasSearch}}
+            Search Results
+          {{else if .DocsLibrarySelected.Slug}}
+            {{.DocsLibrarySelected.Name}}
+          {{else}}
+            Explore The Catalog
+          {{end}}
+        </h2>
+        <p class="ui-section-copy">
+          {{if .DocsHasSearch}}
+            {{.DocsTotal}} doc(s) matched “{{.DocsSearch}}”.
+          {{else if .DocsLibrarySelected.Slug}}
+            {{.DocsLibrarySelected.Description}}
+          {{else}}
+            Published docs across the libraries you can read.
+          {{end}}
+        </p>
+      </div>
+    </div>
+
+    {{if .DocsArticles}}
+      <div class="ui-docs-article-grid">
+        {{range .DocsArticles}}
+          <a class="ui-docs-article-card" href="{{.ReaderHref}}">
+            <div class="ui-docs-article-head">
+              {{if .Number}}
+                <span class="ui-docs-number-pill">{{.Number}}</span>
+              {{end}}
+              <div>
+                <p class="ui-docs-article-title"><strong>{{.Title}}</strong></p>
+                <p class="ui-docs-article-meta">{{.LibraryName}} · v{{.VersionNum}} · {{.Status}}</p>
+              </div>
+            </div>
+            <p class="ui-docs-article-excerpt">{{.Excerpt}}</p>
+            {{if .TagItems}}
+              <div class="ui-docs-tag-row">
+                {{range .TagItems}}
+                  <span class="ui-docs-tag">{{.}}</span>
+                {{end}}
+              </div>
+            {{end}}
+          </a>
+        {{end}}
+      </div>
+
+      <div class="ui-paginator" style="padding-top: 1.1rem;">
+        <div class="ui-paginator-copy">{{.DocsTotal}} result(s) · page {{.DocsPage}} of {{.DocsTotalPages}}</div>
+        <div class="ui-toolbar-group">
+          {{if .DocsHasPrev}}
+            <a class="ui-btn ui-btn-secondary" href="/docs{{if .DocsLibrarySelected.Slug}}?library={{.DocsLibrarySelected.Slug}}&{{else}}?{{end}}{{if .DocsHasSearch}}q={{.DocsSearch}}&{{end}}page={{.DocsPrevPage}}&size={{.DocsPageSize}}">Prev</a>
+          {{end}}
+          {{if .DocsHasNext}}
+            <a class="ui-btn ui-btn-secondary" href="/docs{{if .DocsLibrarySelected.Slug}}?library={{.DocsLibrarySelected.Slug}}&{{else}}?{{end}}{{if .DocsHasSearch}}q={{.DocsSearch}}&{{end}}page={{.DocsNextPage}}&size={{.DocsPageSize}}">Next</a>
+          {{end}}
+        </div>
+      </div>
+    {{else}}
+      <div class="ui-card ui-docs-empty">
+        <h3 class="ui-docs-empty-title">No docs matched this view.</h3>
+        <p class="ui-docs-empty-copy">{{if .DocsHasSearch}}Try a broader search or clear the library filter.{{else}}Published docs will appear here once this library has content.{{end}}</p>
+      </div>
+    {{end}}
+  </section>
+</section>
+{{end}}

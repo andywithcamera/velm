@@ -1,0 +1,6 @@
+.git
+.github
+.env
+.session-keys.json
+tmp
+.DS_Store

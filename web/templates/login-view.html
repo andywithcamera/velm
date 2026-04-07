@@ -1,0 +1,60 @@
+{{define "login-view"}}
+<section class="ui-stack" style="max-width: 32rem; margin: 4rem auto 0;">
+  <div class="ui-panel">
+    <div class="ui-section-header">
+      <div>
+        <span class="ui-kicker">Sign In</span>
+        <h2 class="ui-title">Login</h2>
+        <p class="ui-section-copy">Authenticate to access builder, operations, and admin workspaces.</p>
+      </div>
+    </div>
+
+    <form
+        method="POST"
+        action="/auth/login"
+        enctype="application/x-www-form-urlencoded"
+        class="ui-stack"
+    >
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="next" value="{{.LoginNext}}">
+        <div class="ui-field">
+            <label for="email" class="ui-field-label">Email</label>
+            <input
+                type="email"
+                name="email"
+                id="email"
+                required
+                class="ui-input"
+            >
+        </div>
+
+        <div class="ui-field">
+            <label for="password" class="ui-field-label">Password</label>
+            <input
+                type="password"
+                name="password"
+                id="password"
+                required
+                class="ui-input"
+            >
+        </div>
+
+        {{if .Error}}
+            <div class="ui-alert ui-alert-danger">
+              <p>{{.Error}}</p>
+            </div>
+        {{end}}
+
+        <div class="ui-form-actions">
+            <button
+                type="submit"
+                class="ui-btn ui-btn-primary"
+            >
+                Log In
+            </button>
+        </div>
+    </form>
+  </div>
+</section>
+
+{{end}}

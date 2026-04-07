@@ -1,0 +1,1292 @@
+{{define "page-builder-view"}}
+{{$selectedApp := .AppEditorSelectedApp}}
+{{$initialOpenID := .AppEditorInitialOpenID}}
+<section class="ui-editor-page">
+  <div class="ui-codebench ui-codebench-app">
+    <aside class="ui-codebench-sidebar">
+      <section class="ui-card ui-codebench-panel ui-codebench-tree ui-codebench-tree-vscode">
+        <div class="ui-codebench-tree-head">
+          <div class="ui-codebench-tree-head-copy">
+            <span class="ui-codebench-tree-kicker">Explorer{{if $selectedApp.Name}}: {{$selectedApp.Name}}{{end}}</span>
+            <span class="ui-codebench-panel-title">Objects</span>
+          </div>
+          <div class="ui-codebench-tree-head-tools">
+            <span class="ui-tree-summary-actions">
+              <a href="/admin/app-editor?active=new%3Aapp" class="ui-tree-action-link" aria-label="Create application">+</a>
+            </span>
+            {{if $selectedApp.Name}}<span class="ui-badge ui-badge-neutral">{{$selectedApp.ObjectCount}} items</span>{{end}}
+          </div>
+        </div>
+        <form method="GET" action="/admin/app-editor" class="ui-app-picker ui-app-picker-sidebar">
+          <div class="ui-app-picker-copy">
+            <label class="ui-field-label" for="app-selector">Application</label>
+            {{if $selectedApp.Name}}<span class="ui-badge ui-badge-neutral">{{$selectedApp.ObjectCount}} objects</span>{{end}}
+          </div>
+          <div class="ui-app-picker-control">
+            <select id="app-selector" name="app" class="ui-select">
+              {{range .AppEditorApps}}
+                <option value="{{.Name}}" {{if eq $selectedApp.Name .Name}}selected{{end}}>{{.Label}} ({{.ObjectCount}})</option>
+              {{else}}
+                <option value="">No apps</option>
+              {{end}}
+            </select>
+            <span class="ui-app-picker-chevron" aria-hidden="true">▾</span>
+          </div>
+          {{if $selectedApp.Name}}
+            <p class="ui-app-picker-meta">{{$selectedApp.Label}} <span>{{$selectedApp.Name}}</span></p>
+          {{else}}
+            <p class="ui-app-picker-meta">Choose an app to load its draft and published definition.</p>
+          {{end}}
+        </form>
+
+        {{if $selectedApp.Name}}
+          <div class="ui-file-tree">
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>App</span>
+              </summary>
+              <div class="ui-tree-content ui-file-children ui-file-children-root">
+                {{range .AppEditorDefinitionObjects}}
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                    <span class="ui-file-icon ui-file-icon-app">APP</span>
+                    <span class="ui-file-copy">
+                      <span class="ui-file-primary">{{.Label}}</span>
+                      {{if ne .Label .Name}}<span class="ui-file-secondary">{{.Name}}</span>{{end}}
+                    </span>
+                  </a>
+                {{else}}
+                  <span class="ui-file-group-label">No definition metadata</span>
+                {{end}}
+                <details class="ui-tree-node" open>
+                  <summary class="ui-tree-summary ui-tree-summary-group">
+                    <span>Dependencies</span>
+                    <span class="ui-tree-summary-actions">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adependency" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                    </span>
+                  </summary>
+                  <div class="ui-tree-content ui-file-children">
+                    {{range .AppEditorDependencies}}
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                        <span class="ui-file-icon ui-file-icon-dependency">DEP</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Label}}</span>
+                          {{if ne .Label .Name}}<span class="ui-file-secondary">{{.Name}}</span>{{end}}
+                        </span>
+                        <span class="ui-tree-status {{if not .Published}}is-draft{{end}}">{{if .Published}}Live{{else}}Draft{{end}}</span>
+                      </a>
+                    {{else}}
+                      <span class="ui-file-group-label">No dependencies declared</span>
+                    {{end}}
+                  </div>
+                </details>
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Tables</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atable" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content">
+                {{range .AppEditorExplorerTables}}
+                  <details class="ui-tree-node">
+                    <summary class="ui-tree-summary ui-tree-summary-object">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Table.ID | urlquery}}" class="ui-file-entry ui-file-entry-parent" data-open-object="{{.Table.ID}}">
+                        <span class="ui-file-icon ui-file-icon-table">TBL</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Table.Label}}</span>
+                          {{if ne .Table.Label .Table.Name}}<span class="ui-file-secondary">{{.Table.Name}}</span>{{end}}
+                        </span>
+                        <span class="ui-tree-status {{if not .Table.Published}}is-draft{{end}}">{{if .Table.Published}}Live{{else}}Draft{{end}}</span>
+                      </a>
+                    </summary>
+                    <div class="ui-tree-content">
+                      <details class="ui-tree-node" open>
+                        <summary class="ui-tree-summary ui-tree-summary-group">
+                          <span>Columns</span>
+                          <span class="ui-tree-summary-actions">
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Acolumn&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                          </span>
+                        </summary>
+                        <div class="ui-tree-content ui-file-children">
+                          {{range .Columns}}
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                              <span class="ui-file-icon ui-file-icon-column">COL</span>
+                              <span class="ui-file-copy">
+                                <span class="ui-file-primary">{{.Label}}</span>
+                                {{if ne .Label .Name}}<span class="ui-file-secondary">{{.Name}}</span>{{end}}
+                              </span>
+                              <span class="ui-tree-status {{if not .Published}}is-draft{{end}}">{{if .Published}}Live{{else}}Draft{{end}}</span>
+                            </a>
+                          {{end}}
+                          {{range .SystemColumns}}
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                              <span class="ui-file-icon ui-file-icon-system">SYS</span>
+                              <span class="ui-file-copy">
+                                <span class="ui-file-primary">{{.Label}}</span>
+                                <span class="ui-file-secondary">{{.Name}} · inherited platform field</span>
+                              </span>
+                              <span class="ui-tree-status">Live</span>
+                            </a>
+                          {{end}}
+                        </div>
+                      </details>
+                      <details class="ui-tree-node">
+                        <summary class="ui-tree-summary ui-tree-summary-group">
+                          <span>Data Policies</span>
+                          {{if .Table.Editable}}
+                            <span class="ui-tree-summary-actions">
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adata-policy&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                            </span>
+                          {{end}}
+                        </summary>
+                        <div class="ui-tree-content ui-file-children">
+                          {{range .DataPolicies}}
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                              <span class="ui-file-icon ui-file-icon-policy">POL</span>
+                              <span class="ui-file-copy">
+                                <span class="ui-file-primary">{{.Label}}</span>
+                                <span class="ui-file-secondary">{{.Meta}}</span>
+                              </span>
+                            </a>
+                          {{else}}
+                            <span class="ui-file-group-label">No data policies for this table</span>
+                          {{end}}
+                        </div>
+                      </details>
+                      <details class="ui-tree-node">
+                        <summary class="ui-tree-summary ui-tree-summary-group">
+                          <span>Triggers</span>
+                          {{if .Table.Editable}}
+                            <span class="ui-tree-summary-actions">
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atable-trigger&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                            </span>
+                          {{end}}
+                        </summary>
+                        <div class="ui-tree-content ui-file-children">
+                          {{range .TriggerItems}}
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                              <span class="ui-file-icon ui-file-icon-trigger">TRG</span>
+                              <span class="ui-file-copy">
+                                <span class="ui-file-primary">{{.Label}}</span>
+                                <span class="ui-file-secondary">{{.Meta}}</span>
+                              </span>
+                            </a>
+                          {{else}}
+                            <span class="ui-file-group-label">No triggers declared on this table</span>
+                          {{end}}
+                        </div>
+                      </details>
+                      <details class="ui-tree-node">
+                        <summary class="ui-tree-summary ui-tree-summary-group">
+                          <span>Forms</span>
+                          <span class="ui-tree-summary-actions">
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aform&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                          </span>
+                        </summary>
+                        <div class="ui-tree-content">
+                          {{range .Forms}}
+                            <details class="ui-tree-node">
+                              <summary class="ui-tree-summary ui-tree-summary-object">
+                                <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Form.ID | urlquery}}" class="ui-file-entry ui-file-entry-parent" data-open-object="{{.Form.ID}}">
+                                  <span class="ui-file-icon ui-file-icon-form">FRM</span>
+                                  <span class="ui-file-copy">
+                                    <span class="ui-file-primary">{{.Form.Label}}</span>
+                                    <span class="ui-file-secondary">{{.Form.Meta}}</span>
+                                  </span>
+                                  <span class="ui-tree-status {{if not .Form.Published}}is-draft{{end}}">{{if .Form.Published}}Live{{else}}Draft{{end}}</span>
+                                </a>
+                              </summary>
+                              <div class="ui-tree-content ui-file-children">
+                                <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Layout.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Layout.ID}}">
+                                  <span class="ui-file-icon ui-file-icon-layout">LAY</span>
+                                  <span class="ui-file-copy">
+                                    <span class="ui-file-primary">{{.Layout.Label}}</span>
+                                    <span class="ui-file-secondary">{{.Layout.Meta}}</span>
+                                  </span>
+                                </a>
+                                <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Actions.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Actions.ID}}">
+                                  <span class="ui-file-icon ui-file-icon-action">ACT</span>
+                                  <span class="ui-file-copy">
+                                    <span class="ui-file-primary">{{.Actions.Label}}</span>
+                                    <span class="ui-file-secondary">{{.Actions.Meta}}</span>
+                                  </span>
+                                </a>
+                                <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Security.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Security.ID}}">
+                                  <span class="ui-file-icon ui-file-icon-security">SEC</span>
+                                  <span class="ui-file-copy">
+                                    <span class="ui-file-primary">{{.Security.Label}}</span>
+                                    <span class="ui-file-secondary">{{.Security.Meta}}</span>
+                                  </span>
+                                </a>
+                              </div>
+                            </details>
+                          {{else}}
+                            <span class="ui-file-group-label">No forms for this table</span>
+                          {{end}}
+                          <details class="ui-tree-node">
+                            <summary class="ui-tree-summary ui-tree-summary-group">
+                              <span>Client Scripts</span>
+                              {{if .Table.Editable}}
+                                <span class="ui-tree-summary-actions">
+                                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aclient-script&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                                </span>
+                              {{end}}
+                            </summary>
+                            <div class="ui-tree-content">
+                              {{range .ClientScripts}}
+                                <details class="ui-tree-node">
+                                  <summary class="ui-tree-summary ui-tree-summary-object">
+                                    <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Script.ID | urlquery}}" class="ui-file-entry ui-file-entry-parent" data-open-object="{{.Script.ID}}">
+                                      <span class="ui-file-icon ui-file-icon-script">JS</span>
+                                      <span class="ui-file-copy">
+                                        <span class="ui-file-primary">{{.Script.Label}}</span>
+                                        <span class="ui-file-secondary">{{.Script.Meta}}</span>
+                                      </span>
+                                      <span class="ui-tree-status {{if not .Script.Published}}is-draft{{end}}">{{if .Script.Published}}Live{{else}}Draft{{end}}</span>
+                                    </a>
+                                  </summary>
+                                  <div class="ui-tree-content ui-file-children">
+                                    <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Code.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Code.ID}}">
+                                      <span class="ui-file-icon ui-file-icon-code">COD</span>
+                                      <span class="ui-file-copy">
+                                        <span class="ui-file-primary">{{.Code.Label}}</span>
+                                        <span class="ui-file-secondary">{{.Code.Meta}}</span>
+                                      </span>
+                                    </a>
+                                  </div>
+                                </details>
+                              {{else}}
+                                <span class="ui-file-group-label">No client scripts for this table</span>
+                              {{end}}
+                            </div>
+                          </details>
+                        </div>
+                      </details>
+                      <details class="ui-tree-node">
+                        <summary class="ui-tree-summary ui-tree-summary-group">
+                          <span>Related Lists</span>
+                          {{if .Table.Editable}}
+                            <span class="ui-tree-summary-actions">
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Arelated-list&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                            </span>
+                          {{end}}
+                        </summary>
+                        <div class="ui-tree-content ui-file-children">
+                          {{range .RelatedLists}}
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                              <span class="ui-file-icon ui-file-icon-related">REL</span>
+                              <span class="ui-file-copy">
+                                <span class="ui-file-primary">{{.Label}}</span>
+                                <span class="ui-file-secondary">{{.Meta}}</span>
+                              </span>
+                            </a>
+                          {{else}}
+                            <span class="ui-file-group-label">No related lists for this table</span>
+                          {{end}}
+                        </div>
+                      </details>
+                      <details class="ui-tree-node">
+                        <summary class="ui-tree-summary ui-tree-summary-group">
+                          <span>Security</span>
+                          {{if .Table.Editable}}
+                            <span class="ui-tree-summary-actions">
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Asecurity-rule&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                            </span>
+                          {{end}}
+                        </summary>
+                        <div class="ui-tree-content ui-file-children">
+                          {{range .SecurityItems}}
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                              <span class="ui-file-icon ui-file-icon-security">SEC</span>
+                              <span class="ui-file-copy">
+                                <span class="ui-file-primary">{{.Label}}</span>
+                                <span class="ui-file-secondary">{{.Meta}}</span>
+                              </span>
+                            </a>
+                          {{else}}
+                            <span class="ui-file-group-label">No security rules for this table</span>
+                          {{end}}
+                        </div>
+                      </details>
+                    </div>
+                  </details>
+                {{else}}
+                  <span class="ui-file-group-label">No tables for this app</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Pages</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Apage" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content">
+                {{range .AppEditorPages}}
+                  <details class="ui-tree-node">
+                    <summary class="ui-tree-summary ui-tree-summary-object">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Page.ID | urlquery}}" class="ui-file-entry ui-file-entry-parent" data-open-object="{{.Page.ID}}">
+                        <span class="ui-file-icon ui-file-icon-page">PAG</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Page.Label}}</span>
+                          <span class="ui-file-secondary">{{.Page.Name}}</span>
+                        </span>
+                        <span class="ui-tree-status {{if not .Page.Published}}is-draft{{end}}">{{if .Page.Published}}Live{{else}}Draft{{end}}</span>
+                      </a>
+                    </summary>
+                    <div class="ui-tree-content ui-file-children">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Actions.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Actions.ID}}">
+                        <span class="ui-file-icon ui-file-icon-action">ACT</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Actions.Label}}</span>
+                          <span class="ui-file-secondary">{{.Actions.Meta}}</span>
+                        </span>
+                      </a>
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Security.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Security.ID}}">
+                        <span class="ui-file-icon ui-file-icon-security">SEC</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Security.Label}}</span>
+                          <span class="ui-file-secondary">{{.Security.Meta}}</span>
+                        </span>
+                      </a>
+                    </div>
+                  </details>
+                {{else}}
+                  <span class="ui-file-group-label">No pages for this app</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Client Scripts</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aclient-script" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content">
+                {{range .AppEditorClientScripts}}
+                  <details class="ui-tree-node">
+                    <summary class="ui-tree-summary ui-tree-summary-object">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Script.ID | urlquery}}" class="ui-file-entry ui-file-entry-parent" data-open-object="{{.Script.ID}}">
+                        <span class="ui-file-icon ui-file-icon-script">JS</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Script.Label}}</span>
+                          <span class="ui-file-secondary">{{.Script.Meta}}</span>
+                        </span>
+                        <span class="ui-tree-status {{if not .Script.Published}}is-draft{{end}}">{{if .Script.Published}}Live{{else}}Draft{{end}}</span>
+                      </a>
+                    </summary>
+                    <div class="ui-tree-content ui-file-children">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Code.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Code.ID}}">
+                        <span class="ui-file-icon ui-file-icon-code">COD</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Code.Label}}</span>
+                          <span class="ui-file-secondary">{{.Code.Meta}}</span>
+                        </span>
+                      </a>
+                    </div>
+                  </details>
+                {{else}}
+                  <span class="ui-file-group-label">No app-wide client scripts</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Services</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aservice" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content">
+                {{range .AppEditorServices}}
+                  <details class="ui-tree-node">
+                    <summary class="ui-tree-summary ui-tree-summary-object">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Service.ID | urlquery}}" class="ui-file-entry ui-file-entry-parent" data-open-object="{{.Service.ID}}">
+                        <span class="ui-file-icon ui-file-icon-script">SRV</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Service.Label}}</span>
+                          <span class="ui-file-secondary">{{.Service.Meta}}</span>
+                        </span>
+                        <span class="ui-tree-status {{if not .Service.Published}}is-draft{{end}}">{{if .Service.Published}}Live{{else}}Draft{{end}}</span>
+                      </a>
+                    </summary>
+                    <div class="ui-tree-content ui-file-children">
+                      {{range .Methods}}
+                        <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                          <span class="ui-file-icon ui-file-icon-code">MET</span>
+                          <span class="ui-file-copy">
+                            <span class="ui-file-primary">{{.Label}}</span>
+                            <span class="ui-file-secondary">{{.Meta}}</span>
+                          </span>
+                        </a>
+                      {{end}}
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Amethod&service={{.Service.Name | urlquery}}" class="ui-file-entry ui-file-entry-child">
+                        <span class="ui-file-icon ui-file-icon-action">+</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">New Method</span>
+                          <span class="ui-file-secondary">{{.Service.Name}}</span>
+                        </span>
+                      </a>
+                    </div>
+                  </details>
+                {{else}}
+                  <span class="ui-file-group-label">No services for this app</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Endpoints</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aendpoint" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content ui-file-children">
+                {{range .AppEditorEndpoints}}
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                    <span class="ui-file-icon ui-file-icon-endpoint">API</span>
+                    <span class="ui-file-copy">
+                      <span class="ui-file-primary">{{.Label}}</span>
+                      <span class="ui-file-secondary">{{.Meta}}</span>
+                    </span>
+                    <span class="ui-tree-status {{if not .Published}}is-draft{{end}}">{{if .Published}}Live{{else}}Draft{{end}}</span>
+                  </a>
+                {{else}}
+                  <span class="ui-file-group-label">No endpoints for this app</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Triggers</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atrigger" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content ui-file-children">
+                {{range .AppEditorTriggers}}
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                    <span class="ui-file-icon ui-file-icon-action">TRG</span>
+                    <span class="ui-file-copy">
+                      <span class="ui-file-primary">{{.Label}}</span>
+                      <span class="ui-file-secondary">{{.Meta}}</span>
+                    </span>
+                    <span class="ui-tree-status {{if not .Published}}is-draft{{end}}">{{if .Published}}Live{{else}}Draft{{end}}</span>
+                  </a>
+                {{else}}
+                  <span class="ui-file-group-label">No triggers for this app</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Schedules</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aschedule" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content ui-file-children">
+                {{range .AppEditorSchedules}}
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                    <span class="ui-file-icon ui-file-icon-action">SCH</span>
+                    <span class="ui-file-copy">
+                      <span class="ui-file-primary">{{.Label}}</span>
+                      <span class="ui-file-secondary">{{.Meta}}</span>
+                    </span>
+                    <span class="ui-tree-status {{if not .Published}}is-draft{{end}}">{{if .Published}}Live{{else}}Draft{{end}}</span>
+                  </a>
+                {{else}}
+                  <span class="ui-file-group-label">No schedules for this app</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Roles</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Arole" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content ui-file-children">
+                {{range .AppEditorRoles}}
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                    <span class="ui-file-icon ui-file-icon-role">ROL</span>
+                    <span class="ui-file-copy">
+                      <span class="ui-file-primary">{{.Label}}</span>
+                      {{if ne .Label .Name}}<span class="ui-file-secondary">{{.Name}}</span>{{end}}
+                    </span>
+                    <span class="ui-tree-status {{if not .Published}}is-draft{{end}}">{{if .Published}}Live{{else}}Draft{{end}}</span>
+                  </a>
+                {{else}}
+                  <span class="ui-file-group-label">No roles for this app</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Seed Data</span>
+              </summary>
+              <div class="ui-tree-content ui-file-children">
+                {{range .AppEditorSeeds}}
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.ID}}">
+                    <span class="ui-file-icon ui-file-icon-seed">SEE</span>
+                    <span class="ui-file-copy">
+                      <span class="ui-file-primary">{{.Label}}</span>
+                      {{if ne .Label .Name}}<span class="ui-file-secondary">{{.Name}}</span>{{end}}
+                    </span>
+                    <span class="ui-tree-status {{if not .Published}}is-draft{{end}}">{{if .Published}}Live{{else}}Draft{{end}}</span>
+                  </a>
+                {{else}}
+                  <span class="ui-file-group-label">No seed data in YAML</span>
+                {{end}}
+              </div>
+            </details>
+            <details class="ui-tree-node" open>
+              <summary class="ui-tree-summary">
+                <span>Documentation</span>
+                <span class="ui-tree-summary-actions">
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adocumentation" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                </span>
+              </summary>
+              <div class="ui-tree-content">
+                {{range .AppEditorDocumentation}}
+                  <details class="ui-tree-node">
+                    <summary class="ui-tree-summary ui-tree-summary-object">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Article.ID | urlquery}}" class="ui-file-entry ui-file-entry-parent" data-open-object="{{.Article.ID}}">
+                        <span class="ui-file-icon ui-file-icon-documentation">DOC</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Article.Label}}</span>
+                          <span class="ui-file-secondary">{{.Article.Meta}}</span>
+                        </span>
+                        <span class="ui-tree-status {{if not .Article.Published}}is-draft{{end}}">{{if .Article.Published}}Live{{else}}Draft{{end}}</span>
+                      </a>
+                    </summary>
+                    <div class="ui-tree-content ui-file-children">
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Content.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Content.ID}}">
+                        <span class="ui-file-icon ui-file-icon-code">CNT</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Content.Label}}</span>
+                          <span class="ui-file-secondary">{{.Content.Meta}}</span>
+                        </span>
+                      </a>
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Category.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Category.ID}}">
+                        <span class="ui-file-icon ui-file-icon-category">CAT</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Category.Label}}</span>
+                          <span class="ui-file-secondary">{{.Category.Meta}}</span>
+                        </span>
+                      </a>
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Visibility.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Visibility.ID}}">
+                        <span class="ui-file-icon ui-file-icon-visibility">VIS</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Visibility.Label}}</span>
+                          <span class="ui-file-secondary">{{.Visibility.Meta}}</span>
+                        </span>
+                      </a>
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.Related.ID | urlquery}}" class="ui-file-entry ui-file-entry-child" data-open-object="{{.Related.ID}}">
+                        <span class="ui-file-icon ui-file-icon-related">REL</span>
+                        <span class="ui-file-copy">
+                          <span class="ui-file-primary">{{.Related.Label}}</span>
+                          <span class="ui-file-secondary">{{.Related.Meta}}</span>
+                        </span>
+                      </a>
+                    </div>
+                  </details>
+                {{else}}
+                  <span class="ui-file-group-label">No documentation in this app</span>
+                {{end}}
+              </div>
+            </details>
+          </div>
+        {{else}}
+          <div class="ui-empty-state">
+            <strong>No applications yet</strong>
+            <span>Create an app to start drafting YAML. SQL tables are created when you publish.</span>
+            <a href="/admin/app-editor?active=new%3Aapp" class="ui-btn ui-btn-primary">Create App</a>
+          </div>
+        {{end}}
+      </section>
+    </aside>
+
+    <div class="ui-codebench-main">
+      <div class="ui-code-tabs" id="appEditorTabs">
+        {{if $initialOpenID}}
+          {{range .AppEditorObjects}}
+            {{if eq .ID $initialOpenID}}
+              <button type="button" class="ui-code-tab is-active" data-tab-id="{{.ID}}">
+                <span>{{if .Label}}{{.Label}}{{else}}{{.Name}}{{end}}</span>
+                <small>{{.Kind}}</small>
+                <i class="ui-code-tab-dirty" data-tab-dirty="true" aria-hidden="true"></i>
+                <em class="ui-code-tab-close" data-close-tab="true">x</em>
+              </button>
+            {{end}}
+          {{end}}
+        {{else}}
+          <div class="ui-code-tabs-empty">No open editors</div>
+        {{end}}
+      </div>
+
+      <section class="ui-card ui-code-surface">
+        <div class="ui-code-surface-head">
+          {{if $selectedApp.Name}}
+          <div class="ui-app-editor-head">
+            <div class="ui-app-editor-head-copy">
+              <div class="ui-list-state">
+                <span class="ui-badge ui-badge-neutral">{{$selectedApp.ObjectCount}} objects</span>
+                <span class="ui-badge ui-badge-neutral">Draft v{{$selectedApp.DefinitionVersion}}</span>
+                <span class="ui-badge ui-badge-neutral">Published v{{$selectedApp.PublishedVersion}}</span>
+              </div>
+              <h2 class="ui-section-title">{{$selectedApp.Label}}</h2>
+              <p class="ui-section-copy">
+                <strong>{{$selectedApp.Name}}</strong>
+                {{if $selectedApp.Description}}<span>· {{$selectedApp.Description}}</span>{{end}}
+                {{if $selectedApp.HasUnpublishedDraft}}<span>· Unpublished draft changes are ready to publish.</span>{{else}}<span>· Draft and live app are in sync.</span>{{end}}
+              </p>
+            </div>
+            <div class="ui-app-editor-head-actions">
+              <form method="POST" action="/api/app-editor/publish" class="ui-inline-form" data-app-editor-publish-form="true">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="app_name" value="{{$selectedApp.Name}}">
+                <input type="hidden" name="return_to" value="/admin/app-editor?app={{$selectedApp.Name | urlquery}}{{if $initialOpenID}}&active={{$initialOpenID | urlquery}}{{end}}">
+                <button type="submit" class="ui-btn {{if $selectedApp.HasUnpublishedDraft}}ui-btn-primary{{else}}ui-btn-secondary{{end}}" {{if not $selectedApp.HasUnpublishedDraft}}disabled{{end}}>
+                  {{if $selectedApp.HasUnpublishedDraft}}Publish App{{else}}App Published{{end}}
+                </button>
+              </form>
+            </div>
+          </div>
+          {{else}}
+          <div class="ui-list-state">
+            <span class="ui-badge ui-badge-neutral">No app selected</span>
+          </div>
+          {{end}}
+        </div>
+
+        <div class="ui-code-surface-body">
+          {{if .AppEditorActiveFormData}}
+            <div id="editorContent">
+              {{template "form-view" .AppEditorActiveFormData}}
+            </div>
+          {{else if $selectedApp.Name}}
+            <div class="ui-editor-empty-state {{if $initialOpenID}}hidden{{end}}" id="editorEmptyState" {{if $initialOpenID}}hidden{{end}}>
+              <strong>No editor open</strong>
+              <span>Open an app object from the explorer to inspect its definition.</span>
+            </div>
+            <div id="editorContent" {{if not $initialOpenID}}class="hidden" hidden{{end}}>
+              <div id="objectPanels">
+                {{with .AppEditorActiveObject}}
+                  {{$object := .}}
+                  <section class="ui-app-object-panel" data-object-panel="{{.ID}}">
+                  {{if eq .Kind "table"}}
+                    <div class="ui-app-object-hero">
+                      <div>
+                        <span class="ui-kicker">{{.Kind}}</span>
+                        <h3 class="ui-section-title">{{.Label}}</h3>
+                        <p class="ui-section-copy">{{if .Description}}{{.Description}}{{else}}No description is set for this object yet.{{end}}</p>
+                      </div>
+                      <div class="ui-list-state">
+                        <span class="ui-badge ui-badge-neutral">{{.Name}}</span>
+                      </div>
+                    </div>
+                    <div class="ui-object-detail-tabs" data-detail-tabs="{{.ID}}">
+                      <button type="button" class="ui-object-detail-tab is-active" data-detail-tab="{{.ID}}" data-detail-view="properties">Properties</button>
+                      <button type="button" class="ui-object-detail-tab" data-detail-tab="{{.ID}}" data-detail-view="columns">Columns</button>
+                      <button type="button" class="ui-object-detail-tab" data-detail-tab="{{.ID}}" data-detail-view="security">Security</button>
+                    </div>
+
+                    <div class="ui-object-detail-view" data-detail-panel="{{.ID}}" data-detail-view="properties">
+                      <div class="ui-grid-2">
+                        <div class="ui-panel">
+                          <h4 class="ui-section-title">Table Properties</h4>
+                          <div class="ui-form-sidebar-list" style="margin-top: 0.9rem;">
+                            <div>
+                              <span class="ui-form-sidebar-label">Name</span>
+                              <strong class="ui-form-sidebar-value">{{.Name}}</strong>
+                            </div>
+                            <div>
+                              <span class="ui-form-sidebar-label">Storage Table</span>
+                              <strong class="ui-form-sidebar-value">{{.PhysicalName}}</strong>
+                            </div>
+                            <div>
+                              <span class="ui-form-sidebar-label">Label Singular</span>
+                              <strong class="ui-form-sidebar-value">{{if .LabelSingular}}{{.LabelSingular}}{{else}}Not set{{end}}</strong>
+                            </div>
+                            <div>
+                              <span class="ui-form-sidebar-label">Label Plural</span>
+                              <strong class="ui-form-sidebar-value">{{if .LabelPlural}}{{.LabelPlural}}{{else}}Not set{{end}}</strong>
+                            </div>
+                            <div>
+                              <span class="ui-form-sidebar-label">Columns</span>
+                              <strong class="ui-form-sidebar-value">{{.ColumnCount}}</strong>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="ui-panel ui-panel-muted">
+                          <h4 class="ui-section-title">Actions</h4>
+                          <p class="ui-section-copy" style="margin-top: 0.6rem;">Open the live table or manage schema details in the builder.</p>
+                          <div class="ui-form-actions" style="margin-top: 1rem;">
+                            <a href="{{.Href}}" class="ui-btn ui-btn-primary">Open Table</a>
+                            <a href="/builder/schema?app={{$selectedApp.Name | urlquery}}&table={{.PhysicalName | urlquery}}" class="ui-btn ui-btn-secondary">Edit Schema</a>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="ui-object-detail-view hidden" data-detail-panel="{{.ID}}" data-detail-view="columns" hidden>
+                      <div class="ui-table-shell ui-table-scroll">
+                        <table class="ui-table">
+                          <thead>
+                            <tr>
+                              <th>Name</th>
+                              <th>Label</th>
+                              <th>Type</th>
+                              <th>Nullable</th>
+                              <th>Default</th>
+                              <th>Validation</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {{range .Columns}}
+                              <tr>
+                                <td><a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{printf "column:%s:%s" $object.PhysicalName .Name | urlquery}}" class="ui-link-button" data-open-object="column:{{$object.PhysicalName}}:{{.Name}}"><code>{{.Name}}</code></a></td>
+                                <td>{{if .Label}}{{.Label}}{{else}}-{{end}}</td>
+                                <td><code>{{.DataType}}</code></td>
+                                <td>{{if .IsNullable}}Yes{{else}}No{{end}}</td>
+                                <td>{{if .DefaultValue}}<code>{{.DefaultValue}}</code>{{else}}-{{end}}</td>
+                                <td>{{if .ValidationRule}}<code>{{.ValidationRule}}</code>{{else}}-{{end}}</td>
+                              </tr>
+                            {{else}}
+                              <tr>
+                                <td colspan="6">No columns found.</td>
+                              </tr>
+                            {{end}}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div class="ui-object-detail-view hidden" data-detail-panel="{{.ID}}" data-detail-view="security" hidden>
+                      <div class="ui-stack-list">
+                        {{range .SecurityRules}}
+                          <div class="ui-panel ui-panel-muted">
+                            <div class="ui-list-row">
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=security%3A{{$object.PhysicalName | urlquery}}%3A{{if eq .Name "Table Access"}}access{{else}}rows{{end}}" class="ui-link-button ui-link-button-strong" data-open-object="security:{{$object.PhysicalName}}:{{if eq .Name "Table Access"}}access{{else}}rows{{end}}">{{.Name}}</a>
+                              <span class="ui-badge ui-badge-neutral">{{.Status}}</span>
+                            </div>
+                            <p class="ui-section-copy" style="margin-top: 0.6rem;">{{.Description}}</p>
+                          </div>
+                        {{end}}
+                      </div>
+                    </div>
+                  {{end}}
+
+                  {{if eq .Kind "column"}}
+                    <div class="ui-app-object-hero">
+                      <div>
+                        <span class="ui-kicker">column</span>
+                        <h3 class="ui-section-title">{{.Label}}</h3>
+                        <p class="ui-section-copy">{{.Description}}</p>
+                      </div>
+                      <div class="ui-list-state">
+                        <span class="ui-badge ui-badge-neutral">{{.Name}}</span>
+                      </div>
+                    </div>
+                    <div class="ui-grid-2">
+                      <div class="ui-panel">
+                        <h4 class="ui-section-title">Column Properties</h4>
+                        <div class="ui-form-sidebar-list" style="margin-top: 0.9rem;">
+                          <div>
+                            <span class="ui-form-sidebar-label">Name</span>
+                            <strong class="ui-form-sidebar-value">{{.ColumnDetail.Name}}</strong>
+                          </div>
+                          <div>
+                            <span class="ui-form-sidebar-label">Label</span>
+                            <strong class="ui-form-sidebar-value">{{if .ColumnDetail.Label}}{{.ColumnDetail.Label}}{{else}}Not set{{end}}</strong>
+                          </div>
+                          <div>
+                            <span class="ui-form-sidebar-label">Type</span>
+                            <strong class="ui-form-sidebar-value">{{.ColumnDetail.DataType}}</strong>
+                          </div>
+                          <div>
+                            <span class="ui-form-sidebar-label">Nullable</span>
+                            <strong class="ui-form-sidebar-value">{{if .ColumnDetail.IsNullable}}Yes{{else}}No{{end}}</strong>
+                          </div>
+                          <div>
+                            <span class="ui-form-sidebar-label">Default</span>
+                            <strong class="ui-form-sidebar-value">{{if .ColumnDetail.DefaultValue}}{{.ColumnDetail.DefaultValue}}{{else}}Not set{{end}}</strong>
+                          </div>
+                          <div>
+                            <span class="ui-form-sidebar-label">Validation</span>
+                            <strong class="ui-form-sidebar-value">{{if .ColumnDetail.ValidationRule}}{{.ColumnDetail.ValidationRule}}{{else}}Not set{{end}}</strong>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="ui-panel ui-panel-muted">
+                        <h4 class="ui-section-title">Parent Table</h4>
+                        <p class="ui-section-copy" style="margin-top: 0.6rem;">This column belongs to <code>{{.PhysicalName}}</code>.</p>
+                        <div class="ui-form-actions" style="margin-top: 1rem;">
+                          <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ParentID | urlquery}}" class="ui-btn ui-btn-secondary" data-open-object="{{.ParentID}}">Open Parent Table</a>
+                          <a href="/builder/schema?app={{$selectedApp.Name | urlquery}}&table={{$object.PhysicalName | urlquery}}" class="ui-btn ui-btn-secondary">Edit Schema</a>
+                        </div>
+                      </div>
+                    </div>
+                  {{end}}
+
+                  {{if eq .Kind "security"}}
+                    <div class="ui-app-object-hero">
+                      <div>
+                        <span class="ui-kicker">security</span>
+                        <h3 class="ui-section-title">{{.Label}}</h3>
+                        <p class="ui-section-copy">{{.Description}}</p>
+                      </div>
+                      <div class="ui-list-state">
+                        <span class="ui-badge ui-badge-neutral">{{.SecurityDetail.Status}}</span>
+                      </div>
+                    </div>
+                    <div class="ui-grid-2">
+                      <div class="ui-panel">
+                        <h4 class="ui-section-title">Rule Properties</h4>
+                        <div class="ui-form-sidebar-list" style="margin-top: 0.9rem;">
+                          <div>
+                            <span class="ui-form-sidebar-label">Rule</span>
+                            <strong class="ui-form-sidebar-value">{{.SecurityDetail.Name}}</strong>
+                          </div>
+                          <div>
+                            <span class="ui-form-sidebar-label">Table</span>
+                            <strong class="ui-form-sidebar-value">{{.PhysicalName}}</strong>
+                          </div>
+                          <div>
+                            <span class="ui-form-sidebar-label">Status</span>
+                            <strong class="ui-form-sidebar-value">{{.SecurityDetail.Status}}</strong>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="ui-panel ui-panel-muted">
+                        <h4 class="ui-section-title">Notes</h4>
+                        <p class="ui-section-copy" style="margin-top: 0.6rem;">{{.SecurityDetail.Description}}</p>
+                        <div class="ui-form-actions" style="margin-top: 1rem;">
+                          <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active={{.ParentID | urlquery}}" class="ui-btn ui-btn-secondary" data-open-object="{{.ParentID}}">Open Parent Table</a>
+                        </div>
+                      </div>
+                    </div>
+                  {{end}}
+
+                  </section>
+                {{end}}
+              </div>
+            </div>
+          {{else}}
+            <div class="ui-empty-state" style="margin: 1.15rem;">
+              <strong>No application selected</strong>
+              <span>Create an app or pick one from the selector to load its draft definition into the editor.</span>
+              <a href="/admin/app-editor?active=new%3Aapp" class="ui-btn ui-btn-primary">Create App</a>
+            </div>
+          {{end}}
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<script>
+  (function () {
+    const objects = [
+      {{range $index, $obj := .AppEditorObjects}}{{if $index}},{{end}}{
+        id: "{{js $obj.ID}}",
+        name: "{{js $obj.Name}}",
+        label: "{{js $obj.Label}}",
+        kind: "{{js $obj.Kind}}",
+        description: "{{js $obj.Description}}"
+      }{{end}}
+    ];
+    const initialOpenID = "{{js $initialOpenID}}";
+
+    const fileButtons = Array.from(document.querySelectorAll("[data-open-object]"));
+    const tabsHost = document.getElementById("appEditorTabs");
+    const detailTabs = Array.from(document.querySelectorAll("[data-detail-tab]"));
+    const detailPanels = Array.from(document.querySelectorAll("[data-detail-panel]"));
+    const emptyState = document.getElementById("editorEmptyState");
+    const contentHost = document.getElementById("editorContent");
+    const selectedAppName = "{{js $selectedApp.Name}}";
+    const recordForm = document.getElementById("recordForm");
+    const appSelector = document.getElementById("app-selector");
+    const publishForm = document.querySelector("[data-app-editor-publish-form='true']");
+    if (!tabsHost || objects.length === 0) return;
+
+    const objectMap = new Map();
+    objects.forEach((object) => objectMap.set(object.id, object));
+
+    const storageKey = "app-editor:" + selectedAppName;
+    const openTabs = [];
+    const activeDetailViewByObject = new Map();
+    objects.forEach((object) => activeDetailViewByObject.set(object.id, "properties"));
+
+    let activeTab = "";
+    let dirty = false;
+    let allowUnload = false;
+    let baseline = snapshotForm(recordForm);
+
+    function snapshotForm(form) {
+      if (!form) return "";
+      const entries = [];
+      const data = new FormData(form);
+      for (const [key, value] of data.entries()) {
+        if (key === "csrf_token" || key === "expected_version" || key === "expected_updated_at" || key === "return_to") {
+          continue;
+        }
+        entries.push([key, String(value)]);
+      }
+      entries.sort((a, b) => {
+        if (a[0] === b[0]) return a[1].localeCompare(b[1]);
+        return a[0].localeCompare(b[0]);
+      });
+      return entries.map(([key, value]) => `${key}=${value}`).join("&");
+    }
+
+    function setDirty(nextDirty) {
+      dirty = !!nextDirty;
+      updateDirtyIndicators();
+    }
+
+    function syncDirtyState() {
+      if (!recordForm) {
+        setDirty(false);
+        return;
+      }
+      setDirty(snapshotForm(recordForm) !== baseline);
+    }
+
+    function markAllowUnload() {
+      allowUnload = true;
+      window.setTimeout(() => {
+        allowUnload = false;
+      }, 2000);
+    }
+
+    function showEditorNotice(message, isError) {
+      if (typeof window.showToast === "function") {
+        window.showToast(message, !!isError);
+        return;
+      }
+      if (isError) {
+        window.alert(message);
+      }
+    }
+
+    function confirmDiscardChanges(message) {
+      if (!dirty) return true;
+      return window.confirm(message || "Discard unsaved changes in this editor?");
+    }
+
+    function renderFileState() {
+      fileButtons.forEach((button) => {
+        button.classList.toggle("is-active", button.getAttribute("data-open-object") === activeTab);
+      });
+    }
+
+    function updateHeaderActions() {
+      return;
+    }
+
+    function renderPanels() {
+      const hasActive = activeTab !== "";
+
+      if (emptyState) {
+        emptyState.classList.toggle("hidden", hasActive);
+        emptyState.hidden = hasActive;
+      }
+
+      if (contentHost) {
+        contentHost.classList.toggle("hidden", !hasActive);
+        contentHost.hidden = !hasActive;
+      }
+
+      if (hasActive) {
+        const object = objectMap.get(activeTab);
+        if (object && object.kind === "table") {
+          activateDetailView(activeTab, activeDetailViewByObject.get(activeTab) || "properties");
+        }
+      }
+      renderFileState();
+      updateDirtyIndicators();
+      updateHeaderActions();
+    }
+
+    function activateDetailView(objectId, viewName) {
+      activeDetailViewByObject.set(objectId, viewName);
+      detailTabs.forEach((tab) => {
+        const sameObject = tab.getAttribute("data-detail-tab") === objectId;
+        const sameView = tab.getAttribute("data-detail-view") === viewName;
+        tab.classList.toggle("is-active", sameObject && sameView);
+      });
+      detailPanels.forEach((panel) => {
+        const sameObject = panel.getAttribute("data-detail-panel") === objectId;
+        const sameView = panel.getAttribute("data-detail-view") === viewName;
+        const isActive = sameObject && sameView;
+        panel.classList.toggle("hidden", !isActive);
+        panel.hidden = !isActive;
+      });
+    }
+
+    function buildEditorURL(nextActiveID) {
+      const nextURL = new URL(window.location.href);
+      nextURL.searchParams.set("app", selectedAppName);
+      if (nextActiveID) {
+        nextURL.searchParams.set("active", nextActiveID);
+      } else {
+        nextURL.searchParams.delete("active");
+      }
+      return nextURL;
+    }
+
+    function syncURL(nextActiveID) {
+      window.history.replaceState({}, "", buildEditorURL(nextActiveID).toString());
+    }
+
+    function closeTab(id) {
+      if (id === activeTab && !confirmDiscardChanges("Close this tab and discard unsaved changes?")) {
+        return;
+      }
+      const index = openTabs.indexOf(id);
+      if (index === -1) return;
+      const wasActiveTab = activeTab === id;
+      openTabs.splice(index, 1);
+      if (wasActiveTab) {
+        activeTab = openTabs[openTabs.length - 1] || "";
+        if (!activeTab) {
+          setDirty(false);
+        }
+      }
+      persistState();
+
+      if (wasActiveTab && activeTab) {
+        markAllowUnload();
+        if (window.navigateWithTransition) {
+          window.navigateWithTransition(buildEditorURL(activeTab).toString());
+        } else {
+          window.location.href = buildEditorURL(activeTab).toString();
+        }
+        return;
+      }
+
+      syncURL(activeTab);
+      renderTabs();
+      renderPanels();
+    }
+
+    function renderTabs() {
+      tabsHost.innerHTML = "";
+      tabsHost.classList.remove("is-scroll-left", "is-scroll-right");
+
+      if (openTabs.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "ui-code-tabs-empty";
+        empty.textContent = "No open editors";
+        tabsHost.appendChild(empty);
+        return;
+      }
+      openTabs.forEach((id) => {
+        const object = objectMap.get(id);
+        if (!object) return;
+
+        const tab = document.createElement("a");
+        tab.className = `ui-code-tab ${id === activeTab ? "is-active" : ""}`;
+        tab.setAttribute("data-tab-id", id);
+        const tabURL = new URL(window.location.href);
+        tabURL.searchParams.set("app", selectedAppName);
+        tabURL.searchParams.set("active", id);
+        tab.href = tabURL.toString();
+
+        const name = document.createElement("span");
+        name.textContent = object.label || object.name;
+
+        const kind = document.createElement("small");
+        kind.textContent = object.kind;
+
+        const dirtyDot = document.createElement("i");
+        dirtyDot.className = "ui-code-tab-dirty";
+        dirtyDot.setAttribute("data-tab-dirty", "true");
+        dirtyDot.setAttribute("aria-hidden", "true");
+
+        const close = document.createElement("em");
+        close.className = "ui-code-tab-close";
+        close.setAttribute("data-close-tab", "true");
+        close.textContent = "x";
+
+        tab.appendChild(name);
+        tab.appendChild(kind);
+        tab.appendChild(dirtyDot);
+        tab.appendChild(close);
+
+        tab.addEventListener("click", function (event) {
+          if (event.target instanceof HTMLElement && event.target.hasAttribute("data-close-tab")) {
+            event.stopPropagation();
+            event.preventDefault();
+            closeTab(id);
+            return;
+          }
+          if (id !== activeTab && !confirmDiscardChanges("Open another object and discard unsaved changes?")) {
+            event.preventDefault();
+            return;
+          }
+          activeTab = id;
+          persistState();
+          markAllowUnload();
+        });
+        tabsHost.appendChild(tab);
+      });
+
+      updateTabOverflowState();
+      updateDirtyIndicators();
+
+      const activeTabButton = activeTab ? Array.from(tabsHost.querySelectorAll("[data-tab-id]")).find((node) => node.getAttribute("data-tab-id") === activeTab) : null;
+      if (activeTabButton && activeTabButton.scrollIntoView) {
+        activeTabButton.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }
+
+    function updateDirtyIndicators() {
+      tabsHost.querySelectorAll("[data-tab-id]").forEach((node) => {
+        const dot = node.querySelector("[data-tab-dirty]");
+        if (!dot) return;
+        dot.classList.toggle("is-visible", dirty && node.getAttribute("data-tab-id") === activeTab);
+      });
+    }
+
+    function updateTabOverflowState() {
+      const maxScrollLeft = Math.max(0, tabsHost.scrollWidth - tabsHost.clientWidth);
+      tabsHost.classList.toggle("is-scroll-left", tabsHost.scrollLeft > 4);
+      tabsHost.classList.toggle("is-scroll-right", tabsHost.scrollLeft < maxScrollLeft - 4);
+    }
+
+    function ensureTab(id) {
+      if (!objectMap.has(id)) return;
+      if (!openTabs.includes(id)) {
+        openTabs.push(id);
+      }
+      activeTab = id;
+      persistState();
+    }
+
+    detailTabs.forEach((tab) => {
+      tab.addEventListener("click", function () {
+        const objectId = tab.getAttribute("data-detail-tab");
+        const viewName = tab.getAttribute("data-detail-view");
+        if (!objectId || !viewName) return;
+        activateDetailView(objectId, viewName);
+      });
+    });
+
+    fileButtons.forEach((button) => {
+      button.addEventListener("click", function (event) {
+        const id = button.getAttribute("data-open-object");
+        if (!id) return;
+        if (id !== activeTab && !confirmDiscardChanges("Open another object and discard unsaved changes?")) {
+          event.preventDefault();
+          return;
+        }
+        ensureTab(id);
+        markAllowUnload();
+      });
+    });
+
+    tabsHost.addEventListener("scroll", updateTabOverflowState);
+    window.addEventListener("resize", updateTabOverflowState);
+    window.addEventListener("beforeunload", function (event) {
+      if (!dirty || allowUnload) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
+
+    if (recordForm) {
+      recordForm.addEventListener("input", syncDirtyState, true);
+      recordForm.addEventListener("change", syncDirtyState, true);
+    }
+
+    if (appSelector && appSelector.form) {
+      appSelector.addEventListener("change", function () {
+        if (!confirmDiscardChanges("Switch apps and discard unsaved changes in this editor?")) {
+          appSelector.value = selectedAppName;
+          return;
+        }
+        markAllowUnload();
+        appSelector.form.submit();
+      });
+    }
+
+    if (publishForm) {
+      publishForm.addEventListener("submit", function (event) {
+        if (dirty) {
+          event.preventDefault();
+          showEditorNotice("Save draft changes before publishing the app.", true);
+          return;
+        }
+        markAllowUnload();
+      });
+    }
+
+    document.body.addEventListener("htmx:afterRequest", function (event) {
+      if (!recordForm || !event.detail || !event.detail.requestConfig) return;
+      if (event.detail.requestConfig.elt !== recordForm) return;
+      if (event.detail.successful) {
+        baseline = snapshotForm(recordForm);
+        setDirty(false);
+        const redirect = String(event.detail.xhr?.getResponseHeader("HX-Redirect") || "").trim();
+        if (redirect) {
+          markAllowUnload();
+        }
+      }
+    });
+
+    function persistState() {
+      try {
+        window.sessionStorage.setItem(storageKey, JSON.stringify({
+          openTabs: openTabs.filter((id) => objectMap.has(id)),
+          activeTab: activeTab
+        }));
+      } catch (_) {}
+    }
+
+    function hydrateState() {
+      let stored = null;
+      try {
+        stored = JSON.parse(window.sessionStorage.getItem(storageKey) || "null");
+      } catch (_) {}
+
+      if (stored && Array.isArray(stored.openTabs)) {
+        stored.openTabs.forEach((id) => {
+          if (objectMap.has(id) && !openTabs.includes(id)) {
+            openTabs.push(id);
+          }
+        });
+        if (typeof stored.activeTab === "string" && objectMap.has(stored.activeTab)) {
+          activeTab = stored.activeTab;
+        }
+      }
+
+      if (initialOpenID && objectMap.has(initialOpenID)) {
+        if (!openTabs.includes(initialOpenID)) {
+          openTabs.push(initialOpenID);
+        }
+        activeTab = initialOpenID;
+      }
+
+      persistState();
+      renderTabs();
+      renderPanels();
+    }
+
+    if (initialOpenID && objectMap.has(initialOpenID)) {
+      if (!openTabs.includes(initialOpenID)) {
+        openTabs.push(initialOpenID);
+      }
+      activeTab = initialOpenID;
+    }
+
+    hydrateState();
+  })();
+</script>
+{{end}}

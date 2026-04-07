@@ -1,0 +1,7 @@
+# Default ownership and review routing.
+* @ANDYwithCAMERA
+
+/.github/ @ANDYwithCAMERA
+/cmd/ @ANDYwithCAMERA
+/internal/ @ANDYwithCAMERA
+/web/ @ANDYwithCAMERA

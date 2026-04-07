@@ -1,0 +1,81 @@
+{{define "notification-menu-panel"}}
+<div
+    id="notification-menu-container"
+    class="ui-topnav-notifications"
+    hx-get="/api/notifications/panel?return_to={{urlquery .ReturnTo}}"
+    hx-trigger="every 30s, notifications:refresh from:body"
+    hx-swap="outerHTML"
+>
+    <button
+        type="button"
+        class="ui-topnav-icon"
+        _="on click toggle .hidden on #notification-menu"
+        aria-label="Notifications"
+    >
+        <svg class="ui-topnav-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V4a2 2 0 10-4 0v1.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0a3 3 0 11-6 0m6 0H9" />
+        </svg>
+        {{if gt .UnreadCount 0}}
+        <span class="ui-notification-badge">
+            {{if gt .UnreadCount 99}}99+{{else}}{{.UnreadCount}}{{end}}
+        </span>
+        {{end}}
+    </button>
+
+    <div id="notification-menu" class="ui-dropdown-menu ui-notification-menu hidden">
+        <div class="ui-notification-menu-head">
+            <div>
+                <div class="ui-notification-menu-title">Notifications</div>
+                <div class="ui-dropdown-label ui-dropdown-label-inline">
+                    {{if gt .UnreadCount 0}}{{.UnreadCount}} unread{{else}}All caught up{{end}}
+                </div>
+            </div>
+            {{if gt .UnreadCount 0}}
+            <form
+                method="POST"
+                action="/api/notifications/read-all"
+                hx-post="/api/notifications/read-all"
+                hx-target="#notification-menu-container"
+                hx-swap="outerHTML"
+            >
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="return_to" value="{{.ReturnTo}}">
+                <button type="submit" class="ui-menu-link ui-menu-link-inline">
+                    Mark all read
+                </button>
+            </form>
+            {{end}}
+        </div>
+
+        <div class="ui-notification-menu-body">
+            {{range .Items}}
+            <div class="ui-notification-item{{if .IsUnread}} is-unread{{end}}">
+                <div class="ui-notification-item-row">
+                    <span class="ui-notification-dot{{if eq .Level "success"}} is-success{{else if eq .Level "warning"}} is-warning{{else if eq .Level "error"}} is-error{{else}} is-info{{end}}"></span>
+                    <div class="ui-notification-copy">
+                        <div class="ui-notification-title-row">
+                            <div class="ui-notification-title">{{.Title}}</div>
+                            {{if .IsUnread}}<span class="ui-badge ui-badge-neutral">New</span>{{end}}
+                        </div>
+                        {{if .Body}}<p class="ui-notification-body">{{.Body}}</p>{{end}}
+                        <div class="ui-notification-meta">
+                            <span>{{.CreatedAtLabel}}</span>
+                            <form method="POST" action="/api/notifications/open" class="ui-notification-action-form">
+                                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                                <input type="hidden" name="return_to" value="{{$.ReturnTo}}">
+                                <input type="hidden" name="notification_id" value="{{.ID}}">
+                                <button type="submit" class="ui-menu-link ui-menu-link-inline">
+                                    {{if .Href}}Open{{else}}Mark read{{end}}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {{else}}
+            <div class="ui-notification-empty">No notifications yet.</div>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}

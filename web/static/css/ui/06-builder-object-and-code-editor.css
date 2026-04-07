@@ -1,0 +1,207 @@
+/* Builder object detail, code editor, metadata, and utility panel styles. */
+
+.ui-object-detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-object-detail-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.62rem 0.88rem;
+  border: 1px solid var(--border-mid);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.ui-object-detail-tab.is-active {
+  background: var(--blue-mid);
+  border-color: var(--blue-mid);
+  color: var(--text-primary);
+}
+
+.ui-object-detail-view {
+  display: block;
+}
+
+.ui-app-object-hero {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--bg-surface), var(--bg-elevated));
+}
+
+.ui-code-editor-frame {
+  border: 1px solid rgba(15, 23, 42, 0.94);
+  border-radius: 18px;
+  overflow: hidden;
+  background: #0f172a;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.22);
+}
+
+.ui-code-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.42);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.99), rgba(12, 18, 32, 0.99));
+}
+
+.ui-code-editor-label {
+  color: rgba(226, 232, 240, 0.96);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ui-code-editor-toolbar .ui-field-help {
+  color: rgba(191, 219, 254, 0.78);
+}
+
+.ui-code-editor-toolbar .ui-editor-toolbar .ui-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.ui-code-editor-body {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  min-height: 24rem;
+}
+
+.ui-code-gutter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+  padding: 1rem 0.7rem;
+  border-right: 1px solid rgba(100, 116, 139, 0.36);
+  background: rgba(11, 18, 32, 0.98);
+  color: rgba(148, 163, 184, 0.96);
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.84rem;
+  text-align: right;
+}
+
+.ui-code-pane {
+  position: relative;
+  min-width: 0;
+}
+
+.ui-code-textarea,
+.ui-code-preview-surface {
+  width: 100%;
+  min-height: 24rem;
+  border: 0;
+  padding: 1rem 1.1rem;
+  background: #0f172a;
+  color: #f8fafc;
+  caret-color: #f8fafc;
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+
+.ui-code-textarea {
+  resize: vertical;
+}
+
+.ui-code-textarea:focus,
+.ui-code-preview-surface:focus {
+  outline: none;
+}
+
+.ui-code-textarea::selection,
+.ui-code-preview-surface::selection {
+  background: rgba(96, 165, 250, 0.32);
+}
+
+.ui-code-preview-surface {
+  overflow: auto;
+}
+
+.ui-script-complete {
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 8;
+  border: 1px solid rgba(100, 116, 139, 0.56);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(11, 18, 32, 0.98);
+  box-shadow: 0 18px 38px rgba(2, 6, 23, 0.45);
+}
+
+.ui-script-complete.hidden {
+  display: none;
+}
+
+.ui-script-complete-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid rgba(100, 116, 139, 0.48);
+  color: rgba(241, 245, 249, 0.96);
+  font-size: 0.76rem;
+}
+
+.ui-script-complete-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 15rem;
+  overflow: auto;
+}
+
+.ui-script-complete-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 0;
+  border-top: 1px solid rgba(30, 41, 59, 0.96);
+  background: transparent;
+  color: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ui-script-complete-item:first-child {
+  border-top: 0;
+}
+
+.ui-script-complete-item:hover,
+.ui-script-complete-item.is-active {
+  background: rgba(30, 41, 59, 0.98);
+}
+
+.ui-script-complete-main {
+  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.ui-script-complete-detail {
+  color: rgba(191, 219, 254, 0.78);
+  font-size: 0.76rem;
+}

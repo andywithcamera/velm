@@ -1,0 +1,281 @@
+{{define "access-control-view"}}
+<section class="ui-stack">
+  <div class="ui-panel">
+    <div class="ui-section-header">
+      <div>
+        <span class="ui-kicker">Admin Workspace</span>
+        <h1 class="ui-title">Access Control</h1>
+        <p class="ui-section-copy">Manage roles, permissions, and assignments stored in DB records without jumping between disconnected admin forms.</p>
+      </div>
+      {{if .AccessControlStatusText}}
+        <span class="ui-badge {{if eq .AccessControlStatusText "last_admin_guard_blocked"}}ui-badge-danger{{end}}">
+          Status: {{.AccessControlStatusText}}
+        </span>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="ui-workbench">
+    <aside class="ui-card ui-explorer">
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>Admin Console</span>
+        </div>
+        <div class="ui-explorer-list">
+          <a href="/t/_user" class="ui-explorer-link">
+            <span>
+              <strong>Users</strong><br />
+              <span class="ui-explorer-meta">Manage accounts in the system table</span>
+            </span>
+          </a>
+          <span class="ui-explorer-link is-active">
+            <span>
+              <strong>Groups</strong><br />
+              <span class="ui-explorer-meta">Roles, permissions, and assignments</span>
+            </span>
+          </span>
+          <a href="/t/_user_preference" class="ui-explorer-link">
+            <span>
+              <strong>Preferences</strong><br />
+              <span class="ui-explorer-meta">Inspect saved user UI settings</span>
+            </span>
+          </a>
+	          <a href="/admin/audit" class="ui-explorer-link">
+	            <span>
+	              <strong>System Log</strong><br />
+	              <span class="ui-explorer-meta">Review request history and security events</span>
+	            </span>
+	          </a>
+          <a href="/admin/app-editor" class="ui-explorer-link">
+            <span>
+              <strong>Application Editor</strong><br />
+              <span class="ui-explorer-meta">Edit pages and route config like a workbench</span>
+            </span>
+          </a>
+        </div>
+      </div>
+
+      <div class="ui-explorer-group">
+        <div class="ui-explorer-heading">
+          <span>Summary</span>
+        </div>
+        <div class="ui-metadata-grid">
+          <div class="ui-metadata-item">
+            <span class="ui-metadata-label">Users</span>
+            <span class="ui-metadata-value">{{len .AuthzUsers}}</span>
+          </div>
+          <div class="ui-metadata-item">
+            <span class="ui-metadata-label">Roles</span>
+            <span class="ui-metadata-value">{{len .AuthzRoles}}</span>
+          </div>
+          <div class="ui-metadata-item">
+            <span class="ui-metadata-label">Permissions</span>
+            <span class="ui-metadata-value">{{len .AuthzPermissions}}</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="ui-workbench-editor">
+      <div class="ui-tab-strip">
+        <span class="ui-tab is-active">Definitions</span>
+        <span class="ui-tab">Assignments</span>
+        <span class="ui-tab">Current State</span>
+      </div>
+
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h2 class="ui-section-title">Create or Update Definitions</h2>
+            <p class="ui-section-copy">Roles define who a user can be; permissions define what actions exist. Both are managed here before assignment.</p>
+          </div>
+        </div>
+
+        <div class="ui-grid-2">
+          <form method="POST" action="/api/authz/roles/create" class="ui-panel ui-panel-muted ui-stack">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <h3 class="ui-section-title">Role</h3>
+            <div class="ui-field">
+              <label class="ui-field-label" for="role-name">Role name</label>
+              <input id="role-name" name="name" placeholder="role_name" required class="ui-input" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="role-description">Description</label>
+              <input id="role-description" name="description" placeholder="Description" class="ui-input" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="role-priority">Priority</label>
+              <input id="role-priority" type="number" min="0" name="priority" value="50" required class="ui-input" />
+            </div>
+            <div class="ui-form-actions">
+              <button type="submit" class="ui-btn ui-btn-primary">Save Role</button>
+            </div>
+          </form>
+
+          <form method="POST" action="/api/authz/permissions/create" class="ui-panel ui-panel-muted ui-stack">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="return_to" value="{{.PermissionReturnTo}}">
+            <h3 class="ui-section-title">Permission</h3>
+            <div class="ui-field">
+              <label class="ui-field-label" for="permission-resource">Resource</label>
+              <input id="permission-resource" name="resource" placeholder="resource (e.g. platform)" required class="ui-input" value="{{.PermissionPrefillResource}}" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="permission-action">Action</label>
+              <input id="permission-action" name="action" placeholder="action (e.g. write)" required class="ui-input" value="{{.PermissionPrefillAction}}" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="permission-scope">Scope</label>
+              <input id="permission-scope" name="scope" placeholder="scope (e.g. global)" value="{{if .PermissionPrefillScope}}{{.PermissionPrefillScope}}{{else}}global{{end}}" required class="ui-input" />
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="permission-description">Description</label>
+              <input id="permission-description" name="description" placeholder="Description" class="ui-input" value="{{.PermissionPrefillDescription}}" />
+            </div>
+            <div class="ui-form-actions">
+              <button type="submit" class="ui-btn ui-btn-primary">Save Permission</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h2 class="ui-section-title">Assignments</h2>
+            <p class="ui-section-copy">Grant roles to users and permissions to roles with app scoping when needed.</p>
+          </div>
+        </div>
+
+        <div class="ui-grid-2">
+          <form method="POST" action="/api/authz/user-roles/grant" class="ui-panel ui-stack">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <h3 class="ui-section-title">Assign Role to User</h3>
+            <div class="ui-field">
+              <label class="ui-field-label" for="assign-user">User</label>
+              <select id="assign-user" name="user_id" class="ui-select" required>
+                <option value="">Select user</option>
+                {{range .AuthzUsers}}
+                  <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="assign-role">Role</label>
+              <select id="assign-role" name="role_id" class="ui-select" required>
+                <option value="">Select role</option>
+                {{range .AuthzRoles}}
+                  <option value="{{.ID}}">{{.Name}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="assign-app">App scope</label>
+              <input id="assign-app" name="app_id" placeholder="optional app_id for scoped role" class="ui-input" />
+            </div>
+            <div class="ui-form-actions">
+              <button type="submit" class="ui-btn ui-btn-primary">Assign Role</button>
+            </div>
+          </form>
+
+          <form method="POST" action="/api/authz/role-permissions/grant" class="ui-panel ui-stack">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <h3 class="ui-section-title">Assign Permission to Role</h3>
+            <div class="ui-field">
+              <label class="ui-field-label" for="assign-perm-role">Role</label>
+              <select id="assign-perm-role" name="role_id" class="ui-select" required>
+                <option value="">Select role</option>
+                {{range .AuthzRoles}}
+                  <option value="{{.ID}}">{{.Name}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="assign-permission">Permission</label>
+              <select id="assign-permission" name="permission_id" class="ui-select" required>
+                <option value="">Select permission</option>
+                {{range .AuthzPermissions}}
+                  <option value="{{.ID}}">{{.Resource}}:{{.Action}}:{{.Scope}}</option>
+                {{end}}
+              </select>
+            </div>
+            <div class="ui-form-actions">
+              <button type="submit" class="ui-btn ui-btn-primary">Assign Permission</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="ui-card ui-form-section">
+        <div class="ui-section-header">
+          <div>
+            <h2 class="ui-section-title">Current Assignments</h2>
+            <p class="ui-section-copy">Review active user-role and role-permission mappings and revoke them in place.</p>
+          </div>
+        </div>
+
+        <div class="ui-grid-2">
+          <div class="ui-panel">
+            <h3 class="ui-section-title">User Role Assignments</h3>
+            <div class="ui-stack" style="margin-top: 0.9rem;">
+              {{if .UserRoleAssignments}}
+                {{range .UserRoleAssignments}}
+                <div class="ui-panel ui-panel-muted">
+                  <div class="ui-section-header" style="margin-bottom: 0;">
+                    <div>
+                      <strong>{{.UserName}}</strong> ({{.Email}})
+                      <p class="ui-section-copy">Role: {{.RoleName}}{{if .AppID}} | app: {{.AppID}}{{else}} | global{{end}}</p>
+                    </div>
+                    <form method="POST" action="/api/authz/user-roles/revoke">
+                      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                      <input type="hidden" name="user_id" value="{{.UserID}}">
+                      <input type="hidden" name="role_id" value="{{.RoleID}}">
+                      <input type="hidden" name="app_id" value="{{.AppID}}">
+                      <button type="submit" class="ui-btn ui-btn-danger">Revoke</button>
+                    </form>
+                  </div>
+                </div>
+                {{end}}
+              {{else}}
+                <div class="ui-empty-state">
+                  <strong>No user-role assignments yet</strong>
+                  <span>Grant a role to a user to make permissions effective.</span>
+                </div>
+              {{end}}
+            </div>
+          </div>
+
+          <div class="ui-panel">
+            <h3 class="ui-section-title">Role Permission Assignments</h3>
+            <div class="ui-stack" style="margin-top: 0.9rem;">
+              {{if .RolePermissionAssigns}}
+                {{range .RolePermissionAssigns}}
+                <div class="ui-panel ui-panel-muted">
+                  <div class="ui-section-header" style="margin-bottom: 0;">
+                    <div>
+                      <strong>{{.RoleName}}</strong>
+                      <p class="ui-section-copy">{{.Resource}}:{{.Action}}:{{.Scope}}</p>
+                    </div>
+                    <form method="POST" action="/api/authz/role-permissions/revoke">
+                      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                      <input type="hidden" name="role_id" value="{{.RoleID}}">
+                      <input type="hidden" name="permission_id" value="{{.PermissionID}}">
+                      <button type="submit" class="ui-btn ui-btn-danger">Revoke</button>
+                    </form>
+                  </div>
+                </div>
+                {{end}}
+              {{else}}
+                <div class="ui-empty-state">
+                  <strong>No role-permission assignments yet</strong>
+                  <span>Assign permissions to roles so user grants have real effect.</span>
+                </div>
+              {{end}}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</section>
+{{end}}

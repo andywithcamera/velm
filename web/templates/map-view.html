@@ -1,0 +1,1199 @@
+{{define "relationship-map-entity-picker"}}
+{{$cfg := .MapEntityFieldConfig}}
+{{$val := .MapEntityValue}}
+<div
+  class="ui-reference-picker"
+  data-reference-picker="true"
+  data-reference-field="entity"
+  data-reference-field-label="Entity"
+  data-reference-table="{{$cfg.ReferenceTo}}"
+  data-reference-table-label="{{if $cfg.ReferenceTableLabel}}{{$cfg.ReferenceTableLabel}}{{else}}Record{{end}}"
+  data-reference-nullable="1"
+  data-reference-readonly="0"
+>
+  <select
+    name="entity"
+    data-reference-select="true"
+    data-reference-table="{{$cfg.ReferenceTo}}"
+    class="ui-reference-native-select"
+    hidden
+    tabindex="-1"
+    aria-hidden="true"
+  >
+    <option value="">-- None --</option>
+    {{range $opt := $cfg.ReferenceRows}}
+      <option value="{{$opt.Value}}" {{if eq $val $opt.Value}}selected{{end}}>{{$opt.Label}}</option>
+    {{end}}
+  </select>
+  <div class="ui-reference-picker-shell{{if not $val}} is-empty{{end}}" data-reference-shell="true">
+    <div class="ui-reference-picker-copy">
+      <p class="ui-reference-picker-kicker">{{if $cfg.ReferenceTableLabel}}{{$cfg.ReferenceTableLabel}}{{else}}Record{{end}}</p>
+      <strong class="ui-reference-picker-value" data-reference-selected-label="true">{{if $val}}Selected record{{else}}No record selected{{end}}</strong>
+      <span class="ui-reference-picker-meta" data-reference-selected-meta="true">{{if $val}}{{$val}}{{else if $cfg.ReferenceTo}}Browse records and choose one to map{{else}}Reference table unavailable{{end}}</span>
+    </div>
+    <div class="ui-reference-picker-actions">
+      <button
+        id="map-entity-trigger"
+        type="button"
+        class="ui-btn ui-btn-secondary ui-reference-picker-trigger"
+        data-reference-open="true"
+        aria-haspopup="dialog"
+        {{if not $cfg.ReferenceTo}}disabled{{end}}
+      >
+        Browse records
+      </button>
+      <button
+        type="button"
+        class="ui-btn ui-btn-secondary ui-reference-picker-clear"
+        data-reference-clear="true"
+        {{if not $val}}hidden{{end}}
+      >
+        Clear
+      </button>
+      <a href="{{if and $cfg.ReferenceTo $val}}/f/{{$cfg.ReferenceTo}}/{{$val}}{{end}}" class="ui-field-link ui-reference-picker-link{{if not (and $cfg.ReferenceTo $val)}} hidden{{end}}" data-reference-open-record="true">Open selected record</a>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "map-view"}}
+{{if not .MapHasEntity}}
+<section class="ui-map-selector-view">
+  <form id="relationshipMapForm" method="GET" action="{{.MapSelectorAction}}" class="ui-card ui-map-selector-card">
+    <div class="ui-map-selector-copy">
+      <p class="ui-kicker">Relationship Map</p>
+      <h1 class="ui-map-selector-title">Select an entity</h1>
+      <p class="ui-section-copy">Choose a CMDB record to render its 3D relationship map.</p>
+    </div>
+    <div class="ui-map-selector-field">
+      <label class="ui-field-label" for="map-entity-trigger">Entity</label>
+      {{template "relationship-map-entity-picker" .}}
+      <p class="ui-field-help">Use the same record browser from forms to choose the entity you want to explore.</p>
+    </div>
+    <div class="ui-map-selector-actions">
+      <button type="submit" class="ui-btn ui-btn-primary" data-map-submit="true" disabled>Open Relationship Map</button>
+    </div>
+  </form>
+</section>
+{{else}}
+<section class="ui-map-page">
+  <section class="ui-form-hero ui-map-hero">
+    <div class="ui-form-hero-copy">
+      <p class="ui-kicker">Relationship Map</p>
+      <h1 class="ui-form-hero-title">{{.MapSelectedEntity.Name}}</h1>
+      <p class="ui-form-hero-subtitle">{{if .MapSelectedEntity.Description}}{{.MapSelectedEntity.Description}}{{else}}This entity has no description yet. Rotate the scene to inspect upstream and downstream relationships in 3D.{{end}}</p>
+    </div>
+    <div class="ui-form-hero-meta">
+      <a href="{{.MapSelectedEntity.RecordURL}}" class="ui-btn ui-btn-secondary">Open Record</a>
+    </div>
+    <div class="ui-form-stat-grid ui-map-stat-grid">
+      <div class="ui-form-stat">
+        <span class="ui-form-stat-label">Entity</span>
+        <span class="ui-form-stat-value">{{.MapSelectedEntity.Number}} · {{.MapSelectedEntity.EntityType}}</span>
+      </div>
+      <div class="ui-form-stat">
+        <span class="ui-form-stat-label">Visible Graph</span>
+        <span class="ui-form-stat-value">{{.MapNodeCount}} entities · {{.MapEdgeCount}} relationships</span>
+      </div>
+      <div class="ui-form-stat">
+        <span class="ui-form-stat-label">Depth</span>
+        <span class="ui-form-stat-value">{{.MapDepth}} hops from the focused entity</span>
+      </div>
+    </div>
+  </section>
+
+  <form id="relationshipMapForm" method="GET" action="{{.MapSelectorAction}}" class="ui-card ui-map-toolbar" data-map-depth-autosubmit="true">
+    <div class="ui-map-toolbar-field">
+      <label class="ui-field-label" for="map-entity-trigger">Entity</label>
+      {{template "relationship-map-entity-picker" .}}
+    </div>
+    <div class="ui-map-depth-panel">
+      <div class="ui-map-depth-copy">
+        <p class="ui-reference-picker-kicker">Relationship Depth</p>
+        <strong class="ui-reference-picker-value">Hop count</strong>
+        <span class="ui-reference-picker-meta">Change how many levels of related entities are loaded into the scene.</span>
+      </div>
+      <div class="ui-map-depth-controls">
+        <input
+          id="relationshipDepth"
+          type="range"
+          name="depth"
+          min="{{.MapDepthMin}}"
+          max="{{.MapDepthMax}}"
+          value="{{.MapDepth}}"
+          class="ui-map-depth-range"
+          data-map-depth-input="true"
+        />
+        <div class="ui-map-depth-scale">
+          <span>{{.MapDepthMin}}</span>
+          <output for="relationshipDepth" data-map-depth-value="true">{{.MapDepth}}</output>
+          <span>{{.MapDepthMax}}</span>
+        </div>
+      </div>
+    </div>
+    <div class="ui-map-toolbar-actions">
+      <button type="submit" class="ui-btn ui-btn-primary" data-map-submit="true">Update Map</button>
+      <button type="button" class="ui-btn ui-btn-secondary" data-map-reset-view="true">Reset View</button>
+      <a href="{{.MapSelectedEntity.RecordURL}}" class="ui-btn ui-btn-secondary">Open Record</a>
+    </div>
+  </form>
+
+  <section class="ui-card ui-map-stage-card">
+    <div class="ui-map-stage" data-map-stage="true">
+      <canvas class="ui-map-canvas" data-map-canvas="true"></canvas>
+      <div class="ui-map-tooltip hidden" data-map-tooltip="true" hidden></div>
+      <div class="ui-map-hud">
+        <div class="ui-map-chip-row">
+          <span class="ui-field-pill">Drag to orbit</span>
+          <span class="ui-field-pill ui-field-pill-muted">Wheel to zoom</span>
+          <span class="ui-field-pill ui-field-pill-muted">Click a node to re-center</span>
+        </div>
+        <div class="ui-map-legend">
+          <span class="ui-map-legend-item"><i class="ui-map-legend-swatch is-selected"></i> Focus entity</span>
+          <span class="ui-map-legend-item"><i class="ui-map-legend-swatch is-upstream"></i> Upstream</span>
+          <span class="ui-map-legend-item"><i class="ui-map-legend-swatch is-downstream"></i> Downstream</span>
+          <span class="ui-map-legend-item"><i class="ui-map-legend-line is-active"></i> Active relationship</span>
+        </div>
+      </div>
+      <aside class="ui-map-inspector">
+        <p class="ui-reference-picker-kicker" data-map-inspector-kicker="true">Focused Entity</p>
+        <strong class="ui-map-inspector-title" data-map-inspector-title="true">{{.MapSelectedEntity.Name}}</strong>
+        <span class="ui-map-inspector-meta" data-map-inspector-meta="true">{{.MapSelectedEntity.Number}} · {{.MapSelectedEntity.EntityType}}</span>
+        <p class="ui-map-inspector-body" data-map-inspector-body="true">{{if .MapSelectedEntity.Description}}{{.MapSelectedEntity.Description}}{{else}}No description available for this entity yet.{{end}}</p>
+        <div class="ui-map-inspector-pills">
+          <span class="ui-badge ui-badge-neutral" data-map-inspector-relationships="true">{{.MapSelectedEntity.Degree}} relationships</span>
+          <span class="ui-badge ui-badge-neutral" data-map-inspector-direction="true">Focused entity</span>
+        </div>
+        <div class="ui-map-inspector-actions">
+          <a href="{{.MapSelectedEntity.RecordURL}}" class="ui-btn ui-btn-secondary" data-map-inspector-record="true">Open record</a>
+          <a href="/map?entity={{.MapSelectedEntity.ID}}&depth={{.MapDepth}}" class="ui-btn ui-btn-secondary" data-map-inspector-center="true">Re-center map</a>
+        </div>
+      </aside>
+      <script id="relationshipMapData" type="application/json">{{.MapGraphJSON}}</script>
+    </div>
+  </section>
+</section>
+{{end}}
+
+<div class="ui-reference-modal hidden" data-reference-modal="true" hidden aria-hidden="true">
+  <div class="ui-reference-modal-backdrop" data-reference-modal-dismiss="true"></div>
+  <div class="ui-reference-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="relationshipMapPickerTitle">
+    <div class="ui-reference-modal-head">
+      <div class="ui-reference-modal-copy">
+        <p class="ui-reference-modal-kicker" data-reference-modal-kicker="true">Reference Picker</p>
+        <h2 id="relationshipMapPickerTitle" class="ui-reference-modal-title" data-reference-modal-title="true">Select entity</h2>
+      </div>
+      <button type="button" class="ui-btn ui-btn-secondary ui-reference-modal-close" data-reference-modal-dismiss="true">Close</button>
+    </div>
+    <div class="ui-reference-modal-body">
+      <div class="ui-reference-modal-toolbar">
+        <input
+          type="search"
+          class="ui-input"
+          placeholder="Search by label or record ID"
+          autocomplete="off"
+          data-reference-modal-search="true"
+        />
+        <button type="button" class="ui-btn ui-btn-secondary" data-reference-modal-refresh="true">Refresh</button>
+      </div>
+      <p class="ui-field-help" data-reference-modal-status="true">Search results will appear here.</p>
+      <div class="ui-reference-modal-results" data-reference-modal-results="true"></div>
+    </div>
+    <div class="ui-reference-modal-foot">
+      <div class="ui-reference-modal-current hidden" data-reference-modal-current="true">
+        <strong class="ui-reference-modal-current-label" data-reference-modal-current-label="true"></strong>
+        <span class="ui-reference-modal-current-meta" data-reference-modal-current-meta="true"></span>
+        <a href="" class="ui-field-link ui-reference-modal-current-link hidden" data-reference-modal-open-record="true">Open selected record</a>
+      </div>
+      <div class="ui-reference-modal-actions">
+        <button type="button" class="ui-btn ui-btn-secondary" data-reference-modal-clear="true">Clear selection</button>
+        <button type="button" class="ui-btn ui-btn-secondary" data-reference-modal-dismiss="true">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const pickers = Array.from(document.querySelectorAll('[data-reference-picker="true"]'));
+    const modal = document.querySelector('[data-reference-modal="true"]');
+    if (pickers.length === 0 || !modal) return;
+
+    const csrf = document.querySelector('meta[name="csrf-token"]')?.content || "";
+    const modalSearch = modal.querySelector('[data-reference-modal-search="true"]');
+    const modalResults = modal.querySelector('[data-reference-modal-results="true"]');
+    const modalStatus = modal.querySelector('[data-reference-modal-status="true"]');
+    const modalKicker = modal.querySelector('[data-reference-modal-kicker="true"]');
+    const modalTitle = modal.querySelector('[data-reference-modal-title="true"]');
+    const modalCurrent = modal.querySelector('[data-reference-modal-current="true"]');
+    const modalCurrentLabel = modal.querySelector('[data-reference-modal-current-label="true"]');
+    const modalCurrentMeta = modal.querySelector('[data-reference-modal-current-meta="true"]');
+    const modalOpenRecord = modal.querySelector('[data-reference-modal-open-record="true"]');
+    const modalClear = modal.querySelector('[data-reference-modal-clear="true"]');
+    const modalRefresh = modal.querySelector('[data-reference-modal-refresh="true"]');
+    let activePicker = null;
+    let activeTimer = null;
+    let lastFocused = null;
+    let requestSequence = 0;
+
+    function pickerSelect(picker) {
+      return picker ? picker.querySelector('[data-reference-select="true"]') : null;
+    }
+
+    function pickerTable(picker) {
+      return (picker?.getAttribute("data-reference-table") || "").trim();
+    }
+
+    function pickerTableLabel(picker) {
+      return (picker?.getAttribute("data-reference-table-label") || "Record").trim();
+    }
+
+    function pickerFieldLabel(picker) {
+      return (picker?.getAttribute("data-reference-field-label") || "Reference").trim();
+    }
+
+    function pickerNullable(picker) {
+      return picker?.getAttribute("data-reference-nullable") === "1";
+    }
+
+    function pickerReadonly(picker) {
+      return picker?.getAttribute("data-reference-readonly") === "1";
+    }
+
+    function selectedReferenceOption(select) {
+      if (!select || !select.value) return null;
+      return Array.from(select.options).find((option) => option.value === select.value) || null;
+    }
+
+    function ensureReferenceOption(select, value, label) {
+      if (!select || !value) return;
+      let option = Array.from(select.options).find((item) => item.value === value);
+      if (!option) {
+        option = document.createElement("option");
+        option.value = value;
+        select.appendChild(option);
+      }
+      option.textContent = label || value;
+    }
+
+    function dispatchReferenceChange(select) {
+      if (!select) return;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    function selectedReferenceData(picker) {
+      const select = pickerSelect(picker);
+      const option = selectedReferenceOption(select);
+      if (!select || !option) return null;
+      return {
+        value: select.value,
+        label: (option.textContent || select.value || "").trim() || select.value
+      };
+    }
+
+    function setModalStatus(message) {
+      if (modalStatus) {
+        modalStatus.textContent = message;
+      }
+    }
+
+    function renderModalCurrent() {
+      if (!modalCurrent || !modalCurrentLabel || !modalCurrentMeta || !modalOpenRecord) return;
+      const selected = selectedReferenceData(activePicker);
+      const table = pickerTable(activePicker);
+      if (!selected) {
+        modalCurrent.classList.add("hidden");
+        modalOpenRecord.classList.add("hidden");
+        modalOpenRecord.removeAttribute("href");
+        modalCurrentLabel.textContent = "";
+        modalCurrentMeta.textContent = "";
+        return;
+      }
+
+      modalCurrent.classList.remove("hidden");
+      modalCurrentLabel.textContent = selected.label;
+      modalCurrentMeta.textContent = selected.value;
+      if (table) {
+        modalOpenRecord.href = `/f/${table}/${selected.value}`;
+        modalOpenRecord.classList.remove("hidden");
+      } else {
+        modalOpenRecord.classList.add("hidden");
+        modalOpenRecord.removeAttribute("href");
+      }
+    }
+
+    function updatePickerPresentation(picker) {
+      const selected = selectedReferenceData(picker);
+      const table = pickerTable(picker);
+      const nullable = pickerNullable(picker);
+      const readonly = pickerReadonly(picker);
+      const shell = picker.querySelector('[data-reference-shell="true"]');
+      const label = picker.querySelector('[data-reference-selected-label="true"]');
+      const meta = picker.querySelector('[data-reference-selected-meta="true"]');
+      const trigger = picker.querySelector('[data-reference-open="true"]');
+      const clear = picker.querySelector('[data-reference-clear="true"]');
+      const link = picker.querySelector('[data-reference-open-record="true"]');
+
+      if (shell) {
+        shell.classList.toggle("is-empty", !selected);
+      }
+      if (label) {
+        label.textContent = selected
+          ? selected.label
+          : (nullable ? "No record selected" : "Selection required");
+      }
+      if (meta) {
+        meta.textContent = selected
+          ? selected.value
+          : (table ? "Browse records and choose one to map" : "Reference table unavailable");
+      }
+      if (trigger) {
+        trigger.disabled = readonly || !table;
+        trigger.textContent = selected ? "Change selection" : "Browse records";
+        trigger.setAttribute("aria-label", selected ? `Change ${pickerFieldLabel(picker)}` : `Select ${pickerFieldLabel(picker)}`);
+      }
+      if (clear) {
+        const hideClear = readonly || !nullable || !selected;
+        clear.hidden = hideClear;
+        clear.disabled = readonly;
+      }
+      if (link) {
+        if (selected && table) {
+          link.href = `/f/${table}/${selected.value}`;
+          link.classList.remove("hidden");
+        } else {
+          link.classList.add("hidden");
+          link.removeAttribute("href");
+        }
+      }
+      if (activePicker === picker) {
+        renderModalCurrent();
+      }
+    }
+
+    function renderModalResults(options) {
+      if (!modalResults) return;
+      modalResults.innerHTML = "";
+      if (!Array.isArray(options) || options.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "ui-reference-modal-empty";
+        empty.textContent = "No matching records found.";
+        modalResults.appendChild(empty);
+        return;
+      }
+
+      const selectedValue = selectedReferenceData(activePicker)?.value || "";
+      const list = document.createElement("div");
+      list.className = "ui-reference-modal-list";
+
+      options.forEach((option) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "ui-reference-modal-result";
+        button.dataset.value = option.value || "";
+        button.dataset.label = option.label || option.value || "";
+        if (button.dataset.value === selectedValue) {
+          button.classList.add("is-selected");
+        }
+
+        const copy = document.createElement("span");
+        copy.className = "ui-reference-modal-result-copy";
+
+        const label = document.createElement("strong");
+        label.className = "ui-reference-modal-result-label";
+        label.textContent = option.label || option.value || "(unnamed record)";
+
+        const meta = document.createElement("span");
+        meta.className = "ui-reference-modal-result-meta";
+        meta.textContent = option.value || "";
+
+        const badge = document.createElement("span");
+        badge.className = "ui-reference-modal-result-badge";
+        badge.textContent = button.dataset.value === selectedValue ? "Current" : "Select";
+
+        copy.appendChild(label);
+        copy.appendChild(meta);
+        button.appendChild(copy);
+        button.appendChild(badge);
+        list.appendChild(button);
+      });
+
+      modalResults.appendChild(list);
+    }
+
+    async function fetchReferenceResults(query) {
+      if (!activePicker) return;
+      const table = pickerTable(activePicker);
+      if (!table) {
+        renderModalResults([]);
+        setModalStatus("This reference field does not have a target table configured.");
+        return;
+      }
+
+      const currentRequest = ++requestSequence;
+      const selected = selectedReferenceData(activePicker)?.value || "";
+      setModalStatus(query ? `Searching ${pickerTableLabel(activePicker)} records...` : `Showing ${pickerTableLabel(activePicker)} records.`);
+
+      const url = `/api/reference-options?table=${encodeURIComponent(table)}&q=${encodeURIComponent(query)}&selected=${encodeURIComponent(selected)}&limit=40`;
+      try {
+        const response = await fetch(url, {
+          method: "GET",
+          headers: {
+            "X-CSRF-Token": csrf
+          }
+        });
+        if (!response.ok || currentRequest !== requestSequence) return;
+        const data = await response.json();
+        const options = Array.isArray(data.options) ? data.options : [];
+        renderModalResults(options);
+        setModalStatus(options.length > 0 ? `${options.length} record${options.length === 1 ? "" : "s"} available.` : "No matching records found.");
+      } catch (_) {
+        if (currentRequest !== requestSequence) return;
+        renderModalResults([]);
+        setModalStatus("Lookup failed. Try again.");
+      }
+    }
+
+    function scheduleReferenceFetch(query) {
+      if (activeTimer) {
+        clearTimeout(activeTimer);
+      }
+      activeTimer = setTimeout(() => {
+        fetchReferenceResults(query);
+      }, 180);
+    }
+
+    function setPickerValue(picker, value, label) {
+      const select = pickerSelect(picker);
+      if (!select) return;
+      if (value) {
+        ensureReferenceOption(select, value, label);
+      }
+      select.value = value || "";
+      updatePickerPresentation(picker);
+      dispatchReferenceChange(select);
+    }
+
+    function openReferenceModal(picker) {
+      activePicker = picker;
+      lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      if (modalKicker) {
+        modalKicker.textContent = pickerTableLabel(picker);
+      }
+      if (modalTitle) {
+        modalTitle.textContent = `Select ${pickerFieldLabel(picker)}`;
+      }
+      renderModalCurrent();
+      if (modalClear) {
+        modalClear.hidden = pickerReadonly(picker) || !pickerNullable(picker);
+        modalClear.disabled = pickerReadonly(picker);
+      }
+      if (modalSearch) {
+        modalSearch.value = "";
+      }
+      modal.hidden = false;
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("ui-reference-modal-open");
+      renderModalResults([]);
+      setModalStatus(`Search ${pickerTableLabel(picker)} records by label or ID.`);
+      fetchReferenceResults("");
+      window.requestAnimationFrame(() => {
+        if (modalSearch) {
+          modalSearch.focus();
+        }
+      });
+    }
+
+    function closeReferenceModal() {
+      if (activeTimer) {
+        clearTimeout(activeTimer);
+        activeTimer = null;
+      }
+      modal.hidden = true;
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("ui-reference-modal-open");
+      activePicker = null;
+      requestSequence++;
+      if (lastFocused && typeof lastFocused.focus === "function") {
+        lastFocused.focus();
+      }
+    }
+
+    pickers.forEach((picker) => {
+      const select = pickerSelect(picker);
+      const openButton = picker.querySelector('[data-reference-open="true"]');
+      const clearButton = picker.querySelector('[data-reference-clear="true"]');
+      updatePickerPresentation(picker);
+
+      if (select) {
+        select.addEventListener("change", function () {
+          updatePickerPresentation(picker);
+        });
+      }
+      if (openButton) {
+        openButton.addEventListener("click", function () {
+          if (pickerReadonly(picker) || !pickerTable(picker)) return;
+          openReferenceModal(picker);
+        });
+      }
+      if (clearButton) {
+        clearButton.addEventListener("click", function () {
+          if (!pickerNullable(picker) || pickerReadonly(picker)) return;
+          setPickerValue(picker, "", "");
+        });
+      }
+    });
+
+    if (modalResults) {
+      modalResults.addEventListener("click", function (event) {
+        const button = event.target.closest(".ui-reference-modal-result");
+        if (!button || !activePicker) return;
+        setPickerValue(activePicker, button.dataset.value || "", button.dataset.label || "");
+        closeReferenceModal();
+      });
+    }
+
+    modal.querySelectorAll('[data-reference-modal-dismiss="true"]').forEach((element) => {
+      element.addEventListener("click", function () {
+        closeReferenceModal();
+      });
+    });
+
+    if (modalSearch) {
+      modalSearch.addEventListener("input", function () {
+        scheduleReferenceFetch(modalSearch.value.trim());
+      });
+      modalSearch.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeReferenceModal();
+          return;
+        }
+        if (event.key === "Enter") {
+          const firstResult = modalResults ? modalResults.querySelector(".ui-reference-modal-result") : null;
+          if (firstResult instanceof HTMLButtonElement) {
+            event.preventDefault();
+            firstResult.click();
+          }
+        }
+      });
+    }
+
+    if (modalRefresh) {
+      modalRefresh.addEventListener("click", function () {
+        fetchReferenceResults(modalSearch ? modalSearch.value.trim() : "");
+      });
+    }
+
+    if (modalClear) {
+      modalClear.addEventListener("click", function () {
+        if (!activePicker || !pickerNullable(activePicker) || pickerReadonly(activePicker)) return;
+        setPickerValue(activePicker, "", "");
+        closeReferenceModal();
+      });
+    }
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && !modal.hidden) {
+        closeReferenceModal();
+      }
+    });
+  })();
+
+  (function () {
+    const form = document.getElementById("relationshipMapForm");
+    if (!form) return;
+
+    const select = form.querySelector('[data-reference-select="true"]');
+    const submitButton = form.querySelector('[data-map-submit="true"]');
+    const depthInput = form.querySelector('[data-map-depth-input="true"]');
+    const depthValue = form.querySelector('[data-map-depth-value="true"]');
+
+    function syncFormState() {
+      if (submitButton) {
+        submitButton.disabled = !select || !String(select.value || "").trim();
+      }
+      if (depthValue && depthInput) {
+        depthValue.textContent = depthInput.value || "";
+      }
+    }
+
+    if (select) {
+      select.addEventListener("change", syncFormState);
+      select.addEventListener("input", syncFormState);
+    }
+    if (depthInput) {
+      depthInput.addEventListener("input", syncFormState);
+      depthInput.addEventListener("change", function () {
+        syncFormState();
+        if (!select || !String(select.value || "").trim()) return;
+        if (form.dataset.mapDepthAutosubmit === "true" && typeof form.requestSubmit === "function") {
+          form.requestSubmit();
+        }
+      });
+    }
+    syncFormState();
+  })();
+
+  (function () {
+    const stage = document.querySelector('[data-map-stage="true"]');
+    const canvas = document.querySelector('[data-map-canvas="true"]');
+    const dataScript = document.getElementById("relationshipMapData");
+    const tooltip = stage ? stage.querySelector('[data-map-tooltip="true"]') : null;
+    if (!stage || !canvas || !dataScript) return;
+
+    let graph = null;
+    try {
+      graph = JSON.parse(dataScript.textContent || "{}");
+    } catch (_) {
+      return;
+    }
+    if (!graph || !Array.isArray(graph.nodes) || graph.nodes.length === 0) return;
+
+    const nodes = graph.nodes;
+    const edges = Array.isArray(graph.edges) ? graph.edges : [];
+    const nodeByID = new Map(nodes.map((node) => [node.id, node]));
+    const currentDepth = Number(graph.depth || 1);
+    const inspectorKicker = stage.querySelector('[data-map-inspector-kicker="true"]');
+    const inspectorTitle = stage.querySelector('[data-map-inspector-title="true"]');
+    const inspectorMeta = stage.querySelector('[data-map-inspector-meta="true"]');
+    const inspectorBody = stage.querySelector('[data-map-inspector-body="true"]');
+    const inspectorRelationships = stage.querySelector('[data-map-inspector-relationships="true"]');
+    const inspectorDirection = stage.querySelector('[data-map-inspector-direction="true"]');
+    const inspectorRecord = stage.querySelector('[data-map-inspector-record="true"]');
+    const inspectorCenter = stage.querySelector('[data-map-inspector-center="true"]');
+    const resetButton = document.querySelector('[data-map-reset-view="true"]');
+    const defaultHoveredID = graph.center_entity_id || nodes[0].id;
+
+    function titleCase(value) {
+      return String(value || "")
+        .split(/[_\s-]+/)
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    }
+
+    function nodeDirection(node) {
+      if (!node) return "Focused entity";
+      if (node.selected) return "Focused entity";
+      if (Number(node.level || 0) < 0) {
+        const steps = Math.abs(Number(node.level || 0));
+        return `${steps} hop${steps === 1 ? "" : "s"} upstream`;
+      }
+      if (Number(node.level || 0) > 0) {
+        const steps = Math.abs(Number(node.level || 0));
+        return `${steps} hop${steps === 1 ? "" : "s"} downstream`;
+      }
+      return "Parallel entity";
+    }
+
+    function nodeStatusSummary(node) {
+      const parts = [];
+      if (node.number) parts.push(node.number);
+      if (node.entity_type) parts.push(titleCase(node.entity_type));
+      if (node.operational_status) parts.push(titleCase(node.operational_status));
+      if (node.criticality) parts.push(String(node.criticality).toUpperCase());
+      return parts.join(" · ");
+    }
+
+    function updateInspector(node) {
+      if (!node) return;
+      if (inspectorKicker) {
+        inspectorKicker.textContent = node.selected ? "Focused Entity" : "Hovered Entity";
+      }
+      if (inspectorTitle) {
+        inspectorTitle.textContent = node.name || node.number || "Unnamed entity";
+      }
+      if (inspectorMeta) {
+        inspectorMeta.textContent = nodeStatusSummary(node);
+      }
+      if (inspectorBody) {
+        inspectorBody.textContent = node.description
+          ? node.description
+          : "No description available for this entity yet.";
+      }
+      if (inspectorRelationships) {
+        inspectorRelationships.textContent = `${Number(node.degree || 0)} relationship${Number(node.degree || 0) === 1 ? "" : "s"}`;
+      }
+      if (inspectorDirection) {
+        inspectorDirection.textContent = nodeDirection(node);
+      }
+      if (inspectorRecord) {
+        inspectorRecord.href = node.record_url || "#";
+      }
+      if (inspectorCenter) {
+        inspectorCenter.href = `/map?entity=${encodeURIComponent(node.id || "")}&depth=${encodeURIComponent(String(currentDepth || 1))}`;
+      }
+    }
+
+    function buildLayout(THREE) {
+      const groups = new Map();
+      nodes.forEach((node) => {
+        const level = Number(node.level || 0);
+        if (!groups.has(level)) {
+          groups.set(level, []);
+        }
+        groups.get(level).push(node);
+      });
+
+      const positions = new Map();
+      const levels = Array.from(groups.keys()).sort((a, b) => a - b);
+      const verticalSpacing = 135;
+      const baseRadius = 125;
+      const ringCapacity = 8;
+      const ringGap = 92;
+
+      levels.forEach((level) => {
+        const group = groups.get(level) || [];
+        group.sort((left, right) => {
+          if (Boolean(left.selected) !== Boolean(right.selected)) {
+            return left.selected ? -1 : 1;
+          }
+          if (Number(left.degree || 0) !== Number(right.degree || 0)) {
+            return Number(right.degree || 0) - Number(left.degree || 0);
+          }
+          return String(left.name || left.id).localeCompare(String(right.name || right.id));
+        });
+
+        if (level === 0 && group.length === 1) {
+          positions.set(group[0].id, new THREE.Vector3(0, 0, 0));
+          return;
+        }
+
+        group.forEach((node, index) => {
+          const ring = Math.floor(index / ringCapacity);
+          const indexInRing = index % ringCapacity;
+          const countInRing = Math.min(ringCapacity, group.length - ring * ringCapacity);
+          const angleOffset = ring % 2 === 0 ? 0.2 : Math.PI / Math.max(countInRing, 1);
+          const angle = ((Math.PI * 2) / Math.max(countInRing, 1)) * indexInRing + angleOffset;
+          const radius = baseRadius + Math.abs(level) * 30 + ring * ringGap;
+          positions.set(node.id, new THREE.Vector3(
+            Math.cos(angle) * radius,
+            -level * verticalSpacing,
+            Math.sin(angle) * radius
+          ));
+        });
+      });
+
+      return positions;
+    }
+
+    Promise.all([
+      import("https://esm.sh/three@0.176.0"),
+      import("https://esm.sh/three@0.176.0/examples/jsm/controls/OrbitControls.js")
+    ]).then(function ([THREE, controlsModule]) {
+      const OrbitControls = controlsModule.OrbitControls;
+      const positions = buildLayout(THREE);
+      const positionValues = Array.from(positions.values());
+      const bounds = new THREE.Box3();
+      if (positionValues.length === 0) {
+        bounds.expandByPoint(new THREE.Vector3());
+      } else {
+        positionValues.forEach((point) => bounds.expandByPoint(point));
+      }
+
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      const sphere = new THREE.Sphere();
+      bounds.getSize(size);
+      bounds.getCenter(center);
+      bounds.getBoundingSphere(sphere);
+
+      const radius = Math.max(sphere.radius, 180);
+      const planeSize = Math.max(520, Math.max(size.x, size.z) + radius * 1.15);
+      const ceilingY = positionValues.reduce((max, point) => Math.max(max, point.y), 0) + 170;
+      const floorY = positionValues.reduce((min, point) => Math.min(min, point.y), 0) - 170;
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        alpha: true,
+        powerPreference: "high-performance"
+      });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0x000000, 0);
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x091117, 0.00085);
+
+      const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 10000);
+      const controls = new OrbitControls(camera, canvas);
+      controls.enableDamping = true;
+      controls.enablePan = false;
+      controls.minPolarAngle = 0.28;
+      controls.maxPolarAngle = Math.PI - 0.32;
+      controls.zoomSpeed = 0.82;
+      controls.rotateSpeed = 0.66;
+
+      scene.add(new THREE.HemisphereLight(0xc6efff, 0xf97316, 1.2));
+      const keyLight = new THREE.DirectionalLight(0xffffff, 0.95);
+      keyLight.position.set(radius * 1.3, radius * 1.5, radius * 1.1);
+      scene.add(keyLight);
+      const rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.55);
+      rimLight.position.set(-radius * 1.4, radius * 0.9, -radius * 1.5);
+      scene.add(rimLight);
+
+      function nodeHex(node) {
+        if (node.selected) return 0xf97316;
+        if (Number(node.level || 0) < 0) return 0x7dd3fc;
+        if (Number(node.level || 0) > 0) return 0xf8b84e;
+        return 0xf3efe5;
+      }
+
+      function edgeHex(edge) {
+        const status = String(edge.status || "active").toLowerCase();
+        if (status === "planned") return 0x7dd3fc;
+        if (status === "inactive") return 0xbfbcb3;
+        return 0xf8b84e;
+      }
+
+      function tintMaterial(material, color, opacity) {
+        material.color.setHex(color);
+        material.opacity = opacity;
+        material.transparent = opacity < 1;
+      }
+
+      function makeGrid(y, color) {
+        const grid = new THREE.GridHelper(planeSize, 10, color, color);
+        grid.position.y = y;
+        grid.material.opacity = 0.14;
+        grid.material.transparent = true;
+        grid.material.depthWrite = false;
+        scene.add(grid);
+      }
+
+      makeGrid(ceilingY, 0x7dd3fc);
+      makeGrid(floorY, 0xf8b84e);
+
+      const nodeMeshes = [];
+      const nodeMeshByID = new Map();
+      const edgeObjects = [];
+      const pickables = [];
+      const sharedCone = new THREE.ConeGeometry(5.5, 18, 12);
+
+      nodes.forEach((node) => {
+        const color = nodeHex(node);
+        const radiusValue = node.selected ? 18 : 13;
+        const sphereGeometry = new THREE.SphereGeometry(radiusValue, 28, 20);
+        const material = new THREE.MeshStandardMaterial({
+          color,
+          roughness: 0.24,
+          metalness: 0.08,
+          emissive: color,
+          emissiveIntensity: node.selected ? 0.24 : 0.05
+        });
+        const mesh = new THREE.Mesh(sphereGeometry, material);
+        mesh.position.copy(positions.get(node.id) || new THREE.Vector3());
+        mesh.userData.node = node;
+        mesh.userData.baseColor = color;
+        mesh.userData.baseScale = node.selected ? 1.08 : 1;
+
+        const aura = new THREE.Mesh(
+          new THREE.SphereGeometry(radiusValue * 1.3, 24, 16),
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: node.selected ? 0.18 : 0.08,
+            depthWrite: false
+          })
+        );
+        aura.position.copy(mesh.position);
+        aura.userData.nodeID = node.id;
+
+        scene.add(mesh);
+        scene.add(aura);
+        nodeMeshes.push(mesh);
+        nodeMeshByID.set(node.id, { mesh, aura });
+        pickables.push(mesh);
+      });
+
+      edges.forEach((edge) => {
+        const source = positions.get(edge.source_entity_id);
+        const target = positions.get(edge.target_entity_id);
+        if (!source || !target) return;
+
+        const color = edgeHex(edge);
+        const points = [source.clone(), target.clone()];
+        const line = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({
+            color,
+            transparent: true,
+            opacity: edge.source_entity_id === graph.center_entity_id || edge.target_entity_id === graph.center_entity_id ? 0.9 : 0.58
+          })
+        );
+
+        const direction = target.clone().sub(source).normalize();
+        const cone = new THREE.Mesh(
+          sharedCone,
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: line.material.opacity
+          })
+        );
+        cone.position.copy(target.clone().addScaledVector(direction, -18));
+        cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+
+        scene.add(line);
+        scene.add(cone);
+        edgeObjects.push({ edge, line, cone, baseColor: color });
+      });
+
+      function addTether(entityID, planeY, color) {
+        if (!entityID) return;
+        const source = positions.get(entityID);
+        if (!source) return;
+        const target = new THREE.Vector3(source.x, planeY, source.z);
+        const line = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([source.clone(), target]),
+          new THREE.LineDashedMaterial({
+            color,
+            dashSize: 18,
+            gapSize: 10,
+            transparent: true,
+            opacity: 0.52
+          })
+        );
+        line.computeLineDistances();
+        scene.add(line);
+      }
+
+      addTether(graph.ceiling_entity_id, ceilingY, 0x7dd3fc);
+      addTether(graph.floor_entity_id, floorY, 0xf8b84e);
+
+      const raycaster = new THREE.Raycaster();
+      const pointer = new THREE.Vector2();
+      let activeID = defaultHoveredID;
+      let pointerHoveredID = "";
+      let pointerDown = false;
+      let pointerMoved = false;
+      let pointerDownX = 0;
+      let pointerDownY = 0;
+      let defaultCameraPosition = new THREE.Vector3();
+      let defaultTarget = center.clone();
+
+      function updateCursor() {
+        if (pointerDown) {
+          canvas.style.cursor = "grabbing";
+          return;
+        }
+        canvas.style.cursor = pointerHoveredID ? "pointer" : "grab";
+      }
+
+      function projectNodeToScreen(nodeID) {
+        const bundle = nodeMeshByID.get(nodeID);
+        if (!bundle) return null;
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const point = bundle.mesh.position.clone().project(camera);
+        return {
+          x: (point.x * 0.5 + 0.5) * rect.width,
+          y: (-point.y * 0.5 + 0.5) * rect.height,
+          visible: point.z >= -1 && point.z <= 1
+        };
+      }
+
+      function updateTooltip() {
+        if (!tooltip) return;
+        if (!pointerHoveredID) {
+          tooltip.hidden = true;
+          tooltip.classList.add("hidden");
+          return;
+        }
+
+        const point = projectNodeToScreen(pointerHoveredID);
+        const node = nodeByID.get(pointerHoveredID);
+        if (!point || !point.visible || !node) {
+          tooltip.hidden = true;
+          tooltip.classList.add("hidden");
+          return;
+        }
+
+        tooltip.hidden = false;
+        tooltip.classList.remove("hidden");
+        tooltip.textContent = node.name || node.number || "Entity";
+        tooltip.style.left = `${Math.round(point.x)}px`;
+        tooltip.style.top = `${Math.round(point.y)}px`;
+      }
+
+      function refreshVisualState() {
+        nodeMeshes.forEach((mesh) => {
+          const node = mesh.userData.node;
+          const hovered = node.id === activeID;
+          const selected = Boolean(node.selected);
+          const bundle = nodeMeshByID.get(node.id);
+          const baseColor = mesh.userData.baseColor;
+          mesh.scale.setScalar(selected ? (hovered ? 1.18 : 1.08) : (hovered ? 1.15 : 1));
+          mesh.material.emissiveIntensity = selected ? 0.26 : (hovered ? 0.17 : 0.05);
+          if (bundle && bundle.aura) {
+            bundle.aura.scale.setScalar(hovered ? 1.16 : 1);
+            bundle.aura.material.opacity = selected ? (hovered ? 0.28 : 0.2) : (hovered ? 0.18 : 0.08);
+            bundle.aura.material.color.setHex(baseColor);
+          }
+        });
+
+        edgeObjects.forEach((item) => {
+          const connectedToFocus = item.edge.source_entity_id === graph.center_entity_id || item.edge.target_entity_id === graph.center_entity_id;
+          const connectedToHover = item.edge.source_entity_id === activeID || item.edge.target_entity_id === activeID;
+          const opacity = connectedToHover ? 0.95 : (connectedToFocus ? 0.82 : 0.5);
+          tintMaterial(item.line.material, item.baseColor, opacity);
+          tintMaterial(item.cone.material, item.baseColor, opacity);
+        });
+
+        updateInspector(nodeByID.get(activeID) || nodeByID.get(graph.center_entity_id));
+        updateTooltip();
+      }
+
+      function setActiveNode(id) {
+        const nextID = id || graph.center_entity_id || defaultHoveredID;
+        if (nextID === activeID) return;
+        activeID = nextID;
+        refreshVisualState();
+      }
+
+      function pickNode(event) {
+        const rect = canvas.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        const hits = raycaster.intersectObjects(pickables, false);
+        return hits.length > 0 ? hits[0].object.userData.node : null;
+      }
+
+      function fitCamera() {
+        const rect = stage.getBoundingClientRect();
+        const width = Math.max(rect.width, 1);
+        const height = Math.max(rect.height, 1);
+        camera.aspect = width / height;
+        const fov = THREE.MathUtils.degToRad(camera.fov);
+        const fitHeightDistance = radius / Math.tan(fov / 2);
+        const fitWidthDistance = fitHeightDistance / Math.max(camera.aspect, 0.7);
+        const distance = Math.max(fitHeightDistance, fitWidthDistance) * 1.28;
+        defaultTarget = center.clone();
+        defaultCameraPosition = center.clone().add(new THREE.Vector3(1.2, 0.82, 1.28).normalize().multiplyScalar(distance));
+        camera.position.copy(defaultCameraPosition);
+        camera.near = Math.max(distance / 100, 0.1);
+        camera.far = Math.max(distance * 14, 5000);
+        camera.updateProjectionMatrix();
+        controls.target.copy(defaultTarget);
+        controls.minDistance = Math.max(radius * 0.5, 90);
+        controls.maxDistance = Math.max(radius * 8, 1800);
+        controls.update();
+      }
+
+      function resizeScene() {
+        const rect = stage.getBoundingClientRect();
+        const width = Math.max(320, Math.floor(rect.width));
+        const height = Math.max(480, Math.floor(rect.height));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setSize(width, height, false);
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+        updateTooltip();
+      }
+
+      function resetView() {
+        camera.position.copy(defaultCameraPosition);
+        controls.target.copy(defaultTarget);
+        controls.update();
+        pointerHoveredID = "";
+        setActiveNode(graph.center_entity_id || defaultHoveredID);
+        updateCursor();
+      }
+
+      fitCamera();
+      resizeScene();
+      refreshVisualState();
+      updateCursor();
+
+      renderer.setAnimationLoop(function () {
+        controls.update();
+        renderer.render(scene, camera);
+        updateTooltip();
+      });
+
+      canvas.addEventListener("pointerdown", function (event) {
+        pointerDown = true;
+        pointerMoved = false;
+        pointerDownX = event.clientX;
+        pointerDownY = event.clientY;
+        if (typeof canvas.setPointerCapture === "function") {
+          canvas.setPointerCapture(event.pointerId);
+        }
+        updateCursor();
+      });
+
+      canvas.addEventListener("pointermove", function (event) {
+        if (pointerDown) {
+          const movement = Math.abs(event.clientX - pointerDownX) + Math.abs(event.clientY - pointerDownY);
+          if (movement > 6) {
+            pointerMoved = true;
+          }
+        }
+
+        const hovered = pickNode(event);
+        pointerHoveredID = hovered && hovered.id ? hovered.id : "";
+        setActiveNode(pointerHoveredID || graph.center_entity_id || defaultHoveredID);
+        updateCursor();
+      });
+
+      canvas.addEventListener("pointerup", function (event) {
+        const hovered = pickNode(event);
+        const targetID = hovered && hovered.id ? hovered.id : "";
+
+        if (!pointerMoved && targetID && targetID !== graph.center_entity_id) {
+          window.location.href = `/map?entity=${encodeURIComponent(targetID)}&depth=${encodeURIComponent(String(currentDepth || 1))}`;
+          return;
+        }
+
+        pointerDown = false;
+        pointerMoved = false;
+        if (typeof canvas.releasePointerCapture === "function") {
+          try {
+            canvas.releasePointerCapture(event.pointerId);
+          } catch (_) {
+            // Ignore pointer-capture cleanup failures.
+          }
+        }
+        updateCursor();
+      });
+
+      canvas.addEventListener("pointerleave", function () {
+        if (pointerDown) return;
+        pointerHoveredID = "";
+        setActiveNode(graph.center_entity_id || defaultHoveredID);
+        updateCursor();
+      });
+
+      controls.addEventListener("start", updateCursor);
+      controls.addEventListener("change", updateTooltip);
+      controls.addEventListener("end", updateCursor);
+
+      if (resetButton) {
+        resetButton.addEventListener("click", resetView);
+      }
+
+      if (window.ResizeObserver) {
+        const observer = new window.ResizeObserver(function () {
+          resizeScene();
+        });
+        observer.observe(stage);
+      } else {
+        window.addEventListener("resize", resizeScene);
+      }
+    }).catch(function (error) {
+      console.error("Failed to load Three.js relationship map", error);
+      if (tooltip) {
+        tooltip.hidden = true;
+        tooltip.classList.add("hidden");
+      }
+    });
+  })();
+</script>
+{{end}}
