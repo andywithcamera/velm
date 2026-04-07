@@ -132,6 +132,8 @@ This repository now includes [railway.json](railway.json) with a Dockerfile buil
 - set `APP_ENV=production`; and
 - use `/health` as the healthcheck path if you override the checked-in config.
 
+Or simply use the prebuilt template at https://railway.com/deploy/velmdev.
+
 ---
 
 ## Contributing
