@@ -11,9 +11,7 @@ Velm is open to issues, discussions, and pull requests, but contributions that a
 
 ## Contributor Agreement
 
-Before a contribution is merged, the maintainer requires a signed copy of [CLA.md](CLA.md).
-
-Send the signed agreement to `andy.doyle@outlook.ie` unless the repository later publishes a different contribution-contact address.
+Before a contribution is merged, the maintainer requires a signed copy of [CLA.md](CLA.md). You will be prompted to sign via a bot comment on your pull request.
 
 If you are contributing code written in the course of employment, education, or contract work, make sure you have the approvals needed to sign the agreement.
 
