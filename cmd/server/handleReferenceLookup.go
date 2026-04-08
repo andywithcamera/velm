@@ -27,9 +27,10 @@ func handleReferenceLookup(w http.ResponseWriter, r *http.Request) {
 
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	selected := strings.TrimSpace(r.URL.Query().Get("selected"))
+	const maxReferenceLookupLimit = 200
 	limit := 30
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
-		if parsed, err := strconv.Atoi(rawLimit); err == nil {
+		if parsed, err := strconv.Atoi(rawLimit); err == nil && parsed > 0 && parsed <= maxReferenceLookupLimit {
 			limit = parsed
 		}
 	}
