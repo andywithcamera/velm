@@ -244,6 +244,14 @@
       return (picker?.getAttribute("data-reference-table") || "").trim();
     }
 
+    function safeTableSegment(table) {
+      return (table || "").trim().replace(/[^A-Za-z0-9_-]/g, "");
+    }
+
+    function safePathSegment(value) {
+      return encodeURIComponent((value || "").trim());
+    }
+
     function pickerTableLabel(picker) {
       return (picker?.getAttribute("data-reference-table-label") || "Record").trim();
     }
@@ -314,8 +322,10 @@
       modalCurrent.classList.remove("hidden");
       modalCurrentLabel.textContent = selected.label;
       modalCurrentMeta.textContent = selected.value;
-      if (table) {
-        modalOpenRecord.href = `/f/${table}/${selected.value}`;
+      const safeTable = safeTableSegment(table);
+      const safeValue = safePathSegment(selected.value);
+      if (safeTable && safeValue) {
+        modalOpenRecord.href = `/f/${safeTable}/${safeValue}`;
         modalOpenRecord.classList.remove("hidden");
       } else {
         modalOpenRecord.classList.add("hidden");
