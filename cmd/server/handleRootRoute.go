@@ -171,7 +171,7 @@ func normalizeAuthenticatedRouteTarget(input string) string {
 
 func normalizeAuthenticatedRoutePath(input string) string {
 	target := strings.TrimSpace(input)
-	if target == "" || strings.HasPrefix(target, "//") {
+	if target == "" || strings.HasPrefix(target, "//") || strings.HasPrefix(target, "/\\") {
 		return ""
 	}
 
