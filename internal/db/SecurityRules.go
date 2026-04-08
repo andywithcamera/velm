@@ -387,20 +387,7 @@ func MergeRecordSnapshot(base map[string]any, formData map[string]string, nullCo
 		return map[string]any{}
 	}
 
-	maxInt := int(^uint(0) >> 1)
-	baseLen := len(base)
-	formLen := len(formData)
-	capacityHint := 0
-	if baseLen <= maxInt-formLen {
-		capacityHint = baseLen + formLen
-	}
-
-	var merged map[string]any
-	if capacityHint > 0 {
-		merged = make(map[string]any, capacityHint)
-	} else {
-		merged = make(map[string]any)
-	}
+	merged := make(map[string]any)
 
 	for key, value := range base {
 		merged[key] = value
