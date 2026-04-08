@@ -10,11 +10,11 @@ import (
 func main() {
 	_ = godotenv.Load()
 	if err := initSessionStore(); err != nil {
-		log.Fatal(err)
+		log.Fatal("fatal: failed to initialize session store")
 	}
 	initTemplates()
 	if err := initDatabase(); err != nil {
-		log.Fatal(err)
+		log.Fatal("fatal: failed to initialize database")
 	}
 	defer db.CloseDB()
 	startServer()
