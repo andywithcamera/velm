@@ -135,7 +135,7 @@ func handleBulkUpdate(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(columnNames)
 
 	setParts := make([]string, 0, len(columnNames))
-	valuesTemplate := make([]any, 0, len(columnNames)+1)
+	valuesTemplate := make([]any, 0, allocHintSum(len(columnNames), 1))
 	for i, col := range columnNames {
 		quotedCol, err := db.QuoteIdentifier(col)
 		if err != nil {

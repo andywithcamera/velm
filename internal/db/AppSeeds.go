@@ -102,7 +102,7 @@ func upsertDefinitionSeedRowTx(ctx context.Context, tx pgx.Tx, state appSeedStat
 	}
 
 	columns := scriptColumnsByName(view)
-	rowValues := make(map[string]any, len(rawRow)+1)
+	rowValues := make(map[string]any, allocHintSum(len(rawRow), 1))
 	if _, ok := columns["_id"]; ok {
 		rowValues["_id"] = plannedSeedRecordID(state.App, tableName, rowIndex, rawRow)
 	}

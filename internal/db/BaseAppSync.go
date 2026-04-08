@@ -136,7 +136,7 @@ func simplifyBaseTaskModelDefinition(definition *AppDefinition) bool {
 	before, _ := yaml.Marshal(definition)
 	rewriteLegacyBaseTaskDefinition(definition)
 
-	tables := make([]AppDefinitionTable, 0, len(definition.Tables)+1)
+	tables := make([]AppDefinitionTable, 0, allocHintSum(len(definition.Tables), 1))
 	hasEntityLinkTable := false
 	for _, table := range definition.Tables {
 		switch table.Name {
@@ -444,7 +444,7 @@ func upsertRelatedList(lists []AppDefinitionRelatedList, item AppDefinitionRelat
 		return lists
 	}
 
-	items := make([]AppDefinitionRelatedList, 0, len(lists)+1)
+	items := make([]AppDefinitionRelatedList, 0, allocHintSum(len(lists), 1))
 	replaced := false
 	for _, existing := range lists {
 		if strings.TrimSpace(strings.ToLower(existing.Name)) == item.Name {
@@ -596,7 +596,7 @@ func upsertFieldAfter(values []string, fieldName, afterField string) []string {
 		return []string{fieldName}
 	}
 
-	filtered := make([]string, 0, len(items)+1)
+	filtered := make([]string, 0, allocHintSum(len(items), 1))
 	for _, value := range items {
 		if value == fieldName {
 			continue

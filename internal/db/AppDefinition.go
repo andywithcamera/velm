@@ -904,7 +904,7 @@ func BuildYAMLBuilderColumns(app RegisteredApp, table AppDefinitionTable) []Buil
 
 func BuildYAMLBuilderColumnsWithContext(ctx context.Context, app RegisteredApp, table AppDefinitionTable) []BuilderColumnSummary {
 	resolvedColumns := resolveDefinitionColumnsBestEffortWithContext(ctx, app, table)
-	columns := make([]BuilderColumnSummary, 0, len(resolvedColumns)+len(recordSystemColumnTemplates))
+	columns := make([]BuilderColumnSummary, 0, allocHintSum(len(resolvedColumns), len(recordSystemColumnTemplates)))
 	if definitionUsesImplicitSystemColumns(app.Name, app.Namespace, table) {
 		columns = append(columns, buildSystemBuilderColumns(app.Name, table.Name)...)
 	}
@@ -949,7 +949,7 @@ func BuildYAMLColumns(app RegisteredApp, table AppDefinitionTable) []Column {
 
 func BuildYAMLColumnsWithContext(ctx context.Context, app RegisteredApp, table AppDefinitionTable) []Column {
 	resolvedColumns := resolveDefinitionColumnsBestEffortWithContext(ctx, app, table)
-	columns := make([]Column, 0, len(resolvedColumns)+len(recordSystemColumnTemplates))
+	columns := make([]Column, 0, allocHintSum(len(resolvedColumns), len(recordSystemColumnTemplates)))
 	if definitionUsesImplicitSystemColumns(app.Name, app.Namespace, table) {
 		columns = append(columns, buildSystemYAMLColumns(app.Name, table.Name)...)
 	}
@@ -1045,7 +1045,7 @@ func resolveDefinitionColumnsWithApps(apps []RegisteredApp, ownerApp RegisteredA
 		return nil, err
 	}
 
-	columns := make([]AppDefinitionColumn, 0, len(inherited)+len(table.Columns))
+	columns := make([]AppDefinitionColumn, 0, allocHintSum(len(inherited), len(table.Columns)))
 	columns = append(columns, inherited...)
 	columns = append(columns, table.Columns...)
 	return applyDerivedTaskAutoNumberPrefix(apps, ownerApp, table, columns), nil
@@ -1059,7 +1059,7 @@ func effectiveRegisteredAppDefinition(app RegisteredApp) *AppDefinition {
 }
 
 func mergeRegisteredApps(apps []RegisteredApp, app RegisteredApp) []RegisteredApp {
-	merged := make([]RegisteredApp, 0, len(apps)+1)
+	merged := make([]RegisteredApp, 0, allocHintSum(len(apps), 1))
 	replaced := false
 	name := strings.TrimSpace(strings.ToLower(app.Name))
 	namespace := strings.TrimSpace(strings.ToLower(app.Namespace))
