@@ -211,7 +211,16 @@
 
                 function resolveNavigationDestination(rawHref) {
                     const href = String(rawHref || "").trim();
-                    if (href === "" || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("javascript:")) {
+                    const normalizedHref = href.toLowerCase();
+                    if (
+                        href === "" ||
+                        href.startsWith("#") ||
+                        normalizedHref.startsWith("mailto:") ||
+                        normalizedHref.startsWith("tel:") ||
+                        normalizedHref.startsWith("javascript:") ||
+                        normalizedHref.startsWith("data:") ||
+                        normalizedHref.startsWith("vbscript:")
+                    ) {
                         return null;
                     }
 
