@@ -134,7 +134,7 @@ func buildTableWhereClause(raw string, columns []tableQueryColumn, quotedCols ma
 		return "", nil, false, nil
 	}
 
-	metaByName := make(map[string]tableQueryColumn, len(columns)*2)
+	metaByName := make(map[string]tableQueryColumn, allocHintMul(len(columns), 2))
 	for _, col := range columns {
 		metaByName[strings.ToLower(col.Name)] = col
 		metaByName[normalizeQueryLookupKey(col.Name)] = col

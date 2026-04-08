@@ -136,7 +136,7 @@ func handleTableView(w http.ResponseWriter, r *http.Request) {
 	page := parseIntRange(queryVals.Get("page"), 1, 1, 1000000)
 
 	whereClause := ""
-	args := make([]any, 0, len(cols)+2)
+	args := make([]any, 0, allocHintSum(len(cols), 2))
 	clauses := make([]string, 0, 2)
 	showDeleted := strings.TrimSpace(queryVals.Get("deleted")) == "1"
 	if colSet["_deleted_at"] && !showDeleted {

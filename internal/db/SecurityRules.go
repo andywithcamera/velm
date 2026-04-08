@@ -386,7 +386,7 @@ func MergeRecordSnapshot(base map[string]any, formData map[string]string, nullCo
 	if len(base) == 0 && len(formData) == 0 {
 		return map[string]any{}
 	}
-	merged := make(map[string]any, len(base)+len(formData))
+	merged := make(map[string]any, allocHintSum(len(base), len(formData)))
 	for key, value := range base {
 		merged[key] = value
 	}

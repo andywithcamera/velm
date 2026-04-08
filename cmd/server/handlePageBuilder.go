@@ -830,7 +830,7 @@ func effectiveAppEditorForms(definition *db.AppDefinition) []appEditorFormBindin
 		return nil
 	}
 
-	items := make([]appEditorFormBinding, 0, len(definition.Forms)+len(definition.Tables))
+	items := make([]appEditorFormBinding, 0, allocHintSum(len(definition.Forms), len(definition.Tables)))
 	seen := map[string]bool{}
 	for _, form := range definition.Forms {
 		name := strings.TrimSpace(strings.ToLower(form.Name))
@@ -1001,7 +1001,7 @@ func buildYAMLAppEditorTable(ctx context.Context, app appRegistryItem, table db.
 		securityObjects = append(securityObjects, buildYAMLAppEditorTableSecurityRule(app, table.Name, tableObjectID, rule))
 	}
 	formGroups := make([]appEditorFormGroup, 0, len(table.Forms))
-	formObjects := make([]appEditorObject, 0, len(table.Forms)*4)
+	formObjects := make([]appEditorObject, 0, allocHintMul(len(table.Forms), 4))
 	for _, form := range table.Forms {
 		formGroup, items := buildYAMLAppEditorForm(app, table.Name, form)
 		formGroups = append(formGroups, formGroup)
@@ -2603,7 +2603,7 @@ func buildAppEditorFormElementRows(ctx context.Context, app db.RegisteredApp, ta
 		columnLabels[column.NAME] = label
 	}
 
-	rows := make([]formRelatedRow, 0, len(form.Fields)+len(table.RelatedLists))
+	rows := make([]formRelatedRow, 0, allocHintSum(len(form.Fields), len(table.RelatedLists)))
 	for _, field := range form.Fields {
 		label := strings.TrimSpace(columnLabels[field])
 		if label == "" {

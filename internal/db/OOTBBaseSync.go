@@ -201,9 +201,11 @@ func mergeOOTBDependencies(systemDefinition, baseDefinition *AppDefinition) []st
 }
 
 func mergeOOTBTables(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionTable {
-	items := make([]AppDefinitionTable, 0, len(definitionTables(systemDefinition))+len(definitionTables(baseDefinition)))
+	systemTables := definitionTables(systemDefinition)
+	baseTables := definitionTables(baseDefinition)
+	items := make([]AppDefinitionTable, 0, allocHintSum(len(systemTables), len(baseTables)))
 	seen := map[string]bool{}
-	for _, table := range definitionTables(systemDefinition) {
+	for _, table := range systemTables {
 		name := normalizeIdentifier(table.Name)
 		if name == "" || seen[name] {
 			continue
@@ -211,7 +213,7 @@ func mergeOOTBTables(systemDefinition, baseDefinition *AppDefinition) []AppDefin
 		seen[name] = true
 		items = append(items, table)
 	}
-	for _, table := range definitionTables(baseDefinition) {
+	for _, table := range baseTables {
 		name := normalizeIdentifier(table.Name)
 		if name == "" || seen[name] {
 			continue
@@ -223,9 +225,19 @@ func mergeOOTBTables(systemDefinition, baseDefinition *AppDefinition) []AppDefin
 }
 
 func mergeOOTBRoles(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionRole {
-	items := make([]AppDefinitionRole, 0, len(definitionRoles(systemDefinition))+len(definitionRoles(baseDefinition)))
+	systemRoles := definitionRoles(systemDefinition)
+	baseRoles := definitionRoles(baseDefinition)
+	items := make([]AppDefinitionRole, 0, allocHintSum(len(systemRoles), len(baseRoles)))
 	seen := map[string]bool{}
-	for _, role := range append(definitionRoles(systemDefinition), definitionRoles(baseDefinition)...) {
+	for _, role := range systemRoles {
+		name := normalizeIdentifier(role.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, role)
+	}
+	for _, role := range baseRoles {
 		name := normalizeIdentifier(role.Name)
 		if name == "" || seen[name] {
 			continue
@@ -237,9 +249,19 @@ func mergeOOTBRoles(systemDefinition, baseDefinition *AppDefinition) []AppDefini
 }
 
 func mergeOOTBForms(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionAssetForm {
-	items := make([]AppDefinitionAssetForm, 0, len(definitionForms(systemDefinition))+len(definitionForms(baseDefinition)))
+	systemForms := definitionForms(systemDefinition)
+	baseForms := definitionForms(baseDefinition)
+	items := make([]AppDefinitionAssetForm, 0, allocHintSum(len(systemForms), len(baseForms)))
 	seen := map[string]bool{}
-	for _, form := range append(definitionForms(systemDefinition), definitionForms(baseDefinition)...) {
+	for _, form := range systemForms {
+		name := normalizeIdentifier(form.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, form)
+	}
+	for _, form := range baseForms {
 		name := normalizeIdentifier(form.Name)
 		if name == "" || seen[name] {
 			continue
@@ -251,9 +273,19 @@ func mergeOOTBForms(systemDefinition, baseDefinition *AppDefinition) []AppDefini
 }
 
 func mergeOOTBServices(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionService {
-	items := make([]AppDefinitionService, 0, len(definitionServices(systemDefinition))+len(definitionServices(baseDefinition)))
+	systemServices := definitionServices(systemDefinition)
+	baseServices := definitionServices(baseDefinition)
+	items := make([]AppDefinitionService, 0, allocHintSum(len(systemServices), len(baseServices)))
 	seen := map[string]bool{}
-	for _, service := range append(definitionServices(systemDefinition), definitionServices(baseDefinition)...) {
+	for _, service := range systemServices {
+		name := normalizeIdentifier(service.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, service)
+	}
+	for _, service := range baseServices {
 		name := normalizeIdentifier(service.Name)
 		if name == "" || seen[name] {
 			continue
@@ -265,9 +297,19 @@ func mergeOOTBServices(systemDefinition, baseDefinition *AppDefinition) []AppDef
 }
 
 func mergeOOTBTriggers(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionTrigger {
-	items := make([]AppDefinitionTrigger, 0, len(definitionTriggers(systemDefinition))+len(definitionTriggers(baseDefinition)))
+	systemTriggers := definitionTriggers(systemDefinition)
+	baseTriggers := definitionTriggers(baseDefinition)
+	items := make([]AppDefinitionTrigger, 0, allocHintSum(len(systemTriggers), len(baseTriggers)))
 	seen := map[string]bool{}
-	for _, trigger := range append(definitionTriggers(systemDefinition), definitionTriggers(baseDefinition)...) {
+	for _, trigger := range systemTriggers {
+		name := normalizeIdentifier(trigger.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, trigger)
+	}
+	for _, trigger := range baseTriggers {
 		name := normalizeIdentifier(trigger.Name)
 		if name == "" || seen[name] {
 			continue
@@ -279,9 +321,19 @@ func mergeOOTBTriggers(systemDefinition, baseDefinition *AppDefinition) []AppDef
 }
 
 func mergeOOTBSchedules(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionSchedule {
-	items := make([]AppDefinitionSchedule, 0, len(definitionSchedules(systemDefinition))+len(definitionSchedules(baseDefinition)))
+	systemSchedules := definitionSchedules(systemDefinition)
+	baseSchedules := definitionSchedules(baseDefinition)
+	items := make([]AppDefinitionSchedule, 0, allocHintSum(len(systemSchedules), len(baseSchedules)))
 	seen := map[string]bool{}
-	for _, schedule := range append(definitionSchedules(systemDefinition), definitionSchedules(baseDefinition)...) {
+	for _, schedule := range systemSchedules {
+		name := normalizeIdentifier(schedule.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, schedule)
+	}
+	for _, schedule := range baseSchedules {
 		name := normalizeIdentifier(schedule.Name)
 		if name == "" || seen[name] {
 			continue
@@ -293,9 +345,19 @@ func mergeOOTBSchedules(systemDefinition, baseDefinition *AppDefinition) []AppDe
 }
 
 func mergeOOTBEndpoints(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionEndpoint {
-	items := make([]AppDefinitionEndpoint, 0, len(definitionEndpoints(systemDefinition))+len(definitionEndpoints(baseDefinition)))
+	systemEndpoints := definitionEndpoints(systemDefinition)
+	baseEndpoints := definitionEndpoints(baseDefinition)
+	items := make([]AppDefinitionEndpoint, 0, allocHintSum(len(systemEndpoints), len(baseEndpoints)))
 	seen := map[string]bool{}
-	for _, endpoint := range append(definitionEndpoints(systemDefinition), definitionEndpoints(baseDefinition)...) {
+	for _, endpoint := range systemEndpoints {
+		name := normalizeIdentifier(endpoint.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, endpoint)
+	}
+	for _, endpoint := range baseEndpoints {
 		name := normalizeIdentifier(endpoint.Name)
 		if name == "" || seen[name] {
 			continue
@@ -307,9 +369,19 @@ func mergeOOTBEndpoints(systemDefinition, baseDefinition *AppDefinition) []AppDe
 }
 
 func mergeOOTBClientScripts(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionClientScript {
-	items := make([]AppDefinitionClientScript, 0, len(definitionClientScripts(systemDefinition))+len(definitionClientScripts(baseDefinition)))
+	systemScripts := definitionClientScripts(systemDefinition)
+	baseScripts := definitionClientScripts(baseDefinition)
+	items := make([]AppDefinitionClientScript, 0, allocHintSum(len(systemScripts), len(baseScripts)))
 	seen := map[string]bool{}
-	for _, script := range append(definitionClientScripts(systemDefinition), definitionClientScripts(baseDefinition)...) {
+	for _, script := range systemScripts {
+		name := normalizeIdentifier(script.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, script)
+	}
+	for _, script := range baseScripts {
 		name := normalizeIdentifier(script.Name)
 		if name == "" || seen[name] {
 			continue
@@ -321,9 +393,22 @@ func mergeOOTBClientScripts(systemDefinition, baseDefinition *AppDefinition) []A
 }
 
 func mergeOOTBPages(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionPage {
-	items := make([]AppDefinitionPage, 0, len(definitionPages(systemDefinition))+len(definitionPages(baseDefinition)))
+	systemPages := definitionPages(systemDefinition)
+	basePages := definitionPages(baseDefinition)
+	items := make([]AppDefinitionPage, 0, allocHintSum(len(systemPages), len(basePages)))
 	seen := map[string]bool{}
-	for _, page := range append(definitionPages(systemDefinition), definitionPages(baseDefinition)...) {
+	for _, page := range systemPages {
+		key := normalizeIdentifier(page.Slug)
+		if key == "" {
+			key = normalizeIdentifier(page.Name)
+		}
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		items = append(items, page)
+	}
+	for _, page := range basePages {
 		key := normalizeIdentifier(page.Slug)
 		if key == "" {
 			key = normalizeIdentifier(page.Name)
@@ -338,16 +423,28 @@ func mergeOOTBPages(systemDefinition, baseDefinition *AppDefinition) []AppDefini
 }
 
 func mergeOOTBSeeds(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionSeed {
-	items := make([]AppDefinitionSeed, 0, len(definitionSeeds(systemDefinition))+len(definitionSeeds(baseDefinition)))
-	items = append(items, definitionSeeds(systemDefinition)...)
-	items = append(items, definitionSeeds(baseDefinition)...)
+	systemSeeds := definitionSeeds(systemDefinition)
+	baseSeeds := definitionSeeds(baseDefinition)
+	items := make([]AppDefinitionSeed, 0, allocHintSum(len(systemSeeds), len(baseSeeds)))
+	items = append(items, systemSeeds...)
+	items = append(items, baseSeeds...)
 	return items
 }
 
 func mergeOOTBDocumentation(systemDefinition, baseDefinition *AppDefinition) []AppDefinitionDocumentation {
-	items := make([]AppDefinitionDocumentation, 0, len(definitionDocumentation(systemDefinition))+len(definitionDocumentation(baseDefinition)))
+	systemDocs := definitionDocumentation(systemDefinition)
+	baseDocs := definitionDocumentation(baseDefinition)
+	items := make([]AppDefinitionDocumentation, 0, allocHintSum(len(systemDocs), len(baseDocs)))
 	seen := map[string]bool{}
-	for _, article := range append(definitionDocumentation(systemDefinition), definitionDocumentation(baseDefinition)...) {
+	for _, article := range systemDocs {
+		name := normalizeIdentifier(article.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		items = append(items, article)
+	}
+	for _, article := range baseDocs {
 		name := normalizeIdentifier(article.Name)
 		if name == "" || seen[name] {
 			continue

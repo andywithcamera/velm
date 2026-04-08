@@ -1087,7 +1087,7 @@ func normalizeScriptExportValue(value any) any {
 }
 
 func buildScriptOutput(logs []ScriptExecutionLog, result any) string {
-	lines := make([]string, 0, len(logs)+1)
+	lines := make([]string, 0, allocHintSum(len(logs), 1))
 	for _, entry := range logs {
 		line := strings.TrimSpace(entry.Message)
 		if line == "" && entry.Data != nil {

@@ -568,7 +568,7 @@ func loadRelationshipMapRelationshipsTouchingEntities(ctx context.Context, ids [
 	}
 	defer rows.Close()
 
-	result := make([]relationshipMapRelationshipRecord, 0, len(ids)*2)
+	result := make([]relationshipMapRelationshipRecord, 0, allocHintMul(len(ids), 2))
 	for rows.Next() {
 		var row relationshipMapRelationshipRecord
 		if err := rows.Scan(
