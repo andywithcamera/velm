@@ -14,4 +14,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PERSONAL_ACCESS_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
-          path-to-document: 'https://github.com/andywithcamera/velm/blob/main/CLA.md'
+          path-to-document: 'https://github.com/andywithcamera/velm/CLA.md'
