@@ -21,7 +21,7 @@ func sanitizeLoginNext(raw string) string {
 	if raw == "" {
 		return "/"
 	}
-	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || strings.HasPrefix(raw, "/\\") {
 		return "/"
 	}
 	if raw == "/login" || strings.HasPrefix(raw, "/login?") {
