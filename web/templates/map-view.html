@@ -360,7 +360,9 @@
       }
       if (link) {
         if (selected && table) {
-          link.href = `/f/${table}/${selected.value}`;
+          const safeTable = encodeURIComponent(table);
+          const safeValue = encodeURIComponent(selected.value);
+          link.href = `/f/${safeTable}/${safeValue}`;
           link.classList.remove("hidden");
         } else {
           link.classList.add("hidden");
