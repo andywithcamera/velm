@@ -273,7 +273,20 @@ func ExecuteAppServiceMethod(ctx context.Context, call AppServiceMethodCall) (Sc
 	if err != nil {
 		return ScriptExecutionResult{}, err
 	}
-	return executeAppServiceMethodWithQuerier(ctx, Pool, apps, call)
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		return ScriptExecutionResult{}, fmt.Errorf("begin service method transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	result, err := executeAppServiceMethodWithQuerier(ctx, tx, apps, call)
+	if err != nil {
+		return ScriptExecutionResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ScriptExecutionResult{}, fmt.Errorf("commit service method transaction: %w", err)
+	}
+	return result, nil
 }
 
 func executeAppServiceMethodWithQuerier(ctx context.Context, querier scriptQuerier, apps []RegisteredApp, call AppServiceMethodCall) (ScriptExecutionResult, error) {

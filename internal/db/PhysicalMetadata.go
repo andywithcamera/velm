@@ -128,6 +128,42 @@ var builtinTableMetadata = map[string]builtinTableMeta{
 		LabelPlural:   "User Roles",
 		Description:   "Direct user-to-role assignments.",
 	},
+	"base_obs_action": {
+		LabelSingular: "Observation Action",
+		LabelPlural:   "Observation Actions",
+		Description:   "Task and notification responses owned by a specific observable.",
+		DisplayField:  "name",
+	},
+	"base_obs_default_action": {
+		LabelSingular: "Default Observation Action",
+		LabelPlural:   "Default Observation Actions",
+		Description:   "Default actions copied onto new observables at provisioning time.",
+		DisplayField:  "name",
+	},
+	"base_obs_definition": {
+		LabelSingular: "Observation Definition",
+		LabelPlural:   "Observation Definitions",
+		Description:   "Reusable observability measurement templates.",
+		DisplayField:  "name",
+	},
+	"base_obs_event": {
+		LabelSingular: "Observation Event",
+		LabelPlural:   "Observation Events",
+		Description:   "Immutable normalized observation history.",
+		DisplayField:  "summary",
+	},
+	"base_obs_observable": {
+		LabelSingular: "Observable",
+		LabelPlural:   "Observables",
+		Description:   "Current rolled-up state for a monitored entity and signal.",
+		DisplayField:  "display_name",
+	},
+	"base_obs_task": {
+		LabelSingular: "Observation Task Link",
+		LabelPlural:   "Observation Task Links",
+		Description:   "Historical links between observables, actions, and spawned tasks.",
+		DisplayField:  "task_id",
+	},
 }
 
 func GetPhysicalTable(ctx context.Context, tableName string) (Table, bool, error) {
