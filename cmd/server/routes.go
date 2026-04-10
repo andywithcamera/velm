@@ -34,6 +34,7 @@ func registerRoutes() {
 	http.Handle("/p/", withAuth(authz.PermissionView, http.HandlerFunc(handlePage)))
 	http.Handle("/static/", security.RequestLog(http.StripPrefix("/static/", fs)))
 	http.Handle("/api/monitor/client", security.RequestLog(auth.RequireCSRF(http.HandlerFunc(handleClientMonitoringBeacon), store)))
+	http.Handle(observabilityWebhookPath, security.RequestLog(security.Audit(http.HandlerFunc(handleObservabilityWebhook))))
 	http.Handle("/api/menu/", withAuth(authz.PermissionView, http.HandlerFunc(handleMenu)))
 	http.Handle("/api/search/", withAuth(authz.PermissionView, http.HandlerFunc(handleSearch)))
 	http.Handle("/api/notifications/panel", withAuth(authz.PermissionView, http.HandlerFunc(handleNotificationsPanel)))

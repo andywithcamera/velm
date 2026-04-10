@@ -67,7 +67,7 @@ The Project Owner is not required to accept, use, distribute, or credit any Cont
 
 The Project Owner requires a signed copy of this agreement before accepting a Contribution for inclusion in the Project.
 
-Send the signed agreement to `andy.doyle@outlook.ie` unless the Project Owner publishes a different contribution-contact address in writing.
+Send the signed agreement to `info@andydoyle.ie` unless the Project Owner publishes a different contribution-contact address in writing.
 
 No Contribution will be accepted for inclusion until this agreement has been signed and received.
 

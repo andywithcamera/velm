@@ -41,7 +41,11 @@ func CaptureDataChange(ctx context.Context, userID, tableName, recordID, operati
 		string(oldJSON),
 		string(newJSON),
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	emitDerivedDataChangeObservability(userID, tableName, recordID, operation, oldValues, newValues)
+	return nil
 }
 
 func makeFieldDiff(oldMap, newMap map[string]string) map[string]map[string]string {

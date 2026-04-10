@@ -16,7 +16,7 @@ func TestBuildFormTimelineItemsMergesAndSortsEntries(t *testing.T) {
 		[]db.RecordChangeEntry{{
 			CreatedAt: changeTime,
 			UserName:  "Andy Doyle",
-			UserEmail: "hi@andydoyle.ie",
+			UserEmail: "test@andydoyle.ie",
 			Operation: "update",
 			FieldDiff: map[string]db.RecordFieldDiff{
 				"email": {Old: "old@example.com", New: "new@example.com"},
