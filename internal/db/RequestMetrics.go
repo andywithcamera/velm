@@ -131,6 +131,9 @@ ON CONFLICT (request_id) DO UPDATE SET
 	if err != nil {
 		return fmt.Errorf("upsert request metric server row: %w", err)
 	}
+	if metric.RequestID != "" || metric.Path != "" {
+		emitDerivedRequestMetricObservability(metric)
+	}
 	return nil
 }
 

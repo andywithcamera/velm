@@ -59,5 +59,9 @@ INSERT INTO _audit_log (
 		event.IP,
 		event.UserAgent,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	emitDerivedAuditEventObservability(event)
+	return nil
 }
