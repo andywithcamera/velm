@@ -37,7 +37,7 @@ func TestValidateColumnValueSupportsExpandedColumnTypes(t *testing.T) {
 			value:   "closed",
 			wantErr: true,
 		},
-		{name: "email valid", column: Column{NAME: "email", DATA_TYPE: "email"}, value: "hi@andydoyle.ie"},
+		{name: "email valid", column: Column{NAME: "email", DATA_TYPE: "email"}, value: "test@andydoyle.ie"},
 		{name: "email invalid", column: Column{NAME: "email", DATA_TYPE: "email"}, value: "bad", wantErr: true},
 		{name: "url valid", column: Column{NAME: "website", DATA_TYPE: "url"}, value: "https://example.com"},
 		{name: "url invalid", column: Column{NAME: "website", DATA_TYPE: "url"}, value: "example", wantErr: true},
