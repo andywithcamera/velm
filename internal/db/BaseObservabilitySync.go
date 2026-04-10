@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -1261,7 +1262,12 @@ func upsertAppDefinitionTable(tables []AppDefinitionTable, item AppDefinitionTab
 		return tables
 	}
 
-	items := make([]AppDefinitionTable, 0, len(tables)+1)
+	var items []AppDefinitionTable
+	if len(tables) < math.MaxInt {
+		items = make([]AppDefinitionTable, 0, len(tables)+1)
+	} else {
+		items = append([]AppDefinitionTable(nil), tables...)
+	}
 	replaced := false
 	for _, existing := range tables {
 		if strings.TrimSpace(strings.ToLower(existing.Name)) == name {
@@ -1283,7 +1289,12 @@ func upsertAppDefinitionService(services []AppDefinitionService, item AppDefinit
 		return services
 	}
 
-	items := make([]AppDefinitionService, 0, len(services)+1)
+	var items []AppDefinitionService
+	if len(services) < math.MaxInt {
+		items = make([]AppDefinitionService, 0, len(services)+1)
+	} else {
+		items = append([]AppDefinitionService(nil), services...)
+	}
 	replaced := false
 	for _, existing := range services {
 		if strings.TrimSpace(strings.ToLower(existing.Name)) == name {
@@ -1305,7 +1316,12 @@ func upsertAppDefinitionEndpoint(endpoints []AppDefinitionEndpoint, item AppDefi
 		return endpoints
 	}
 
-	items := make([]AppDefinitionEndpoint, 0, len(endpoints)+1)
+	var items []AppDefinitionEndpoint
+	if len(endpoints) < math.MaxInt {
+		items = make([]AppDefinitionEndpoint, 0, len(endpoints)+1)
+	} else {
+		items = append([]AppDefinitionEndpoint(nil), endpoints...)
+	}
 	replaced := false
 	for _, existing := range endpoints {
 		if strings.TrimSpace(strings.ToLower(existing.Name)) == name {
