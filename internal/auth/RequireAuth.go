@@ -117,6 +117,7 @@ func clearSessionCookie(w http.ResponseWriter, opts *sessions.Options) {
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
+		Secure:   true,
 		HttpOnly: true,
 	}
 
@@ -125,7 +126,6 @@ func clearSessionCookie(w http.ResponseWriter, opts *sessions.Options) {
 			cookie.Path = opts.Path
 		}
 		cookie.Domain = opts.Domain
-		cookie.Secure = opts.Secure
 		cookie.HttpOnly = opts.HttpOnly
 		cookie.SameSite = opts.SameSite
 		cookie.Partitioned = opts.Partitioned

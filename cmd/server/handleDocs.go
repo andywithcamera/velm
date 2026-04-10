@@ -1019,7 +1019,7 @@ func ensureDefaultDocLibraries(ctx context.Context, apps []db.RegisteredApp) err
 }
 
 func loadDocsAppOptions(apps []db.RegisteredApp) []docsAppOption {
-	options := make([]docsAppOption, 0, len(apps)+1)
+	options := make([]docsAppOption, 0, allocHintSum(len(apps), 1))
 	options = append(options, docsAppOption{Name: "", Label: "Platform Shared"})
 	for _, app := range apps {
 		label := strings.TrimSpace(app.Label)

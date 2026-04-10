@@ -73,7 +73,7 @@ func appScopedRoleName(app RegisteredApp, roleName string) string {
 
 func appRoleCandidates(app RegisteredApp, roles []string) []string {
 	seen := map[string]bool{}
-	names := make([]string, 0, len(roles)*2)
+	names := make([]string, 0, allocHintMul(len(roles), 2))
 	for _, role := range roles {
 		role = strings.TrimSpace(strings.ToLower(role))
 		if role == "" {
@@ -381,7 +381,7 @@ func resolveRuntimeTriggersWithApps(apps []RegisteredApp, tableName, eventName s
 		return nil
 	}
 
-	items := make([]resolvedRuntimeTrigger, 0, len(definition.Triggers)+4)
+	items := make([]resolvedRuntimeTrigger, 0, allocHintSum(len(definition.Triggers), 4))
 	for _, trigger := range definition.Triggers {
 		if !trigger.Enabled {
 			continue

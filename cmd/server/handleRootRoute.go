@@ -76,7 +76,7 @@ func requestIsAuthenticated(r *http.Request) bool {
 func defaultAuthenticatedRoute(ctx context.Context) string {
 	target := resolveAuthenticatedRouteTarget(ctx)
 	switch {
-	case strings.HasPrefix(target, "/"):
+	case strings.HasPrefix(target, "/") && !strings.HasPrefix(target, "//") && !strings.HasPrefix(target, "/\\"):
 		if path := normalizeAuthenticatedRoutePath(target); path != "" {
 			return path
 		}
@@ -171,7 +171,7 @@ func normalizeAuthenticatedRouteTarget(input string) string {
 
 func normalizeAuthenticatedRoutePath(input string) string {
 	target := strings.TrimSpace(input)
-	if target == "" || strings.HasPrefix(target, "//") {
+	if target == "" || strings.HasPrefix(target, "//") || strings.HasPrefix(target, "/\\") {
 		return ""
 	}
 

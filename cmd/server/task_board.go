@@ -872,8 +872,8 @@ func taskBoardBulkUpdateURL(tableName string) string {
 }
 
 func buildTaskBoardLanes(stateChoices []taskBoardChoice, items []taskBoardItem) []taskBoardLane {
-	lanes := make([]taskBoardLane, 0, len(stateChoices)+1)
-	laneIndex := make(map[string]int, len(stateChoices)+1)
+	lanes := make([]taskBoardLane, 0, allocHintSum(len(stateChoices), 1))
+	laneIndex := make(map[string]int, allocHintSum(len(stateChoices), 1))
 
 	for _, choice := range stateChoices {
 		value := normalizeTaskBoardLaneValue(choice.Value)

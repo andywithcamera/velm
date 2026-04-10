@@ -275,7 +275,7 @@ func updateScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, t
 	}
 	sort.Strings(columnNames)
 
-	values := make([]any, 0, len(columnNames)+1)
+	values := make([]any, 0, allocHintSum(len(columnNames), 1))
 	setParts := make([]string, 0, len(columnNames))
 	columns := scriptColumnsByName(view)
 	for index, columnName := range columnNames {
@@ -523,8 +523,8 @@ func buildScriptWhereClause(view View, query ScriptRecordQuery, startAt int) (st
 	}
 
 	columns := scriptColumnsByName(view)
-	args := make([]any, 0, len(query.IDs)+len(query.Equals)+len(query.Filters)+len(query.Groups))
-	clauses := make([]string, 0, len(query.IDs)+len(query.Equals)+len(query.Filters)+len(query.Groups)+1)
+	args := make([]any, 0, allocHintSum(len(query.IDs), len(query.Equals), len(query.Filters), len(query.Groups)))
+	clauses := make([]string, 0, allocHintSum(len(query.IDs), len(query.Equals), len(query.Filters), len(query.Groups), 1))
 	nextIndex := startAt
 
 	if scriptHasColumn(view, "_deleted_at") && !query.IncludeDeleted {
@@ -673,7 +673,7 @@ func buildScriptSetClauses(view View, patch map[string]any, userID, updatedAt st
 		return nil, nil, err
 	}
 
-	keys := make([]string, 0, len(formData)+len(nullColumns))
+	keys := make([]string, 0, allocHintSum(len(formData), len(nullColumns)))
 	for key := range formData {
 		keys = append(keys, key)
 	}

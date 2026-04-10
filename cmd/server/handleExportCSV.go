@@ -72,7 +72,7 @@ func handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 
 	whereClause := ""
-	args := make([]any, 0, len(cols)+1)
+	args := make([]any, 0, allocHintSum(len(cols), 1))
 	clauses := make([]string, 0, 2)
 	if colSet["_deleted_at"] && !showDeleted {
 		clauses = append(clauses, "_deleted_at IS NULL")

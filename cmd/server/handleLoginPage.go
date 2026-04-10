@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -18,14 +19,30 @@ func handleLoginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func sanitizeLoginNext(raw string) string {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "/"
 	}
-	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
+
+	// Normalize backslashes because some clients treat "\" as "/".
+	raw = strings.ReplaceAll(raw, "\\", "/")
+
+	u, err := url.Parse(raw)
+	if err != nil {
 		return "/"
 	}
-	if raw == "/login" || strings.HasPrefix(raw, "/login?") {
+
+	// Allow only local, relative redirects.
+	if u.Hostname() != "" || u.Scheme != "" {
 		return "/"
 	}
-	return raw
+	if !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
+		return "/"
+	}
+
+	safe := u.String()
+	if safe == "/login" || strings.HasPrefix(safe, "/login?") {
+		return "/"
+	}
+	return safe
 }

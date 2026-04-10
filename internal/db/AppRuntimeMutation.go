@@ -153,7 +153,7 @@ func filterSubmittedColumns(columns []Column, formData map[string]string, nullCo
 }
 
 func buildInsertColumnsAndValues(columnsByName map[string]Column, formData map[string]string, nullColumns map[string]bool) ([]string, []any, []string, error) {
-	keys := make([]string, 0, len(formData)+len(nullColumns))
+	keys := make([]string, 0, allocHintSum(len(formData), len(nullColumns)))
 	seen := map[string]bool{}
 	for key := range formData {
 		if seen[key] {

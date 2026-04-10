@@ -43,7 +43,7 @@ func loadFormTimeline(ctx context.Context, tableName, recordID string, columns [
 }
 
 func buildFormTimelineItems(changeEntries []db.RecordChangeEntry, commentEntries []db.RecordCommentEntry, columnLabels map[string]string) []formTimelineItem {
-	items := make([]formTimelineItem, 0, len(changeEntries)+len(commentEntries))
+	items := make([]formTimelineItem, 0, allocHintSum(len(changeEntries), len(commentEntries)))
 
 	for _, entry := range changeEntries {
 		changes := make([]formTimelineChange, 0, len(entry.FieldDiff))
