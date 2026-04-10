@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	"velm/internal/db"
 	"velm/internal/security"
 )
+
+const appRuntimeRequestBodyLimit = 2 << 20
 
 func handleAppRuntimeEndpoint(w http.ResponseWriter, r *http.Request) {
 	endpoint, found, err := db.ResolveAppRuntimeEndpoint(r.Context(), r.Method, r.URL.Path)
@@ -150,6 +153,26 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 }
 
 func appRuntimeRequestPayload(r *http.Request) (any, map[string]any, error) {
+	body, err := readAppRuntimeRequestBody(r)
+	if err != nil {
+		return nil, nil, err
+	}
+	return appRuntimeRequestPayloadFromBody(r, body)
+}
+
+func readAppRuntimeRequestBody(r *http.Request) ([]byte, error) {
+	if r == nil || r.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, appRuntimeRequestBodyLimit))
+	if err != nil {
+		return nil, err
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+	return body, nil
+}
+
+func appRuntimeRequestPayloadFromBody(r *http.Request, body []byte) (any, map[string]any, error) {
 	query := make(map[string]any, len(r.URL.Query()))
 	for key, values := range r.URL.Query() {
 		if len(values) == 1 {
@@ -199,21 +222,15 @@ func appRuntimeRequestPayload(r *http.Request) (any, map[string]any, error) {
 			payload = formValues
 		}
 	default:
-		if r.Body != nil {
-			body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
-			if err != nil {
+		trimmed := strings.TrimSpace(string(body))
+		switch {
+		case trimmed == "":
+		case contentType == "application/json" || json.Valid(body):
+			if err := json.Unmarshal(body, &payload); err != nil {
 				return nil, nil, err
 			}
-			trimmed := strings.TrimSpace(string(body))
-			switch {
-			case trimmed == "":
-			case contentType == "application/json" || json.Valid(body):
-				if err := json.Unmarshal(body, &payload); err != nil {
-					return nil, nil, err
-				}
-			default:
-				payload = trimmed
-			}
+		default:
+			payload = trimmed
 		}
 	}
 
