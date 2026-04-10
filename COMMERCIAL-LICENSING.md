@@ -31,7 +31,7 @@ The exact scope, fees, term, and restrictions depend on the signed commercial ag
 For commercial licensing enquiries, contact:
 
 - Andy Doyle
-- `andy.doyle@outlook.ie`
+- `info@andydoyle.ie`
 
 Please include:
 
