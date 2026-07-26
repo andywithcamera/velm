@@ -169,7 +169,9 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 	libraries := docsCtx.Libraries
 	libraryBySlug := docsCtx.LibraryBySlug
 
-	allPublishedArticles, err := listDocsArticles(ctx, "", "", true)
+	// One query for all published articles — used for library counts and as the catalog
+	// source when there is no full-text search filter.
+	allPublishedArticles, err := listDocsArticles(ctx, "", "", true, true)
 	if err != nil {
 		http.Error(w, "Failed to load docs articles", http.StatusInternalServerError)
 		return
@@ -188,6 +190,7 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 	selectedLibrarySlug := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("library")))
 	selectedArticleSlug := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("article")))
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	tag := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("tag")))
 	page := parsePositiveInt(r.URL.Query().Get("page"), 1, 1000000)
 	pageSize := parsePositiveInt(r.URL.Query().Get("size"), 12, 48)
 
@@ -204,12 +207,40 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	catalogArticles, err := listDocsArticles(ctx, selectedLibrarySlug, search, true)
-	if err != nil {
-		http.Error(w, "Failed to load docs articles", http.StatusInternalServerError)
-		return
+	// Reuse the already-loaded slice when there is no search filter; only run a
+	// second query when full-text search requires a different result set.
+	var catalogArticles []docsArticle
+	if search == "" {
+		if selectedLibrarySlug == "" {
+			catalogArticles = allPublishedArticles
+		} else {
+			catalogArticles = make([]docsArticle, 0, len(allPublishedArticles))
+			for _, a := range allPublishedArticles {
+				if a.LibrarySlug == selectedLibrarySlug {
+					catalogArticles = append(catalogArticles, a)
+				}
+			}
+		}
+	} else {
+		raw, err := listDocsArticles(ctx, selectedLibrarySlug, search, true, true)
+		if err != nil {
+			http.Error(w, "Failed to load docs articles", http.StatusInternalServerError)
+			return
+		}
+		catalogArticles = decorateDocsArticles(filterReadableDocsArticles(docsCtx.Access, raw, libraryBySlug))
 	}
-	catalogArticles = decorateDocsArticles(filterReadableDocsArticles(docsCtx.Access, catalogArticles, libraryBySlug))
+	if tag != "" {
+		filtered := catalogArticles[:0]
+		for _, a := range catalogArticles {
+			for _, t := range a.TagItems {
+				if strings.ToLower(strings.TrimSpace(t)) == tag {
+					filtered = append(filtered, a)
+					break
+				}
+			}
+		}
+		catalogArticles = filtered
+	}
 
 	totalArticles := len(catalogArticles)
 	totalPages := 1
@@ -265,6 +296,7 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 	viewData["DocsHasSearch"] = search != ""
 	viewData["DocsHasLibraryFilter"] = selectedLibrary.Slug != ""
 	viewData["DocsPublishedCount"] = len(allPublishedArticles)
+	viewData["DocsTag"] = tag
 
 	if err := templates.ExecuteTemplate(w, "layout.html", viewData); err != nil {
 		http.Error(w, "Error rendering docs", http.StatusInternalServerError)
@@ -309,6 +341,23 @@ func handleDocsArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	libraryArticles, _ := listDocsArticles(ctx, article.LibrarySlug, "", true, true)
+	libraryArticles = decorateDocsArticles(filterReadableDocsArticles(docsCtx.Access, libraryArticles, docsCtx.LibraryBySlug))
+	var prevArticle, nextArticle *docsArticle
+	for i, a := range libraryArticles {
+		if a.ID == selectedArticle.ID {
+			if i > 0 {
+				prev := libraryArticles[i-1]
+				prevArticle = &prev
+			}
+			if i < len(libraryArticles)-1 {
+				next := libraryArticles[i+1]
+				nextArticle = &next
+			}
+			break
+		}
+	}
+
 	canManage := selectedArticle.CanEdit || selectedArticle.CanDelete || library.CanEdit || library.CanCreate
 	manageHref := "/docs/manage?library=" + url.QueryEscape(selectedArticle.LibrarySlug) + "&article=" + url.QueryEscape(selectedArticle.Slug)
 
@@ -317,14 +366,17 @@ func handleDocsArticle(w http.ResponseWriter, r *http.Request) {
 		title = selectedArticle.Number + " - " + title
 	}
 
+	resolver := newWikilinkResolver(ctx)
 	viewData := newViewData(w, r, buildDocsArticleHref(selectedArticle.ID), title, "Operations")
 	viewData["View"] = "docs-reader"
 	viewData["DocsArticleSelected"] = selectedArticle
-	viewData["DocsArticleRendered"] = renderMarkdownToSafeHTML(selectedArticle.MarkdownBody)
+	viewData["DocsArticleRendered"] = renderMarkdownToSafeHTMLResolved(selectedArticle.MarkdownBody, resolver)
 	viewData["DocsBacklinks"] = backlinks
 	viewData["DocsCanManage"] = canManage
 	viewData["DocsManageHref"] = manageHref
 	viewData["DocsLibrarySelected"] = library
+	viewData["DocsPrevArticle"] = prevArticle
+	viewData["DocsNextArticle"] = nextArticle
 
 	if err := templates.ExecuteTemplate(w, "layout.html", viewData); err != nil {
 		http.Error(w, "Error rendering doc", http.StatusInternalServerError)
@@ -365,7 +417,7 @@ func handleDocsManage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	articles, err := listDocsArticles(ctx, selectedLibrarySlug, search, false)
+	articles, err := listDocsArticles(ctx, selectedLibrarySlug, search, false, false)
 	if err != nil {
 		http.Error(w, "Failed to load docs articles", http.StatusInternalServerError)
 		return
@@ -442,7 +494,7 @@ func handleDocsManage(w http.ResponseWriter, r *http.Request) {
 	viewData["DocsArticles"] = pagedArticles
 	viewData["DocsArticleSelected"] = selectedArticle
 	viewData["DocsPreviewArticle"] = previewArticle
-	viewData["DocsPreviewRendered"] = renderMarkdownToSafeHTML(previewArticle.MarkdownBody)
+	viewData["DocsPreviewRendered"] = renderMarkdownToSafeHTMLResolved(previewArticle.MarkdownBody, newWikilinkResolver(ctx))
 	viewData["DocsSearch"] = search
 	viewData["DocsPage"] = page
 	viewData["DocsPageSize"] = pageSize
@@ -479,9 +531,10 @@ func handleDocsPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resolver := newWikilinkResolver(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(docsPreviewResponse{
-		HTML: string(renderMarkdownToSafeHTML(r.FormValue("markdown_body"))),
+		HTML: string(renderMarkdownToSafeHTMLResolved(r.FormValue("markdown_body"), resolver)),
 	})
 }
 
@@ -546,7 +599,23 @@ func handleSaveDocsArticle(w http.ResponseWriter, r *http.Request) {
 		DeleteRoles:  normalizeDocsRoleInput(r.FormValue("delete_roles")),
 	}, strings.TrimSpace(strings.ToLower(r.FormValue("original_slug"))))
 	if err != nil {
+		if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
+			return
+		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"ok":   true,
+			"slug": slug,
+			"href": "/docs/manage?library=" + url.QueryEscape(librarySlug) + "&article=" + url.QueryEscape(slug),
+		})
 		return
 	}
 
@@ -825,7 +894,7 @@ func parseDocsArticleID(path string) (string, error) {
 }
 
 func listDocsArticleBacklinks(ctx context.Context, access *docsAccessContext, libraries map[string]docsLibrary, article docsArticle) ([]docsArticle, error) {
-	candidates, err := listDocsArticles(ctx, "", "", true)
+	candidates, err := listDocsArticles(ctx, "", "", true, false)
 	if err != nil {
 		return nil, err
 	}
@@ -861,6 +930,19 @@ func markdownLinksToDocsArticle(markdown string, article docsArticle) bool {
 			return true
 		}
 	}
+	// Also match [[wikilinks]] by title or number.
+	for _, m := range mdWikilinkPattern.FindAllStringSubmatch(markdown, -1) {
+		if len(m) < 2 {
+			continue
+		}
+		linkTitle := strings.TrimSpace(m[1])
+		if strings.EqualFold(linkTitle, article.Title) {
+			return true
+		}
+		if article.Number != "" && strings.EqualFold(linkTitle, article.Number) {
+			return true
+		}
+	}
 	return false
 }
 
@@ -888,6 +970,58 @@ func markdownLinkMatchesDocsArticle(rawHref string, article docsArticle) bool {
 		return true
 	}
 	return false
+}
+
+// docsBacklink is a published article that wikilinks to another record.
+type docsBacklink struct {
+	Title       string
+	Number      string
+	LibraryName string
+	Href        string
+	Excerpt     string
+}
+
+// listDocsBacklinksForRecord finds published docs articles that contain
+// [[wikilinks]] whose title matches any of the provided display values.
+// Used to show "referenced by" backlinks on entity/task record views.
+func listDocsBacklinksForRecord(ctx context.Context, titles []string) []docsBacklink {
+	if len(titles) == 0 {
+		return nil
+	}
+	titleSet := make(map[string]bool, len(titles))
+	for _, t := range titles {
+		if v := strings.ToLower(strings.TrimSpace(t)); v != "" {
+			titleSet[v] = true
+		}
+	}
+
+	articles, err := listDocsArticles(ctx, "", "", true, false)
+	if err != nil {
+		return nil
+	}
+
+	result := make([]docsBacklink, 0, 8)
+	for _, a := range articles {
+		for _, m := range mdWikilinkPattern.FindAllStringSubmatch(a.MarkdownBody, -1) {
+			if len(m) < 2 {
+				continue
+			}
+			if titleSet[strings.ToLower(strings.TrimSpace(m[1]))] {
+				result = append(result, docsBacklink{
+					Title:       a.Title,
+					Number:      a.Number,
+					LibraryName: a.LibraryName,
+					Href:        buildDocsArticleHref(a.ID),
+					Excerpt:     summarizeDocsMarkdown(a.MarkdownBody),
+				})
+				break
+			}
+		}
+		if len(result) >= 10 {
+			break
+		}
+	}
+	return result
 }
 
 func summarizeDocsMarkdown(markdown string) string {
@@ -984,6 +1118,22 @@ func ensureDefaultDocLibraries(ctx context.Context, apps []db.RegisteredApp) err
 		return err
 	}
 
+	// Skip opening a transaction entirely when all apps already have a default library.
+	needsWork := false
+	for _, app := range apps {
+		appName := strings.TrimSpace(strings.ToLower(app.Name))
+		if appName == "" {
+			continue
+		}
+		if _, ok := defaultByApp[appName]; !ok {
+			needsWork = true
+			break
+		}
+	}
+	if !needsWork {
+		return nil
+	}
+
 	tx, err := db.Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -998,9 +1148,9 @@ func ensureDefaultDocLibraries(ctx context.Context, apps []db.RegisteredApp) err
 		if _, ok := defaultByApp[appName]; ok {
 			continue
 		}
-		slug := appName
+		slug := strings.ReplaceAll(appName, "_", "-")
 		if existing, ok := existingBySlug[slug]; ok && strings.TrimSpace(existing.AppName) != appName {
-			slug = appName + "-docs"
+			slug = slug + "-docs"
 		}
 		label := strings.TrimSpace(app.Label)
 		if label == "" {
@@ -1091,6 +1241,8 @@ func listDocsLibraries(ctx context.Context) ([]docsLibrary, error) {
 	return items, nil
 }
 
+// docsArticleSelectColumns fetches the full article body but skips rendered_html —
+// the Go handlers always re-render from markdown_body, so the stored HTML is never used.
 const docsArticleSelectColumns = `
 	a._id::text,
 	a.docs_library_id::text,
@@ -1101,7 +1253,30 @@ const docsArticleSelectColumns = `
 	a.slug,
 	a.title,
 	a.markdown_body,
-	a.rendered_html,
+	''::text,
+	a.status,
+	COALESCE(a.tags, ''),
+	a.version_num,
+	COALESCE(a.published_at::text, ''),
+	a.owner_user_id,
+	COALESCE(a.read_roles, '[]'::jsonb)::text,
+	COALESCE(a.edit_roles, '[]'::jsonb)::text,
+	COALESCE(a.delete_roles, '[]'::jsonb)::text
+`
+
+// docsArticleSummaryColumns is the same but truncates markdown_body to 600 chars.
+// Safe for catalog listings and navigation where only the excerpt is needed.
+const docsArticleSummaryColumns = `
+	a._id::text,
+	a.docs_library_id::text,
+	l.slug,
+	l.name,
+	COALESCE(l.app_name, ''),
+	COALESCE(a.number, ''),
+	a.slug,
+	a.title,
+	LEFT(a.markdown_body, 600),
+	''::text,
 	a.status,
 	COALESCE(a.tags, ''),
 	a.version_num,
@@ -1152,7 +1327,7 @@ func scanDocsArticle(scanner docsRowScanner) (docsArticle, error) {
 	return item, nil
 }
 
-func listDocsArticles(ctx context.Context, librarySlug, search string, publishedOnly bool) ([]docsArticle, error) {
+func listDocsArticles(ctx context.Context, librarySlug, search string, publishedOnly, summaryOnly bool) ([]docsArticle, error) {
 	clauses := []string{"l.status = 'active'", "a.status <> 'archived'"}
 	args := []any{}
 	if publishedOnly {
@@ -1172,8 +1347,12 @@ func listDocsArticles(ctx context.Context, librarySlug, search string, published
 		args = append(args, "%"+trimmed+"%")
 	}
 
+	cols := docsArticleSelectColumns
+	if summaryOnly {
+		cols = docsArticleSummaryColumns
+	}
 	query := `
-		SELECT ` + docsArticleSelectColumns + `
+		SELECT ` + cols + `
 		FROM _docs_article a
 		JOIN _docs_library l ON l._id = a.docs_library_id
 		WHERE ` + strings.Join(clauses, " AND ") + `
@@ -1391,8 +1570,8 @@ func saveDocsArticle(ctx context.Context, userID, librarySlug string, article do
 	editRolesJSON := marshalDocsRolesJSON(article.EditRoles)
 	deleteRolesJSON := marshalDocsRolesJSON(article.DeleteRoles)
 
-	if !docsSlugPattern.MatchString(librarySlug) {
-		return "", fmt.Errorf("invalid library slug")
+	if librarySlug == "" {
+		return "", fmt.Errorf("library slug is required")
 	}
 	if !docsSlugPattern.MatchString(article.Slug) {
 		return "", fmt.Errorf("invalid article slug")
@@ -1430,7 +1609,7 @@ func saveDocsArticle(ctx context.Context, userID, librarySlug string, article do
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	rendered := string(renderMarkdownToSafeHTML(article.MarkdownBody))
+	rendered := string(renderMarkdownToSafeHTMLResolved(article.MarkdownBody, newWikilinkResolver(ctx)))
 	var existing docsArticle
 	existing, err = scanDocsArticle(tx.QueryRow(ctx, `
 		SELECT `+docsArticleSelectColumns+`
@@ -1660,4 +1839,266 @@ func buildDocsVersionHref(librarySlug, articleSlug string, versionNum int) strin
 		values.Set("version", fmt.Sprintf("%d", versionNum))
 	}
 	return "/docs/manage?" + values.Encode()
+}
+
+// newWikilinkResolver returns a caching resolver that maps a wikilink title to a
+// platform record URL, checking docs articles and tasks in that order.
+func newWikilinkResolver(ctx context.Context) func(string) string {
+	cache := map[string]string{}
+	return func(title string) string {
+		if href, ok := cache[title]; ok {
+			return href
+		}
+		href := resolveWikilinkHref(ctx, title)
+		cache[title] = href
+		return href
+	}
+}
+
+func resolveWikilinkHref(ctx context.Context, title string) string {
+	title = strings.TrimSpace(title)
+	if title == "" || db.Pool == nil {
+		return ""
+	}
+	lower := strings.ToLower(title)
+
+	var articleID string
+	err := db.Pool.QueryRow(ctx, `
+		SELECT a._id::text
+		FROM _docs_article a
+		JOIN _docs_library l ON l._id = a.docs_library_id
+		WHERE LOWER(a.title) = $1
+		  AND a.status = 'published'
+		  AND l.status = 'active'
+		ORDER BY a._updated_at DESC NULLS LAST
+		LIMIT 1
+	`, lower).Scan(&articleID)
+	if err == nil && articleID != "" {
+		return buildDocsArticleHref(articleID)
+	}
+
+	for _, tableName := range db.ListTableQuerySources(ctx, "base_task") {
+		quotedTable, qErr := db.QuoteIdentifier(tableName)
+		if qErr != nil {
+			continue
+		}
+		var recordID string
+		if scanErr := db.Pool.QueryRow(ctx, fmt.Sprintf(`
+			SELECT _id::text FROM %s
+			WHERE _deleted_at IS NULL
+			  AND (LOWER(COALESCE(title,'')) = $1 OR LOWER(COALESCE(number,'')) = $1)
+			ORDER BY _updated_at DESC NULLS LAST
+			LIMIT 1
+		`, quotedTable), lower).Scan(&recordID); scanErr == nil && recordID != "" {
+			return "/f/" + tableName + "/" + recordID
+		}
+	}
+
+	taskTables := make(map[string]bool, 16)
+	for _, t := range db.ListTableQuerySources(ctx, "base_task") {
+		taskTables[t] = true
+	}
+	for _, et := range listWikilinkEntityTables(ctx, taskTables) {
+		quotedTable, qErr := db.QuoteIdentifier(et.tableName)
+		if qErr != nil {
+			continue
+		}
+		quotedCol, qErr := db.QuoteIdentifier(et.displayCol)
+		if qErr != nil {
+			continue
+		}
+		var recordID string
+		if scanErr := db.Pool.QueryRow(ctx, fmt.Sprintf(`
+			SELECT _id::text FROM %s
+			WHERE _deleted_at IS NULL
+			  AND LOWER(COALESCE(%s,'')) = $1
+			ORDER BY _updated_at DESC NULLS LAST
+			LIMIT 1
+		`, quotedTable, quotedCol), lower).Scan(&recordID); scanErr == nil && recordID != "" {
+			return "/f/" + et.tableName + "/" + recordID
+		}
+	}
+
+	return ""
+}
+
+type wikilinkEntityTable struct {
+	tableName  string
+	displayCol string
+}
+
+func listWikilinkEntityTables(ctx context.Context, excludeTables map[string]bool) []wikilinkEntityTable {
+	if db.Pool == nil {
+		return nil
+	}
+	rows, err := db.Pool.Query(ctx, `
+		SELECT c.table_name,
+		       CASE WHEN bool_or(c.column_name = 'name')   THEN 'name'
+		            WHEN bool_or(c.column_name = 'title')  THEN 'title'
+		            ELSE 'number' END AS display_col
+		FROM information_schema.columns c
+		JOIN information_schema.tables t
+		  ON t.table_name = c.table_name AND t.table_schema = c.table_schema
+		WHERE c.table_schema = current_schema()
+		  AND c.column_name IN ('name', 'title', 'number')
+		  AND t.table_type = 'BASE TABLE'
+		  AND NOT (c.table_name ~ '^_')
+		GROUP BY c.table_name
+		ORDER BY c.table_name ASC
+		LIMIT 30
+	`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	result := make([]wikilinkEntityTable, 0, 8)
+	for rows.Next() {
+		var et wikilinkEntityTable
+		if err := rows.Scan(&et.tableName, &et.displayCol); err != nil {
+			continue
+		}
+		if excludeTables[et.tableName] || !db.IsSafeIdentifier(et.tableName) {
+			continue
+		}
+		result = append(result, et)
+	}
+	return result
+}
+
+func searchWikilinkEntityResults(ctx context.Context, query string, limit int, excludeTables map[string]bool) ([]wikilinkSearchResult, error) {
+	if query == "" || db.Pool == nil {
+		return nil, nil
+	}
+	entityTables := listWikilinkEntityTables(ctx, excludeTables)
+	if len(entityTables) == 0 {
+		return nil, nil
+	}
+
+	selects := make([]string, 0, len(entityTables))
+	for _, et := range entityTables {
+		quotedTable, err := db.QuoteIdentifier(et.tableName)
+		if err != nil {
+			continue
+		}
+		quotedCol, err := db.QuoteIdentifier(et.displayCol)
+		if err != nil {
+			continue
+		}
+		selects = append(selects, fmt.Sprintf(
+			`SELECT '%s' AS table_name, _id::text AS id, COALESCE(%s, '') AS display_val,
+			        _updated_at, _created_at
+			 FROM %s
+			 WHERE _deleted_at IS NULL
+			   AND LOWER(COALESCE(%s, '')) LIKE '%%' || $1 || '%%'`,
+			et.tableName, quotedCol, quotedTable, quotedCol,
+		))
+	}
+	if len(selects) == 0 {
+		return nil, nil
+	}
+
+	q := fmt.Sprintf(
+		`SELECT table_name, id, display_val
+		 FROM (%s) entity_results
+		 WHERE display_val != ''
+		 ORDER BY _updated_at DESC NULLS LAST, _created_at DESC NULLS LAST
+		 LIMIT $2`,
+		strings.Join(selects, "\nUNION ALL\n"),
+	)
+	rows, err := db.Pool.Query(ctx, q, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]wikilinkSearchResult, 0, limit)
+	for rows.Next() {
+		var tableName, id, displayVal string
+		if err := rows.Scan(&tableName, &id, &displayVal); err != nil {
+			continue
+		}
+		results = append(results, wikilinkSearchResult{
+			Title: displayVal,
+			Label: displayVal,
+			Href:  "/f/" + tableName + "/" + id,
+			Type:  "record",
+		})
+	}
+	return results, rows.Err()
+}
+
+type wikilinkSearchResult struct {
+	Title string `json:"title"`
+	Label string `json:"label"`
+	Href  string `json:"href"`
+	Type  string `json:"type"`
+}
+
+func handleDocsWikilinkSearch(w http.ResponseWriter, r *http.Request) {
+	query := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("q")))
+	ctx := r.Context()
+	userID := strings.TrimSpace(auth.UserIDFromRequest(r))
+
+	results := make([]wikilinkSearchResult, 0, 16)
+
+	if query != "" && userID != "" {
+		docsCtx, err := loadDocsViewContext(ctx, userID, false)
+		if err == nil {
+			articles, err := listDocsArticles(ctx, "", query, true, true)
+			if err == nil {
+				articles = decorateDocsArticles(filterReadableDocsArticles(docsCtx.Access, articles, docsCtx.LibraryBySlug))
+				for _, article := range articles {
+					if len(results) >= 8 {
+						break
+					}
+					results = append(results, wikilinkSearchResult{
+						Title: article.Title,
+						Label: buildDocSearchTitle(article.Number, article.Title),
+						Href:  article.ReaderHref,
+						Type:  "doc",
+					})
+				}
+			}
+		}
+	}
+
+	taskTables := db.ListTableQuerySources(ctx, "base_task")
+	taskTableSet := make(map[string]bool, len(taskTables))
+	for _, t := range taskTables {
+		taskTableSet[t] = true
+	}
+
+	if query != "" {
+		sqlQuery, err := buildTaskSearchQuery(taskTables)
+		if err == nil && sqlQuery != "" {
+			rows, err := db.Pool.Query(ctx, sqlQuery, query, 8)
+			if err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var tableName, id, number, taskTitle string
+					if err := rows.Scan(&tableName, &id, &number, &taskTitle); err != nil {
+						continue
+					}
+					wikilinkTitle := number
+					if wikilinkTitle == "" {
+						wikilinkTitle = taskTitle
+					}
+					results = append(results, wikilinkSearchResult{
+						Title: wikilinkTitle,
+						Label: buildTaskSearchTitle(number, taskTitle),
+						Href:  "/f/" + tableName + "/" + id,
+						Type:  "task",
+					})
+				}
+			}
+		}
+
+		if entityResults, err := searchWikilinkEntityResults(ctx, query, 6, taskTableSet); err == nil {
+			results = append(results, entityResults...)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(results)
 }

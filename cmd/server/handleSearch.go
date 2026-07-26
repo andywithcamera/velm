@@ -132,7 +132,7 @@ func searchDocsResults(ctx context.Context, userID, query string, limit int) ([]
 		return nil, err
 	}
 
-	articles, err := listDocsArticles(ctx, "", query, true)
+	articles, err := listDocsArticles(ctx, "", query, true, true)
 	if err != nil {
 		return nil, err
 	}

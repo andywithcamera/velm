@@ -84,6 +84,7 @@ func registerRoutes() {
 	http.Handle("/api/pages/save", withAuth(authz.PermissionWrite, http.HandlerFunc(handleSavePageBuilder)))
 	http.Handle("/api/root-route/save", withAuth(authz.PermissionWrite, http.HandlerFunc(handleSaveRootRouteTarget)))
 	http.Handle("/api/docs/preview", withAuth(authz.PermissionView, http.HandlerFunc(handleDocsPreview)))
+	http.Handle("/api/docs/wikilink-search", withAuth(authz.PermissionView, http.HandlerFunc(handleDocsWikilinkSearch)))
 	http.Handle("/api/docs/library/save", withAuth(authz.PermissionWrite, http.HandlerFunc(handleSaveDocsLibrary)))
 	http.Handle("/api/docs/library/archive", withAuth(authz.PermissionWrite, http.HandlerFunc(handleArchiveDocsLibrary)))
 	http.Handle("/api/docs/article/save", withAuth(authz.PermissionWrite, http.HandlerFunc(handleSaveDocsArticle)))

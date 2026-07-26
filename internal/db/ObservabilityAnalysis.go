@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,10 @@ const (
 var (
 	observabilityAnalysisUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	observabilityAnalysisIntPattern  = regexp.MustCompile(`^\d+$`)
+
+	observabilityFailMu      sync.Mutex
+	observabilityLastFailLog time.Time
+	observabilityFailCount   int
 	observabilityAnalysisHexPattern  = regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`)
 
 	sensitiveDataChangeSeverity = map[string]int{
@@ -70,7 +75,25 @@ func emitDerivedObservabilityBestEffort(label string, events []derivedObservabil
 	defer cancel()
 
 	if err := emitDerivedObservability(ctx, events); err != nil {
-		log.Printf("derived observability emit failed: source=%s err=%v", label, err)
+		observabilityFailMu.Lock()
+		observabilityFailCount++
+		now := time.Now()
+		shouldLog := now.Sub(observabilityLastFailLog) >= 30*time.Second
+		var count int
+		if shouldLog {
+			observabilityLastFailLog = now
+			count = observabilityFailCount
+			observabilityFailCount = 0
+		}
+		observabilityFailMu.Unlock()
+
+		if shouldLog {
+			if count > 1 {
+				log.Printf("derived observability emit failed: source=%s err=%v (x%d in last 30s)", label, err, count)
+			} else {
+				log.Printf("derived observability emit failed: source=%s err=%v", label, err)
+			}
+		}
 	}
 }
 

@@ -255,7 +255,6 @@ h4,
   padding: var(--sp-6) var(--sp-8) 20px;
   margin: 0;
   border: 0;
-  border-bottom: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
   box-shadow: none;

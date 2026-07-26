@@ -1,19 +1,28 @@
 package main
 
 import (
+	"html"
 	"html/template"
 	"regexp"
 	"strings"
 )
 
 var (
-	mdLinkPattern   = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
-	mdBoldPattern   = regexp.MustCompile(`\*\*([^*]+)\*\*`)
-	mdItalicPattern = regexp.MustCompile(`\*([^*]+)\*`)
-	mdCodePattern   = regexp.MustCompile("`([^`]+)`")
+	mdLinkPattern     = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
+	mdBoldPattern     = regexp.MustCompile(`\*\*([^*]+)\*\*`)
+	mdItalicPattern   = regexp.MustCompile(`\*([^*]+)\*`)
+	mdCodePattern     = regexp.MustCompile("`([^`]+)`")
+	mdWikilinkPattern = regexp.MustCompile(`\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]`)
 )
 
 func renderMarkdownToSafeHTML(raw string) template.HTML {
+	return renderMarkdownToSafeHTMLResolved(raw, nil)
+}
+
+// renderMarkdownToSafeHTMLResolved renders markdown to safe HTML, optionally resolving
+// [[wikilinks]] to record URLs via the provided resolver. If resolver is nil or returns
+// an empty string, unresolved wikilinks are rendered as a styled span.
+func renderMarkdownToSafeHTMLResolved(raw string, resolver func(string) string) template.HTML {
 	lines := strings.Split(raw, "\n")
 	out := make([]string, 0, len(lines))
 	listItems := make([]string, 0, 8)
@@ -44,6 +53,25 @@ func renderMarkdownToSafeHTML(raw string) template.HTML {
 				return `<a href="` + href + `" target="_blank" rel="noopener noreferrer">` + sub[1] + `</a>`
 			}
 			return `<a href="` + href + `">` + sub[1] + `</a>`
+		})
+		esc = mdWikilinkPattern.ReplaceAllStringFunc(esc, func(m string) string {
+			sub := mdWikilinkPattern.FindStringSubmatch(m)
+			if len(sub) < 2 {
+				return m
+			}
+			// sub[1] is HTML-escaped; unescape for DB lookup and use escaped version for display.
+			escapedTitle := strings.TrimSpace(sub[1])
+			display := escapedTitle
+			if len(sub) > 2 && strings.TrimSpace(sub[2]) != "" {
+				display = strings.TrimSpace(sub[2])
+			}
+			if resolver != nil {
+				rawTitle := html.UnescapeString(escapedTitle)
+				if href := resolver(rawTitle); href != "" {
+					return `<a href="` + template.HTMLEscapeString(href) + `" class="docs-wikilink">` + display + `</a>`
+				}
+			}
+			return `<span class="docs-wikilink docs-wikilink-unresolved" title="No matching record found">` + display + `</span>`
 		})
 
 		switch {

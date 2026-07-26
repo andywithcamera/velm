@@ -310,9 +310,10 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 		var (
 			timelineItems   []formTimelineItem
 			relatedSections []formRelatedSection
+			docBacklinks    []docsBacklink
 			wg              sync.WaitGroup
 		)
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
 			timelineItems = loadFormTimeline(ctx, tableName, id, formColumns)
@@ -321,11 +322,26 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 			defer wg.Done()
 			relatedSections = loadFormRelatedSections(ctx, r, tableName, id)
 		}()
+		go func() {
+			defer wg.Done()
+			docBacklinks = loadFormDocsBacklinks(ctx, formFieldValues)
+		}()
 		wg.Wait()
 		viewData["FormTimelineItems"] = timelineItems
 		viewData["FormRelatedSections"] = relatedSections
+		viewData["FormDocBacklinks"] = docBacklinks
 	}
 	return viewData, nil
+}
+
+func loadFormDocsBacklinks(ctx context.Context, fieldValues map[string]string) []docsBacklink {
+	var titles []string
+	for _, col := range []string{"name", "title", "number"} {
+		if v := strings.TrimSpace(fieldValues[col]); v != "" {
+			titles = append(titles, v)
+		}
+	}
+	return listDocsBacklinksForRecord(ctx, titles)
 }
 
 func parseFormSecurityPreviewValues(ctx context.Context, columns []db.Column, tableName, userID string, isCreate bool, values url.Values) (map[string]string, map[string]bool, error) {

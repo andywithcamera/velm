@@ -382,3 +382,307 @@
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Focused article editor */
+
+.docs-article-editor {
+  overflow: hidden;
+  padding: 0;
+}
+
+.docs-article-editor > .ui-section-header {
+  padding: 1rem 1.25rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-editor-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.docs-editor-title-input {
+  display: block;
+  width: 100%;
+  padding: 0.9rem 1.25rem 0.65rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.docs-editor-title-input::placeholder {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.docs-editor-metabar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.docs-editor-meta-select {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+
+.docs-editor-meta-input {
+  flex: 1;
+  font-size: 0.85rem;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+
+.docs-editor-body {
+  display: block;
+  width: 100%;
+  min-height: 60vh;
+  padding: 1.25rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  outline: none;
+  font-size: 0.93rem;
+  line-height: 1.75;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: text;
+  word-break: break-word;
+}
+
+.docs-editor-source-hidden {
+  display: none;
+}
+
+.docs-editor-preview-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.4rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: var(--bg-elevated);
+}
+
+.docs-editor-preview-area {
+  padding: 1.25rem;
+  min-height: 3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-editor-preview-area:empty::before {
+  content: "Nothing to preview yet.";
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.docs-editor-advanced {
+  border-bottom: none;
+}
+
+.docs-editor-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.65rem 1.25rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.docs-editor-advanced-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.docs-editor-advanced[open] .docs-editor-advanced-toggle {
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-editor-advanced-body {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.docs-editor-footer {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Wikilink styles */
+
+.docs-wikilink {
+  color: var(--blue-bright);
+  text-decoration: none;
+}
+
+.docs-wikilink:hover {
+  text-decoration: underline;
+}
+
+.docs-wikilink-unresolved {
+  color: var(--text-dim);
+  border-bottom: 1px dashed currentColor;
+  cursor: help;
+}
+
+/* Wikilink autocomplete dropdown */
+
+.docs-wikilink-dropdown {
+  z-index: 100;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  font-size: 0.9rem;
+}
+
+.docs-wikilink-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-wikilink-item:last-child {
+  border-bottom: none;
+}
+
+.docs-wikilink-item:hover,
+.docs-wikilink-item.is-active {
+  background: var(--bg-surface);
+}
+
+.docs-wikilink-item-type {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--blue-bright);
+  min-width: 2.8rem;
+  flex-shrink: 0;
+}
+
+.docs-wikilink-empty {
+  padding: 0.75rem;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
+/* Docs manage nav bar */
+
+.docs-manage-nav {
+  padding: 0;
+}
+
+.docs-manage-nav-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  flex-wrap: wrap;
+}
+
+.docs-manage-nav-inner .ui-select {
+  max-width: 18rem;
+  min-width: 9rem;
+}
+
+.docs-manage-nav-search {
+  flex: 1;
+  min-width: 8rem;
+  max-width: 18rem;
+}
+
+.docs-manage-nav-search .ui-input {
+  width: 100%;
+}
+
+/* Per-line markdown visual styles in contenteditable */
+
+#docs-article-body [data-md="h1"] {
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+#docs-article-body [data-md="h2"] {
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+#docs-article-body [data-md="h3"] {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+#docs-article-body [data-md="li"] {
+  padding-left: 1.25rem;
+  position: relative;
+}
+
+#docs-article-body [data-md="li"]::before {
+  content: "•";
+  position: absolute;
+  left: 0.35rem;
+  color: var(--text-dim);
+}
+
+#docs-article-body [data-md="ol"] {
+  padding-left: 1.25rem;
+}
+
+#docs-article-body [data-md="empty"] {
+  min-height: 1.1em;
+}
+
+/* Library settings collapsible */
+
+.docs-library-settings {
+  padding: 0;
+}
+
+.docs-library-settings-summary {
+  padding: 0.8rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  list-style: none;
+  user-select: none;
+}
+
+.docs-library-settings-summary::-webkit-details-marker {
+  display: none;
+}
+
+.docs-library-settings[open] .docs-library-settings-summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-library-settings-body {
+  padding: 0.9rem;
+}

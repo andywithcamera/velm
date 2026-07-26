@@ -1,0 +1,873 @@
+/*
+ * Velm Docs Design System
+ * ========================
+ *
+ * All color values come from the platform's semantic token system so that
+ * light/dark mode switching works automatically. No hardcoded rgba() colors.
+ *
+ * PHILOSOPHY
+ * The writing surface is sacred. Everything else — navigation, chrome, panels —
+ * exists only to support the text.
+ *
+ * Inspiration:
+ *  - Bear:     warm depth, inline markdown rendering, editorial polish
+ *  - Obsidian: link-graph mindset, focus mode, visible syntax that recedes
+ *  - iA Writer: optimal measure (68ch), sentence-level focus, type-first
+ */
+
+:root {
+  /* Writing surface — aliases to platform tokens */
+  --docs-paper:         var(--bg-surface);
+  --docs-paper-warm:    var(--bg-elevated);
+  --docs-ink:           var(--text-primary);
+  --docs-muted:         var(--text-secondary);
+  --docs-dim:           var(--text-dim);
+  --docs-ghost:         var(--text-ghost);
+
+  /* Accent / links */
+  --docs-link:          var(--blue-bright);
+  --docs-link-hover:    var(--text-primary);
+  --docs-link-border:   var(--border-mid);
+  --docs-unresolved:    var(--text-ghost);
+
+  /* Surfaces / borders */
+  --docs-border:        var(--border);
+  --docs-border-mid:    var(--border-mid);
+  --docs-border-accent: var(--border-bright);
+
+  /* Code */
+  --docs-code-bg:       var(--bg-elevated);
+  --docs-code-border:   var(--border);
+
+  /* Heading scale (typography, no color) */
+  --docs-h1: 2.2rem;
+  --docs-h2: 1.5rem;
+  --docs-h3: 1.12rem;
+
+  /* Typography (no color) */
+  --docs-prose-size:    16px;
+  --docs-prose-line:    1.85;
+  --docs-prose-measure: 68ch;
+  --docs-prose-gap:     1.3em;
+}
+
+
+/* ─── Nav bar ─────────────────────────────────────────────────────────────── */
+
+.docs-manage-nav {
+  padding: 0;
+  background: var(--bg-surface);
+  border-color: var(--border-mid);
+}
+
+.docs-manage-nav-inner {
+  padding: 0.55rem 1rem;
+  gap: 0.55rem;
+}
+
+.docs-manage-nav-inner .ui-select {
+  font-size: 0.84rem;
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+}
+
+.docs-manage-nav-search .ui-input {
+  font-size: 0.84rem;
+  padding-top: 0.28rem;
+  padding-bottom: 0.28rem;
+}
+
+
+/* ─── Article editor card ─────────────────────────────────────────────────── */
+
+.docs-article-editor {
+  border-color: var(--docs-border-mid);
+  background: var(--docs-paper);
+  overflow: hidden;
+}
+
+/* Title input */
+.docs-editor-title-input {
+  font-family: "Syne", sans-serif;
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--docs-ink);
+  background: transparent;
+  padding: 1.1rem 1.4rem 0.75rem;
+  border-bottom-color: var(--docs-border);
+}
+
+.docs-editor-title-input::placeholder {
+  color: var(--docs-ghost);
+  font-weight: 400;
+}
+
+/* Metabar */
+.docs-editor-metabar {
+  padding: 0.45rem 1.4rem;
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  border-bottom-color: var(--docs-border);
+  gap: 0.55rem;
+}
+
+.docs-editor-meta-select,
+.docs-editor-meta-input {
+  background: transparent;
+  border-color: var(--docs-border);
+  color: var(--docs-dim);
+  font-size: 0.82rem;
+}
+
+.docs-editor-meta-input::placeholder {
+  color: var(--docs-ghost);
+}
+
+/* Writing surface */
+.docs-editor-body {
+  min-height: 65vh;
+  padding: 1.75rem 1.75rem 2rem;
+  font-size: var(--docs-prose-size);
+  line-height: var(--docs-prose-line);
+  color: var(--docs-muted);
+  background: var(--docs-paper);
+  border-bottom-color: var(--docs-border);
+  caret-color: var(--docs-link);
+}
+
+.docs-editor-body:focus {
+  background: var(--docs-paper-warm);
+}
+
+.docs-editor-body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--docs-ghost);
+  pointer-events: none;
+  display: block;
+}
+
+
+/* ─── Per-line markdown styling (contenteditable editor) ──────────────────── */
+
+#docs-article-body [data-md="h1"] {
+  font-family: "Syne", sans-serif;
+  font-size: var(--docs-h1);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.15;
+  color: var(--docs-ink);
+  padding-top: 1.4em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid var(--docs-border);
+  margin-bottom: 0.2em;
+}
+
+#docs-article-body > div:first-child[data-md="h1"],
+#docs-article-body > div:first-child[data-md="h2"],
+#docs-article-body > div:first-child[data-md="h3"] {
+  padding-top: 0;
+}
+
+#docs-article-body [data-md="h2"] {
+  font-family: "Syne", sans-serif;
+  font-size: var(--docs-h2);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  color: var(--docs-ink);
+  padding-top: 1.2em;
+}
+
+#docs-article-body [data-md="h3"] {
+  font-size: var(--docs-h3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--docs-muted);
+  padding-top: 0.9em;
+}
+
+#docs-article-body [data-md="li"] {
+  padding-left: 1.6rem;
+  position: relative;
+  color: var(--docs-muted);
+}
+
+#docs-article-body [data-md="li"]::before {
+  content: "·";
+  position: absolute;
+  left: 0.55rem;
+  color: var(--docs-link);
+  font-size: 1.3em;
+  line-height: 1;
+  top: 0.3em;
+}
+
+#docs-article-body [data-md="ol"] {
+  padding-left: 1.6rem;
+  color: var(--docs-muted);
+}
+
+#docs-article-body [data-md="empty"] {
+  min-height: 0.6em;
+}
+
+#docs-article-body [data-md="p"] {
+  color: var(--docs-muted);
+  padding-bottom: 0.15em;
+}
+
+
+/* ─── Reader prose ────────────────────────────────────────────────────────── */
+
+.ui-docs-reader-prose {
+  font-size: var(--docs-prose-size);
+  line-height: var(--docs-prose-line);
+  color: var(--docs-muted);
+  max-width: var(--docs-prose-measure);
+}
+
+/*
+ * Use double-class specificity (0,2,1) so these rules beat any (0,1,1)
+ * rules from 20-shell-and-workspaces.css without needing !important.
+ */
+.ui-content-prose.ui-docs-reader-prose h1,
+.ui-content-prose.ui-docs-reader-prose h2,
+.ui-content-prose.ui-docs-reader-prose h3,
+.ui-content-prose.ui-docs-reader-prose h4 {
+  font-family: "Syne", sans-serif;
+  color: var(--docs-ink);
+  margin: 2em 0 0.6em;
+  line-height: 1.15;
+}
+
+.ui-content-prose.ui-docs-reader-prose h1 {
+  font-size: var(--docs-h1);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  padding-bottom: 0.4em;
+  border-bottom: 1px solid var(--docs-border);
+}
+
+.ui-content-prose.ui-docs-reader-prose h2 {
+  font-size: var(--docs-h2);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.ui-content-prose.ui-docs-reader-prose h3 {
+  font-size: var(--docs-h3);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--docs-muted);
+}
+
+.ui-content-prose.ui-docs-reader-prose h4 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--docs-muted);
+}
+
+.ui-content-prose.ui-docs-reader-prose p {
+  margin: var(--docs-prose-gap) 0;
+}
+
+.ui-content-prose.ui-docs-reader-prose ul,
+.ui-content-prose.ui-docs-reader-prose ol {
+  padding-left: 1.5rem;
+  margin: var(--docs-prose-gap) 0;
+}
+
+.ui-content-prose.ui-docs-reader-prose li {
+  margin: 0.55em 0;
+  line-height: var(--docs-prose-line);
+}
+
+.ui-content-prose.ui-docs-reader-prose ul > li::marker {
+  color: var(--docs-link);
+}
+
+.ui-docs-reader-prose > *:first-child { margin-top: 0; }
+.ui-docs-reader-prose > *:last-child  { margin-bottom: 0; }
+
+.ui-docs-reader-prose a {
+  color: var(--docs-link) !important;
+  text-decoration: none;
+  border-bottom: 1px solid var(--docs-link-border);
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+.ui-docs-reader-prose a:hover {
+  color: var(--docs-link-hover) !important;
+  border-bottom-color: var(--docs-border-accent);
+  text-decoration: none;
+}
+
+/* Inline code */
+.ui-docs-reader-prose code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85em;
+  background: var(--docs-code-bg) !important;
+  border: 1px solid var(--docs-code-border) !important;
+  border-radius: 4px;
+  padding: 0.12em 0.42em;
+  color: var(--docs-ink) !important;
+}
+
+/* Code blocks */
+.ui-docs-reader-prose pre {
+  background: var(--docs-code-bg) !important;
+  border: 1px solid var(--docs-code-border) !important;
+  border-radius: var(--radius-md);
+  padding: 1.2rem 1.4rem;
+  overflow-x: auto;
+  margin: 1.8em 0;
+}
+
+.ui-docs-reader-prose pre code {
+  background: transparent !important;
+  border: none !important;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+/* Blockquote */
+.ui-docs-reader-prose blockquote {
+  border-left: 2px solid var(--docs-border-accent);
+  margin: 1.8em 0;
+  padding: 0.75rem 1.2rem;
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  color: var(--docs-dim) !important;
+  font-style: italic;
+}
+
+/* Horizontal rule */
+.ui-docs-reader-prose hr {
+  border: none;
+  border-top: 1px solid var(--docs-border-mid);
+  margin: 2.5em 0;
+}
+
+/* Tables */
+.ui-docs-reader-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--docs-prose-gap) 0;
+  font-size: 0.9rem;
+}
+
+.ui-docs-reader-prose th,
+.ui-docs-reader-prose td {
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--docs-border-mid);
+  text-align: left;
+}
+
+.ui-docs-reader-prose th {
+  color: var(--docs-ink);
+  font-weight: 700;
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+}
+
+.ui-docs-reader-prose td {
+  color: var(--docs-muted);
+}
+
+.ui-docs-reader-prose tr:hover td {
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+}
+
+/* Strong / em */
+.ui-docs-reader-prose strong {
+  color: var(--docs-ink);
+  font-weight: 700;
+}
+
+.ui-docs-reader-prose em {
+  color: var(--docs-muted);
+  font-style: italic;
+}
+
+
+/* ─── Reader article frame ────────────────────────────────────────────────── */
+
+.ui-docs-reader-focus {
+  padding: clamp(1.75rem, 3vw, 3rem);
+  border: 1px solid var(--docs-border-mid);
+  border-radius: 24px;
+  background: var(--docs-paper);
+}
+
+.ui-docs-reader-head {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom-color: var(--docs-border);
+}
+
+.ui-docs-reader-title {
+  font-size: clamp(2.2rem, 4.5vw, 4rem);
+  line-height: 0.93;
+  letter-spacing: -0.04em;
+  color: var(--docs-ink);
+}
+
+.ui-docs-reader-meta {
+  color: var(--docs-ghost);
+  font-size: 0.84rem;
+}
+
+.ui-docs-reader-path {
+  color: var(--docs-ghost);
+  font-size: 0.83rem;
+}
+
+.ui-docs-reader-path a:hover {
+  color: var(--docs-muted);
+}
+
+/* Tags */
+.ui-docs-tag {
+  border-color: var(--docs-border-mid);
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  color: var(--docs-dim);
+  font-size: 0.8rem;
+}
+
+/* Permalink pill */
+.ui-docs-permalink {
+  border-color: var(--docs-border-mid);
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  color: var(--docs-link);
+  font-size: 0.82rem;
+  font-family: "JetBrains Mono", monospace;
+}
+
+
+/* ─── Backlinks (reader) ──────────────────────────────────────────────────── */
+
+.ui-docs-backlinks {
+  padding: 1.4rem;
+  background: var(--bg-surface);
+  border-color: var(--docs-border-mid);
+}
+
+.ui-docs-backlinks-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--docs-muted);
+}
+
+.ui-docs-backlinks-copy {
+  color: var(--docs-ghost);
+  font-size: 0.83rem;
+}
+
+.ui-docs-backlink-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.85rem;
+}
+
+.ui-docs-backlink-card {
+  border-color: var(--docs-border);
+  border-left: 2px solid var(--docs-border-accent);
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  gap: 0.55rem;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.ui-docs-backlink-card:hover {
+  border-color: var(--docs-border-mid);
+  border-left-color: var(--docs-link);
+  background: var(--surface-strong, rgba(0,0,0,0.08));
+  transform: translateY(-2px);
+}
+
+.ui-docs-backlink-title {
+  font-size: 0.94rem;
+  color: var(--docs-ink);
+}
+
+.ui-docs-backlink-number {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  color: var(--docs-link);
+  letter-spacing: 0.03em;
+}
+
+.ui-docs-backlink-meta {
+  font-size: 0.78rem;
+  color: var(--docs-ghost);
+}
+
+.ui-docs-backlink-excerpt {
+  font-size: 0.84rem;
+  color: var(--docs-dim);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+
+/* ─── Wikilinks ───────────────────────────────────────────────────────────── */
+
+.docs-wikilink {
+  color: var(--docs-link);
+  text-decoration: none;
+  border-bottom: 1px solid var(--docs-link-border);
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+
+.docs-wikilink:hover {
+  color: var(--docs-link-hover);
+  border-bottom-color: var(--docs-border-accent);
+  text-decoration: none;
+}
+
+.docs-wikilink-unresolved {
+  color: var(--docs-unresolved);
+  border-bottom: 1px dashed currentColor;
+  cursor: help;
+}
+
+/* Autocomplete dropdown */
+.docs-wikilink-dropdown {
+  z-index: 200;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--docs-border-mid);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-raised);
+  font-size: 0.88rem;
+}
+
+.docs-wikilink-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  color: var(--docs-muted);
+  border-bottom: 1px solid var(--docs-border);
+  transition: background 0.1s ease;
+}
+
+.docs-wikilink-item:last-child {
+  border-bottom: none;
+}
+
+.docs-wikilink-item:hover,
+.docs-wikilink-item.is-active {
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  color: var(--docs-ink);
+}
+
+.docs-wikilink-item-type {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--docs-link);
+  min-width: 3rem;
+  flex-shrink: 0;
+}
+
+.docs-wikilink-empty {
+  padding: 0.85rem;
+  color: var(--docs-ghost);
+  font-size: 0.86rem;
+  text-align: center;
+}
+
+
+/* ─── Library settings (collapsible) ─────────────────────────────────────── */
+
+.docs-library-settings {
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  border-color: var(--docs-border);
+}
+
+.docs-library-settings-summary {
+  color: var(--docs-ghost);
+  font-size: 0.84rem;
+}
+
+.docs-library-settings-summary:hover {
+  color: var(--docs-muted);
+}
+
+.docs-library-settings[open] .docs-library-settings-summary {
+  border-bottom-color: var(--docs-border);
+  color: var(--docs-muted);
+}
+
+
+/* ─── Save bar ────────────────────────────────────────────────────────────── */
+
+.docs-editor-save-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1.4rem;
+  border-top: 1px solid var(--docs-border-mid);
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+}
+
+.docs-editor-saved-badge {
+  color: var(--status-success);
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+}
+
+
+/* ─── Advanced toggle (settings in editor) ───────────────────────────────── */
+
+.docs-editor-advanced {
+  border-top: 1px solid var(--docs-border);
+  border-bottom: none;
+}
+
+.docs-editor-advanced-toggle {
+  color: var(--docs-ghost);
+  font-size: 0.8rem;
+}
+
+.docs-editor-advanced-toggle:hover {
+  color: var(--docs-muted);
+}
+
+.docs-editor-advanced[open] .docs-editor-advanced-toggle {
+  border-bottom-color: var(--docs-border);
+}
+
+.docs-editor-advanced-body {
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+}
+
+
+/* ─── Docs reader page layout ─────────────────────────────────────────────── */
+
+.ui-docs-reader-page {
+  padding: 1.5rem;
+}
+
+.ui-docs-reader-frame {
+  display: grid;
+  gap: 1rem;
+  max-width: 90rem;
+  margin: 0 auto;
+}
+
+.ui-docs-reader-chrome,
+.ui-docs-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ui-docs-reader-chrome {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ui-docs-reader-head {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.ui-docs-reader-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ui-docs-permalink,
+.ui-docs-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
+.ui-docs-reader-title,
+.ui-docs-backlinks-title,
+.ui-docs-backlink-title {
+  margin: 0;
+  font-family: "Syne", sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.ui-docs-backlink-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.ui-docs-backlink-card {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.ui-docs-backlinks-copy {
+  margin: 0.3rem 0 0;
+}
+
+
+/* ─── Table of contents (reader) ─────────────────────────────────────────── */
+
+.ui-docs-toc {
+  margin-bottom: 2rem;
+  padding: 1rem 1.4rem;
+  border: 1px solid var(--docs-border-mid);
+  border-radius: 14px;
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+}
+
+.ui-docs-toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.ui-docs-toc-item {
+  font-size: 0.875rem;
+}
+
+.ui-docs-toc-h3 {
+  padding-left: 1.2rem;
+}
+
+.ui-docs-toc-link {
+  color: var(--docs-dim) !important;
+  border-bottom: none !important;
+  text-decoration: none;
+  transition: color 0.14s ease;
+  line-height: 1.5;
+  display: block;
+}
+
+.ui-docs-toc-link:hover {
+  color: var(--docs-link) !important;
+  border-bottom: none !important;
+}
+
+
+/* ─── Next / previous article nav (reader) ───────────────────────────────── */
+
+.ui-docs-reader-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.ui-docs-reader-nav-prev,
+.ui-docs-reader-nav-next {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--docs-border);
+  border-radius: 14px;
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+  text-decoration: none;
+  transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.ui-docs-reader-nav-next {
+  text-align: right;
+}
+
+.ui-docs-reader-nav-prev:hover,
+.ui-docs-reader-nav-next:hover {
+  border-color: var(--docs-border-mid);
+  background: var(--surface-strong, rgba(0,0,0,0.08));
+}
+
+.ui-docs-reader-nav-label {
+  font-size: 0.75rem;
+  color: var(--docs-ghost);
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.03em;
+  display: block;
+}
+
+.ui-docs-reader-nav-title {
+  font-size: 0.9rem;
+  color: var(--docs-muted);
+  font-weight: 600;
+  display: block;
+}
+
+
+/* ─── Word count in editor save bar ──────────────────────────────────────── */
+
+.docs-editor-word-count {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--docs-ghost);
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.02em;
+}
+
+
+/* ─── Tag links (reader) ─────────────────────────────────────────────────── */
+
+a.ui-docs-tag {
+  transition: border-color 0.14s ease, color 0.14s ease, background 0.14s ease;
+  text-decoration: none;
+}
+
+a.ui-docs-tag:hover {
+  border-color: var(--docs-border-accent);
+  color: var(--docs-link);
+  background: var(--surface-soft, rgba(0,0,0,0.04));
+}
+
+
+/* ─── Nav picker forms (WCAG-compliant library/article selects) ───────────── */
+
+.docs-manage-nav-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.docs-manage-nav-form .ui-select {
+  max-width: 18rem;
+  min-width: 9rem;
+}
+
+.docs-nav-go-btn {
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
+
+/* ─── Save error badge ────────────────────────────────────────────────────── */
+
+.docs-editor-save-error {
+  color: var(--status-error) !important;
+  border-color: var(--status-error-border) !important;
+  background: var(--status-error-bg) !important;
+}
+
+
+/* ─── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .ui-docs-reader-page { padding: 1rem; }
+  .ui-docs-reader-title { font-size: 2rem; }
+  .docs-editor-body { padding: 1.25rem; }
+  .docs-editor-title-input { font-size: 1.4rem; }
+  .ui-docs-reader-nav { grid-template-columns: 1fr; }
+}

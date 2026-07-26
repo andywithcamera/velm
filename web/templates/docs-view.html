@@ -4,113 +4,231 @@
     <div class="ui-section-header">
       <div>
         <span class="ui-kicker">Docs Workspace</span>
-        <h2 class="ui-title">Manage Docs</h2>
-        <p class="ui-section-copy">Edit libraries, author docs, and preview markdown without cluttering the reader-facing catalog.</p>
+        <h2 class="ui-title">{{if .DocsArticleSelected.Title}}{{.DocsArticleSelected.Title}}{{else if .DocsLibrarySelected.Name}}{{.DocsLibrarySelected.Name}}{{else}}Manage Docs{{end}}</h2>
       </div>
       <div class="ui-list-state">
         <a class="ui-action-link" href="{{if .DocsArticleSelected.ID}}{{.DocsArticleSelected.ReaderHref}}{{else if .DocsLibrarySelected.Slug}}/docs?library={{.DocsLibrarySelected.Slug}}{{else}}/docs{{end}}">Back To Catalog</a>
-        {{if .DocsSaved}}
-          <span class="ui-badge">Saved</span>
-        {{end}}
-        {{if .DocsLibrarySelected.Name}}
-          <span class="ui-badge ui-badge-neutral">Library: {{.DocsLibrarySelected.Name}}</span>
-        {{end}}
-        {{if .DocsArticleSelected.Number}}
-          <span class="ui-badge ui-badge-neutral">{{.DocsArticleSelected.Number}}</span>
+        {{if .DocsSaved}}<span class="ui-badge">Saved</span>{{end}}
+        {{if .DocsArticleSelected.Number}}<span class="ui-badge ui-badge-neutral">{{.DocsArticleSelected.Number}}</span>{{end}}
+      </div>
+    </div>
+  </div>
+
+  {{/* Compact nav: library + article pickers */}}
+  <div class="docs-manage-nav ui-card">
+    <div class="docs-manage-nav-inner">
+      <form method="GET" action="/docs/manage" class="docs-manage-nav-form">
+        <label for="docs-nav-library-select" class="ui-sr-only">Select library</label>
+        <select id="docs-nav-library-select" name="library" class="ui-select">
+          <option value="">Select library…</option>
+          {{range .DocsLibraries}}
+            <option value="{{.Slug}}" {{if eq $.DocsLibrarySelected.Slug .Slug}}selected{{end}}>{{.Name}}{{if .IsDefault}} (default){{end}}</option>
+          {{end}}
+        </select>
+        <button type="submit" class="ui-btn ui-btn-secondary docs-nav-go-btn">Go</button>
+      </form>
+
+      {{if .DocsLibrarySelected.Slug}}
+        <form method="GET" action="/docs/manage" class="docs-manage-nav-form">
+          <input type="hidden" name="library" value="{{.DocsLibrarySelected.Slug}}">
+          <label for="docs-nav-article-select" class="ui-sr-only">Select article</label>
+          <select id="docs-nav-article-select" name="article" class="ui-select">
+            <option value="">Select article…</option>
+            {{range .DocsArticles}}
+              <option value="{{.Slug}}" {{if eq $.DocsArticleSelected.Slug .Slug}}selected{{end}}>{{if .Number}}{{.Number}} · {{end}}{{.Title}}</option>
+            {{end}}
+          </select>
+          <button type="submit" class="ui-btn ui-btn-secondary docs-nav-go-btn">Go</button>
+        </form>
+        <form method="GET" action="/docs/manage" class="docs-manage-nav-search">
+          <input type="hidden" name="library" value="{{.DocsLibrarySelected.Slug}}">
+          <input type="text" name="q" value="{{.DocsSearch}}" placeholder="Search articles…" class="ui-input">
+        </form>
+      {{end}}
+
+      <div style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0;">
+        <a href="/docs/manage?new_library=1" class="ui-action-link">New Library</a>
+        {{if .DocsLibrarySelected.Slug}}
+          {{if .DocsLibrarySelected.CanCreate}}
+            <a href="/docs/manage?library={{.DocsLibrarySelected.Slug}}&new_article=1" class="ui-action-link">New Article</a>
+          {{end}}
+          <a href="#docs-library-settings" class="ui-action-link">Library Settings</a>
         {{end}}
       </div>
     </div>
   </div>
 
-  <div class="ui-workbench">
-    <aside class="ui-card ui-explorer">
-      <div class="ui-explorer-group">
-        <div class="ui-explorer-heading">
-          <span>Libraries</span>
-          <a class="ui-action-link" href="/docs/manage?new_library=1">New</a>
-        </div>
-        <div class="ui-explorer-list">
-          {{range .DocsLibraries}}
-            <a href="/docs/manage?library={{.Slug}}" class="ui-explorer-link {{if eq $.DocsLibrarySelected.Slug .Slug}}is-active{{end}}">
-              <span>
-                <strong>{{.Name}}</strong><br />
-                <span class="ui-explorer-meta">{{if .AppName}}{{if .AppLabel}}{{.AppLabel}}{{else}}{{.AppName}}{{end}} · {{end}}{{.Visibility}}{{if .IsDefault}} · default{{end}}</span>
-              </span>
-            </a>
-          {{else}}
-            <div class="ui-empty-state">
-              <strong>No libraries yet</strong>
-              <span>Docs libraries will appear here once apps are initialized.</span>
-            </div>
-          {{end}}
+  {{/* New library form (shown when no library selected or new_library mode) */}}
+  {{if not .DocsLibrarySelected.Slug}}
+    <section class="ui-card ui-form-section">
+      <div class="ui-section-header">
+        <div>
+          <h3 class="ui-section-title">Create Library</h3>
+          <p class="ui-section-copy">Libraries group related docs. Each app gets a default one automatically.</p>
         </div>
       </div>
+      <form method="POST" action="/api/docs/library/save" class="ui-form-grid">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="original_slug" value="">
+        <div class="ui-field">
+          <label class="ui-field-label" for="docs-library-slug">Slug</label>
+          <input id="docs-library-slug" class="ui-input" name="slug" placeholder="library-slug" required>
+        </div>
+        <div class="ui-field">
+          <label class="ui-field-label" for="docs-library-name">Name</label>
+          <input id="docs-library-name" class="ui-input" name="name" placeholder="Library name" required>
+        </div>
+        <div class="ui-field">
+          <label class="ui-field-label" for="docs-library-app">App</label>
+          <select id="docs-library-app" class="ui-select" name="app_name">
+            {{range .DocsApps}}
+              <option value="{{.Name}}">{{.Label}}</option>
+            {{end}}
+          </select>
+        </div>
+        <div class="ui-field">
+          <label class="ui-field-label" for="docs-library-visibility">Read Fallback</label>
+          <select id="docs-library-visibility" class="ui-select" name="visibility">
+            <option value="app" selected>App</option>
+            <option value="private">Private</option>
+            <option value="public">Public</option>
+          </select>
+        </div>
+        <div class="ui-form-actions" style="grid-column: 1 / -1;">
+          <button type="submit" class="ui-btn ui-btn-primary">Create Library</button>
+        </div>
+      </form>
+    </section>
+  {{end}}
 
-      <div class="ui-explorer-group">
-        <div class="ui-explorer-heading">
-          <span>{{if .DocsLibrarySelected.Slug}}Docs In {{.DocsLibrarySelected.Name}}{{else}}Search Results{{end}}</span>
-          {{if and .DocsLibrarySelected.Slug .DocsLibrarySelected.CanCreate}}
-            <a class="ui-action-link" href="/docs/manage?library={{.DocsLibrarySelected.Slug}}&new_article=1">New</a>
-          {{end}}
+  {{if .DocsLibrarySelected.Slug}}
+    {{/* Full-width article editor */}}
+    <section class="ui-card docs-article-editor">
+      <form method="POST" action="/api/docs/article/save" class="docs-editor-form" id="docs-article-form">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
+        <input type="hidden" name="original_slug" value="{{.DocsArticleSelected.Slug}}">
+        {{/* Hidden textarea keeps the raw markdown for form submission */}}
+        <textarea name="markdown_body" id="docs-markdown-source" class="docs-editor-source-hidden">{{.DocsArticleSelected.MarkdownBody}}</textarea>
+
+        <input id="docs-article-title"
+               class="docs-editor-title-input"
+               name="title"
+               value="{{.DocsArticleSelected.Title}}"
+               placeholder="Untitled article…"
+               autocomplete="off"
+               required />
+
+        <div class="docs-editor-metabar">
+          <select name="status" class="ui-select docs-editor-meta-select">
+            <option value="draft" {{if or (eq .DocsArticleSelected.Status "") (eq .DocsArticleSelected.Status "draft")}}selected{{end}}>Draft</option>
+            <option value="published" {{if eq .DocsArticleSelected.Status "published"}}selected{{end}}>Published</option>
+            <option value="archived" {{if eq .DocsArticleSelected.Status "archived"}}selected{{end}}>Archived</option>
+          </select>
+          <input name="tags" class="ui-input docs-editor-meta-input"
+                 value="{{.DocsArticleSelected.Tags}}"
+                 placeholder="Tags: ops, onboarding…">
         </div>
-        <form method="GET" action="/docs/manage" class="ui-stack" style="gap: 0.65rem;">
-          {{if .DocsLibrarySelected.Slug}}
-            <input type="hidden" name="library" value="{{.DocsLibrarySelected.Slug}}">
-          {{end}}
-          <input type="hidden" name="size" value="{{.DocsPageSize}}">
-          <input class="ui-input" name="q" value="{{.DocsSearch}}" placeholder="Search readable docs" />
-          <button type="submit" class="ui-btn ui-btn-secondary">Search</button>
-        </form>
-        <div class="ui-explorer-list" style="margin-top: 0.9rem;">
-          {{range .DocsArticles}}
-            <a href="/docs/manage?library={{.LibrarySlug}}&article={{.Slug}}&q={{$.DocsSearch}}&page={{$.DocsPage}}&size={{$.DocsPageSize}}" class="ui-explorer-link {{if and (eq $.DocsLibrarySelected.Slug .LibrarySlug) (eq $.DocsArticleSelected.Slug .Slug)}}is-active{{end}}">
-              <span>
-                <strong>{{.Title}}</strong><br />
-                <span class="ui-explorer-meta">{{if .Number}}{{.Number}} · {{end}}{{if ne $.DocsLibrarySelected.Slug .LibrarySlug}}{{.LibraryName}} · {{end}}v{{.VersionNum}} · {{.Status}}</span>
-              </span>
-            </a>
-          {{else}}
-            <div class="ui-empty-state">
-              <strong>No docs found</strong>
-              <span>{{if .DocsSearch}}Try a broader search.{{else}}Pick a library or start a new doc.{{end}}</span>
+
+        {{/* The writing area — contenteditable, raw markdown with per-line visual styling */}}
+        <div id="docs-article-body"
+             class="docs-editor-body"
+             contenteditable="true"
+             role="textbox"
+             aria-label="Article body"
+             aria-multiline="true"
+             data-docs-markdown-input="true"
+             data-placeholder="Start writing… (type [[ to link any record)"
+             spellcheck="true"></div>
+
+        <details class="docs-editor-advanced" {{if not .DocsArticleSelected.Slug}}open{{end}}>
+          <summary class="docs-editor-advanced-toggle">⚙ Settings</summary>
+          <div class="docs-editor-advanced-body ui-form-grid">
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-slug">Slug</label>
+              <input id="docs-article-slug" class="ui-input" name="slug"
+                     value="{{.DocsArticleSelected.Slug}}" placeholder="doc-slug" required>
             </div>
-          {{end}}
-        </div>
-        <div class="ui-paginator" style="padding-top: 0.9rem;">
-          <div class="ui-paginator-copy">{{.DocsTotal}} result(s) · page {{.DocsPage}} of {{.DocsTotalPages}}</div>
-          <div class="ui-toolbar-group">
-            {{if .DocsHasPrev}}
-              <a class="ui-btn ui-btn-secondary" href="/docs/manage{{if .DocsLibrarySelected.Slug}}?library={{.DocsLibrarySelected.Slug}}&{{else}}?{{end}}q={{.DocsSearch}}&page={{.DocsPrevPage}}&size={{.DocsPageSize}}">Prev</a>
-            {{end}}
-            {{if .DocsHasNext}}
-              <a class="ui-btn ui-btn-secondary" href="/docs/manage{{if .DocsLibrarySelected.Slug}}?library={{.DocsLibrarySelected.Slug}}&{{else}}?{{end}}q={{.DocsSearch}}&page={{.DocsNextPage}}&size={{.DocsPageSize}}">Next</a>
-            {{end}}
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-read-roles">Read Roles</label>
+              <input id="docs-article-read-roles" class="ui-input" name="read_roles"
+                     value="{{.DocsArticleSelected.ReadRolesText}}" placeholder="inherits library when blank">
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-edit-roles">Edit Roles</label>
+              <input id="docs-article-edit-roles" class="ui-input" name="edit_roles"
+                     value="{{.DocsArticleSelected.EditRolesText}}" placeholder="inherits library when blank">
+            </div>
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-delete-roles">Delete Roles</label>
+              <input id="docs-article-delete-roles" class="ui-input" name="delete_roles"
+                     value="{{.DocsArticleSelected.DeleteRolesText}}" placeholder="inherits library when blank">
+            </div>
           </div>
-        </div>
-      </div>
-    </aside>
+        </details>
 
-    <div class="ui-workbench-editor ui-stack">
+        <div class="docs-editor-save-bar">
+          <button type="submit" class="ui-btn ui-btn-primary" id="docs-save-btn">{{if .DocsArticleSelected.Slug}}Save Article{{else}}Create Article{{end}}</button>
+          <span class="ui-badge docs-editor-saved-badge" id="docs-save-badge" style="display:none">Saved</span>
+          <span class="docs-editor-word-count" id="docs-word-count"></span>
+        </div>
+      </form>
+
+      {{if and .DocsArticleSelected.Slug .DocsArticleSelected.CanDelete}}
+        <div class="docs-editor-footer">
+          <form method="POST" action="/api/docs/article/archive" class="ui-inline-form">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
+            <input type="hidden" name="article_slug" value="{{.DocsArticleSelected.Slug}}">
+            <button type="submit" class="ui-btn ui-btn-secondary"
+                    onclick="return confirm('Archive this doc? Current and historical versions will be retained.');">Archive Doc</button>
+          </form>
+        </div>
+      {{end}}
+    </section>
+
+    {{/* Version history */}}
+    {{if .DocsArticleSelected.Slug}}
       <section class="ui-card ui-form-section">
         <div class="ui-section-header">
           <div>
-            <h3 class="ui-section-title">Library</h3>
-            <p class="ui-section-copy">Each app gets a default docs library. Additional libraries can be app-specific or shared.</p>
+            <h3 class="ui-section-title">Version History</h3>
+            <p class="ui-section-copy">Every save creates a snapshot.</p>
           </div>
-          {{if .DocsLibrarySelected.IsDefault}}
-            <span class="ui-badge ui-badge-neutral">Default</span>
+          {{if .DocsVersionSelected}}<span class="ui-badge ui-badge-neutral">Previewing v{{.DocsVersionSelected}}</span>{{end}}
+        </div>
+        <div class="ui-explorer-list">
+          {{range .DocsVersions}}
+            <a href="{{.Href}}" class="ui-explorer-link {{if .Selected}}is-active{{end}}">
+              <span>
+                <strong>v{{.VersionNum}}</strong><br>
+                <span class="ui-explorer-meta">{{.Status}} · {{.CreatedAt}}</span>
+              </span>
+            </a>
+          {{else}}
+            <div class="ui-empty-state">
+              <strong>No version history yet</strong>
+              <span>The first save will create it automatically.</span>
+            </div>
           {{end}}
         </div>
+      </section>
+    {{end}}
+
+    {{/* Library settings — collapsible at the bottom */}}
+    <details class="ui-card ui-form-section docs-library-settings" id="docs-library-settings">
+      <summary class="docs-library-settings-summary">Library Settings: {{.DocsLibrarySelected.Name}}</summary>
+      <div class="docs-library-settings-body">
         <form method="POST" action="/api/docs/library/save" class="ui-form-grid">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="original_slug" value="{{.DocsLibrarySelected.Slug}}">
           <div class="ui-field">
             <label class="ui-field-label" for="docs-library-slug">Slug</label>
-            <input id="docs-library-slug" class="ui-input" name="slug" value="{{.DocsLibrarySelected.Slug}}" placeholder="library-slug" required {{if .DocsLibrarySelected.IsDefault}}readonly{{end}} />
+            <input id="docs-library-slug" class="ui-input" name="slug" value="{{.DocsLibrarySelected.Slug}}" placeholder="library-slug" required {{if .DocsLibrarySelected.IsDefault}}readonly{{end}}>
           </div>
           <div class="ui-field">
             <label class="ui-field-label" for="docs-library-name">Name</label>
-            <input id="docs-library-name" class="ui-input" name="name" value="{{.DocsLibrarySelected.Name}}" placeholder="Library name" required />
+            <input id="docs-library-name" class="ui-input" name="name" value="{{.DocsLibrarySelected.Name}}" placeholder="Library name" required>
           </div>
           <div class="ui-field">
             <label class="ui-field-label" for="docs-library-app">App</label>
@@ -137,182 +255,360 @@
           </div>
           <div class="ui-field">
             <label class="ui-field-label" for="docs-library-create-roles">Create Roles</label>
-            <input id="docs-library-create-roles" class="ui-input" name="create_roles" value="{{.DocsLibrarySelected.CreateRolesText}}" placeholder="editor, writer" />
+            <input id="docs-library-create-roles" class="ui-input" name="create_roles" value="{{.DocsLibrarySelected.CreateRolesText}}" placeholder="editor, writer">
           </div>
           <div class="ui-field">
             <label class="ui-field-label" for="docs-library-read-roles">Read Roles</label>
-            <input id="docs-library-read-roles" class="ui-input" name="read_roles" value="{{.DocsLibrarySelected.ReadRolesText}}" placeholder="reader, operator" />
+            <input id="docs-library-read-roles" class="ui-input" name="read_roles" value="{{.DocsLibrarySelected.ReadRolesText}}" placeholder="reader, operator">
           </div>
           <div class="ui-field">
             <label class="ui-field-label" for="docs-library-edit-roles">Edit Roles</label>
-            <input id="docs-library-edit-roles" class="ui-input" name="edit_roles" value="{{.DocsLibrarySelected.EditRolesText}}" placeholder="editor, maintainer" />
+            <input id="docs-library-edit-roles" class="ui-input" name="edit_roles" value="{{.DocsLibrarySelected.EditRolesText}}" placeholder="editor, maintainer">
           </div>
           <div class="ui-field">
             <label class="ui-field-label" for="docs-library-delete-roles">Delete Roles</label>
-            <input id="docs-library-delete-roles" class="ui-input" name="delete_roles" value="{{.DocsLibrarySelected.DeleteRolesText}}" placeholder="admin" />
+            <input id="docs-library-delete-roles" class="ui-input" name="delete_roles" value="{{.DocsLibrarySelected.DeleteRolesText}}" placeholder="admin">
           </div>
           <div class="ui-form-actions" style="grid-column: 1 / -1;">
-            <button type="submit" class="ui-btn ui-btn-primary">{{if .DocsLibrarySelected.Slug}}Save Library{{else}}Create Library{{end}}</button>
+            <button type="submit" class="ui-btn ui-btn-primary">Save Library</button>
           </div>
         </form>
         {{if and .DocsLibrarySelected.Slug .DocsLibrarySelected.CanDelete}}
           <form method="POST" action="/api/docs/library/archive" class="ui-inline-form" style="margin-top: 1rem;">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
-            <button type="submit" class="ui-btn ui-btn-secondary" onclick="return confirm('Archive this library? Existing docs stay in history but the library is removed from active navigation.');">Archive Library</button>
+            <button type="submit" class="ui-btn ui-btn-secondary"
+                    onclick="return confirm('Archive this library? Existing docs stay in history but the library is removed from active navigation.');">Archive Library</button>
           </form>
         {{end}}
-      </section>
-
-      <section class="ui-card ui-form-section">
-        <div class="ui-section-header">
-          <div>
-            <h3 class="ui-section-title">Doc Editor</h3>
-            <p class="ui-section-copy">Write markdown and see the reading experience render live below. No split pane, just one authoring flow.</p>
-          </div>
-          {{if and .DocsLibrarySelected.Slug .DocsArticleSelected.Slug}}
-            <span class="ui-badge ui-badge-neutral">v{{.DocsArticleSelected.VersionNum}} · {{.DocsArticleSelected.Status}}</span>
-          {{end}}
-        </div>
-        {{if .DocsLibrarySelected.Slug}}
-          <form method="POST" action="/api/docs/article/save" class="ui-form-grid">
-            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-            <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
-            <input type="hidden" name="original_slug" value="{{.DocsArticleSelected.Slug}}">
-            <div class="ui-field">
-              <label class="ui-field-label" for="docs-article-slug">Slug</label>
-              <input id="docs-article-slug" class="ui-input" name="slug" value="{{.DocsArticleSelected.Slug}}" placeholder="doc-slug" required />
-            </div>
-            <div class="ui-field">
-              <label class="ui-field-label" for="docs-article-title">Title</label>
-              <input id="docs-article-title" class="ui-input" name="title" value="{{.DocsArticleSelected.Title}}" placeholder="Doc title" required />
-            </div>
-            <div class="ui-field">
-              <label class="ui-field-label" for="docs-article-status">Status</label>
-              <select id="docs-article-status" class="ui-select" name="status">
-                <option value="draft" {{if or (eq .DocsArticleSelected.Status "") (eq .DocsArticleSelected.Status "draft")}}selected{{end}}>Draft</option>
-                <option value="published" {{if eq .DocsArticleSelected.Status "published"}}selected{{end}}>Published</option>
-                <option value="archived" {{if eq .DocsArticleSelected.Status "archived"}}selected{{end}}>Archived</option>
-              </select>
-            </div>
-            <div class="ui-field">
-              <label class="ui-field-label" for="docs-article-tags">Tags</label>
-              <input id="docs-article-tags" class="ui-input" name="tags" value="{{.DocsArticleSelected.Tags}}" placeholder="ops, onboarding, api" />
-            </div>
-            <div class="ui-field">
-              <label class="ui-field-label" for="docs-article-read-roles">Read Roles</label>
-              <input id="docs-article-read-roles" class="ui-input" name="read_roles" value="{{.DocsArticleSelected.ReadRolesText}}" placeholder="inherits library when blank" />
-            </div>
-            <div class="ui-field">
-              <label class="ui-field-label" for="docs-article-edit-roles">Edit Roles</label>
-              <input id="docs-article-edit-roles" class="ui-input" name="edit_roles" value="{{.DocsArticleSelected.EditRolesText}}" placeholder="inherits library when blank" />
-            </div>
-            <div class="ui-field">
-              <label class="ui-field-label" for="docs-article-delete-roles">Delete Roles</label>
-              <input id="docs-article-delete-roles" class="ui-input" name="delete_roles" value="{{.DocsArticleSelected.DeleteRolesText}}" placeholder="inherits library when blank" />
-            </div>
-            <div class="ui-field" data-span="full">
-              <label class="ui-field-label" for="docs-article-body">Markdown</label>
-              <textarea id="docs-article-body" class="ui-textarea font-mono" name="markdown_body" rows="18" placeholder="# Heading&#10;Write the doc here..." data-docs-markdown-input="true">{{.DocsArticleSelected.MarkdownBody}}</textarea>
-            </div>
-            <div class="ui-form-actions" style="grid-column: 1 / -1;">
-              <button type="submit" class="ui-btn ui-btn-primary">{{if .DocsArticleSelected.Slug}}Save Doc{{else}}Create Doc{{end}}</button>
-            </div>
-          </form>
-          {{if and .DocsArticleSelected.Slug .DocsArticleSelected.CanDelete}}
-            <form method="POST" action="/api/docs/article/archive" class="ui-inline-form" style="margin-top: 1rem;">
-              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-              <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
-              <input type="hidden" name="article_slug" value="{{.DocsArticleSelected.Slug}}">
-              <button type="submit" class="ui-btn ui-btn-secondary" onclick="return confirm('Archive this doc? Current and historical versions will be retained.');">Archive Doc</button>
-            </form>
-          {{end}}
-          <div class="ui-card ui-form-section" style="margin-top: 1rem;">
-            <div class="ui-section-header">
-              <div>
-                <h4 class="ui-section-title">Rendered View</h4>
-                <p class="ui-section-copy">This updates live from the markdown above.</p>
-              </div>
-              {{if .DocsVersionSelected}}
-                <span class="ui-badge ui-badge-neutral">Previewing v{{.DocsVersionSelected}}</span>
-              {{end}}
-            </div>
-            <article class="ui-content-prose" data-docs-preview-target="true">{{.DocsPreviewRendered}}</article>
-          </div>
-        {{else}}
-          <div class="ui-empty-state">
-            <strong>Select a library first</strong>
-            <span>Docs are created inside libraries. Pick one from the left, or create a new library.</span>
-          </div>
-        {{end}}
-      </section>
-
-      {{if .DocsArticleSelected.Slug}}
-        <section class="ui-card ui-form-section">
-          <div class="ui-section-header">
-            <div>
-              <h3 class="ui-section-title">Version History</h3>
-              <p class="ui-section-copy">Every save retains a historical markdown snapshot.</p>
-            </div>
-          </div>
-          <div class="ui-explorer-list">
-            {{range .DocsVersions}}
-              <a href="{{.Href}}" class="ui-explorer-link {{if .Selected}}is-active{{end}}">
-                <span>
-                  <strong>v{{.VersionNum}}</strong><br />
-                  <span class="ui-explorer-meta">{{.Status}} · {{.CreatedAt}}</span>
-                </span>
-              </a>
-            {{else}}
-              <div class="ui-empty-state">
-                <strong>No version history yet</strong>
-                <span>The first save will create version history automatically.</span>
-              </div>
-            {{end}}
-          </div>
-        </section>
-      {{end}}
-    </div>
-  </div>
+      </div>
+    </details>
+  {{end}}
 </section>
 
 <script>
   (function () {
-    const input = document.querySelector("[data-docs-markdown-input='true']");
-    const preview = document.querySelector("[data-docs-preview-target='true']");
-    const tokenMeta = document.querySelector('meta[name="csrf-token"]');
-    if (!input || !preview) return;
+    var editor = document.getElementById('docs-article-body');
+    var hidden = document.getElementById('docs-markdown-source');
+    var form   = document.getElementById('docs-article-form');
+    if (!editor || !hidden || !form) return;
 
-    let timer = null;
+    // --- Init: populate contenteditable from raw markdown ---
 
-    function renderPreview(markdown) {
-      const formData = new FormData();
-      formData.set("csrf_token", tokenMeta ? tokenMeta.content : "");
-      formData.set("markdown_body", markdown);
+    function escHtml(s) {
+      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
-      fetch("/api/docs/preview", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "X-Requested-With": "XMLHttpRequest"
-        },
-        body: formData
-      }).then((response) => {
-        if (!response.ok) throw new Error("preview");
-        return response.json();
-      }).then((payload) => {
-        preview.innerHTML = payload && payload.html ? payload.html : "<p>Nothing to preview yet.</p>";
-      }).catch(() => {
-        preview.innerHTML = "<p>Unable to render preview right now.</p>";
+    function initEditor(markdown) {
+      var lines = markdown.split('\n');
+      editor.innerHTML = lines.map(function (line) {
+        return '<div>' + (line.length ? escHtml(line) : '<br>') + '</div>';
+      }).join('');
+      applyLineStyling();
+    }
+
+    // --- Per-line visual styling (no innerHTML change — attribute-only) ---
+
+    function applyLineStyling() {
+      Array.from(editor.children).forEach(function (child) {
+        var t = child.textContent || '';
+        var type = 'p';
+        if (/^### /.test(t))      type = 'h3';
+        else if (/^## /.test(t))  type = 'h2';
+        else if (/^# /.test(t))   type = 'h1';
+        else if (/^[-*] /.test(t)) type = 'li';
+        else if (/^\d+\. /.test(t)) type = 'ol';
+        else if (!t.trim())        type = 'empty';
+        if (child.dataset.md !== type) child.dataset.md = type;
       });
     }
 
-    input.addEventListener("input", function () {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(function () {
-        renderPreview(input.value || "");
-      }, 180);
+    // --- Sync contenteditable text to hidden textarea ---
+
+    function syncMarkdown() {
+      var lines = [];
+      editor.childNodes.forEach(function (node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          lines.push(node.textContent);
+        } else if (node.nodeName === 'DIV' || node.nodeName === 'P') {
+          var text = node.innerText !== undefined ? node.innerText : node.textContent;
+          // innerText on a div with just <br> returns '' or '\n'
+          lines.push(text.replace(/\n$/, ''));
+        } else if (node.nodeName === 'BR') {
+          lines.push('');
+        }
+      });
+      hidden.value = lines.join('\n');
+    }
+
+    // --- Wikilink autocomplete ---
+
+    var dropdown = document.createElement('div');
+    dropdown.className = 'docs-wikilink-dropdown';
+    dropdown.style.display = 'none';
+    dropdown.style.position = 'fixed';
+    document.body.appendChild(dropdown);
+
+    var currentResults = [];
+    var activeIndex = -1;
+    var searchTimer = null;
+
+    function getWikilinkContext() {
+      var sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return null;
+      var range = sel.getRangeAt(0);
+      var node = range.startContainer;
+      if (node.nodeType !== Node.TEXT_NODE) return null;
+      var before = node.textContent.substring(0, range.startOffset);
+      var m = before.match(/\[\[([^\]\n]*)$/);
+      if (!m) return null;
+      return {
+        query: m[1],
+        textNode: node,
+        openAt: before.lastIndexOf('[['),
+        cursor: range.startOffset
+      };
+    }
+
+    function hideDropdown() {
+      dropdown.style.display = 'none';
+      dropdown.innerHTML = '';
+      currentResults = [];
+      activeIndex = -1;
+    }
+
+    function positionDropdown() {
+      var sel = window.getSelection();
+      if (sel && sel.rangeCount) {
+        var cr = sel.getRangeAt(0).getBoundingClientRect();
+        if (cr && cr.top > 0) {
+          var below = window.innerHeight - cr.bottom;
+          dropdown.style.left = cr.left + 'px';
+          dropdown.style.width = '380px';
+          if (below > 160) {
+            dropdown.style.top = (cr.bottom + 4) + 'px';
+            dropdown.style.bottom = 'auto';
+          } else {
+            dropdown.style.top = 'auto';
+            dropdown.style.bottom = (window.innerHeight - cr.top + 4) + 'px';
+          }
+          return;
+        }
+      }
+      var er = editor.getBoundingClientRect();
+      dropdown.style.left = er.left + 'px';
+      dropdown.style.width = '380px';
+      dropdown.style.top = (er.bottom + 4) + 'px';
+      dropdown.style.bottom = 'auto';
+    }
+
+    function renderDropdown(results) {
+      currentResults = results;
+      activeIndex = -1;
+      if (!results || !results.length) {
+        dropdown.innerHTML = '<div class="docs-wikilink-empty">No matching records found</div>';
+      } else {
+        dropdown.innerHTML = results.map(function (r, i) {
+          return '<div class="docs-wikilink-item" data-index="' + i + '">' +
+            '<span class="docs-wikilink-item-type">' + r.type + '</span>' +
+            '<span>' + escHtml(r.label) + '</span>' +
+            '</div>';
+        }).join('');
+        dropdown.querySelectorAll('.docs-wikilink-item').forEach(function (item) {
+          item.addEventListener('mousedown', function (e) {
+            e.preventDefault();
+            var i = parseInt(item.getAttribute('data-index'), 10);
+            if (currentResults[i]) insertWikilink(currentResults[i].title);
+          });
+        });
+      }
+      dropdown.style.display = 'block';
+      positionDropdown();
+    }
+
+    function setActive(idx) {
+      activeIndex = idx;
+      dropdown.querySelectorAll('.docs-wikilink-item').forEach(function (el, i) {
+        el.classList.toggle('is-active', i === activeIndex);
+      });
+    }
+
+    function insertWikilink(title) {
+      var ctx = getWikilinkContext();
+      if (!ctx) { hideDropdown(); return; }
+      var range = document.createRange();
+      range.setStart(ctx.textNode, ctx.openAt);
+      range.setEnd(ctx.textNode, ctx.cursor);
+      range.deleteContents();
+      var tn = document.createTextNode('[[' + title + ']]');
+      range.insertNode(tn);
+      var sel = window.getSelection();
+      var nr = document.createRange();
+      nr.setStartAfter(tn);
+      nr.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(nr);
+      hideDropdown();
+      syncMarkdown();
+      applyLineStyling();
+    }
+
+    function searchWikilinks(query) {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function () {
+        fetch('/api/docs/wikilink-search?q=' + encodeURIComponent(query), {
+          credentials: 'same-origin',
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function (r) { return r.ok ? r.json() : []; })
+          .then(renderDropdown)
+          .catch(hideDropdown);
+      }, 150);
+    }
+
+    // --- Events ---
+
+    editor.addEventListener('input', function () {
+      applyLineStyling();
+      syncMarkdown();
+      var ctx = getWikilinkContext();
+      if (ctx) {
+        searchWikilinks(ctx.query);
+      } else {
+        hideDropdown();
+      }
     });
+
+    editor.addEventListener('keydown', function (e) {
+      if (dropdown.style.display === 'none') return;
+      var items = dropdown.querySelectorAll('.docs-wikilink-item');
+      if (e.key === 'Escape') { e.preventDefault(); hideDropdown(); }
+      else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIndex + 1, items.length - 1)); }
+      else if (e.key === 'ArrowUp')   { e.preventDefault(); setActive(Math.max(activeIndex - 1, 0)); }
+      else if ((e.key === 'Enter' || e.key === 'Tab') && activeIndex >= 0 && currentResults[activeIndex]) {
+        e.preventDefault();
+        insertWikilink(currentResults[activeIndex].title);
+      }
+    });
+
+    editor.addEventListener('blur', function () { setTimeout(hideDropdown, 150); });
+    window.addEventListener('resize', function () { if (dropdown.style.display !== 'none') positionDropdown(); });
+
+    // --- Word count ---
+
+    var wcEl = document.getElementById('docs-word-count');
+
+    function updateWordCount() {
+      if (!wcEl) return;
+      var text = (hidden.value || '').trim();
+      if (!text) { wcEl.textContent = ''; return; }
+      var words = text.split(/\s+/).filter(Boolean).length;
+      var mins = Math.max(1, Math.round(words / 200));
+      wcEl.textContent = words + ' words · ~' + mins + ' min read';
+    }
+
+    // --- AJAX save ---
+
+    var saveBtn = document.getElementById('docs-save-btn');
+    var saveBadge = document.getElementById('docs-save-badge');
+    var isSaving = false;
+
+    function showBadge(text, isError) {
+      if (!saveBadge) return;
+      saveBadge.textContent = text;
+      saveBadge.style.display = '';
+      saveBadge.style.opacity = '1';
+      saveBadge.className = 'ui-badge docs-editor-saved-badge' + (isError ? ' docs-editor-save-error' : '');
+      if (!isError) {
+        clearTimeout(saveBadge._fadeTimer);
+        saveBadge._fadeTimer = setTimeout(function () {
+          saveBadge.style.opacity = '0';
+        }, 2500);
+      }
+    }
+
+    function ajaxSave() {
+      if (isSaving) return;
+      syncMarkdown();
+      isSaving = true;
+      if (saveBtn) saveBtn.disabled = true;
+      showBadge('Saving…', false);
+
+      var csrfInput = form.querySelector('[name="csrf_token"]');
+      var csrfToken = csrfInput ? csrfInput.value : '';
+
+      fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        credentials: 'same-origin',
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-Token': csrfToken
+        }
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            showBadge('Saved', false);
+            // Keep original_slug in sync so subsequent saves patch the same article
+            var origSlug = form.querySelector('[name="original_slug"]');
+            if (origSlug && data.slug) origSlug.value = data.slug;
+            // Update slug input to reflect server-assigned slug
+            var slugInput = document.getElementById('docs-article-slug');
+            if (slugInput && data.slug) slugInput.value = data.slug;
+            // Update browser URL without reload
+            if (data.href) history.replaceState({}, '', data.href);
+            // Flip save button label from "Create" to "Save"
+            if (saveBtn && saveBtn.textContent.trim() === 'Create Article') {
+              saveBtn.textContent = 'Save Article';
+            }
+          } else {
+            showBadge(data.error || 'Save failed', true);
+          }
+        })
+        .catch(function () { showBadge('Save failed', true); })
+        .finally(function () {
+          isSaving = false;
+          if (saveBtn) saveBtn.disabled = false;
+        });
+    }
+
+    // Intercept form submit to use AJAX
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      ajaxSave();
+    });
+
+    // Cmd+S / Ctrl+S
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        ajaxSave();
+      }
+    });
+
+    // --- Slug auto-generation for new articles ---
+
+    var titleInput = document.getElementById('docs-article-title');
+    var slugInput = document.getElementById('docs-article-slug');
+    if (titleInput && slugInput && !slugInput.value) {
+      titleInput.addEventListener('input', function () {
+        slugInput.value = titleInput.value
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '')
+          .substring(0, 64);
+      });
+    }
+
+    // --- Wire up word count to input events ---
+
+    editor.addEventListener('input', function () {
+      updateWordCount();
+    });
+
+    // Boot
+    initEditor(hidden.value || '');
+    updateWordCount();
   })();
 </script>
 {{end}}
