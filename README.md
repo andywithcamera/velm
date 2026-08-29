@@ -40,7 +40,7 @@ The goal is to give developers — and eventually everyone — a way to build th
 | ✅ | Core apps: Tasks, Docs, Entities | Working |
 | ✅ | Group-based RBAC | Working |
 | ✅ | Goja scripting engine | Working |
-| 🔧 | App registry + marketplace infrastructure | In progres |
+| 🔧 | App registry + marketplace infrastructure | In progress |
 | 🔧 | LLM agents as first-class platform users | In progress |
 | 🔧 | Dev-Works — agile delivery management | In progress |
 | 🔧 | Ops-Works — ITSM / CMDB | In progress |
