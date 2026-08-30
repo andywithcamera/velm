@@ -342,36 +342,8 @@ body,
   line-height: 1.4;
 }
 
-.ui-theme-toggle-switch {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  border: 1px solid var(--border-mid);
-  border-radius: 999px;
-  background: transparent;
-  flex: none;
-}
 
-.ui-theme-toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--text-primary);
-  transition: transform var(--transition-base), background var(--transition-base);
-}
 
-html[data-theme="dark"] .ui-theme-toggle-switch {
-  background: var(--text-primary);
-  border-color: var(--text-primary);
-}
-
-html[data-theme="dark"] .ui-theme-toggle-thumb {
-  transform: translateX(20px);
-  background: var(--bg-base);
-}
 
 .ui-card,
 .ui-panel,
@@ -805,7 +777,9 @@ html[data-theme="light"] .ui-reference-modal-backdrop {
   background: rgba(255, 255, 255, 0.92);
 }
 
-html[data-theme="dark"] .ui-reference-modal-backdrop {
+html[data-theme="dark"] .ui-reference-modal-backdrop,
+html[data-theme="nord"] .ui-reference-modal-backdrop,
+html[data-theme="tokyo-night"] .ui-reference-modal-backdrop {
   background: rgba(0, 0, 0, 0.92);
 }
 
@@ -830,4 +804,111 @@ html[data-theme="dark"] .ui-reference-modal-backdrop {
   .ui-topnav {
     padding: 0 var(--sp-4);
   }
+}
+
+
+/* === Velm-coherent named themes (Option B - inspired variants, not exact ports) ===
+   Sources: Nord (nordtheme.com), Tokyo Night, Catppuccin (catppuccin.com) - MIT-style.
+   These are loose, monochrome-coherent interpretations tuned to Velm's aesthetic, not exact ports. */
+
+html[data-theme="nord"] {
+  color-scheme: dark;
+  --bg-base: #121314;
+  --bg-surface: #1d1f20;
+  --bg-elevated: #242628;
+  --bg-overlay: #292b2e;
+  --blue-dim: #b5b8ba;
+  --blue-mid: #b5b8ba;
+  --blue-bright: #fbfbfb;
+  --text-primary: #fbfbfb;
+  --text-secondary: #d8d9db;
+  --text-dim: rgba(251, 251, 251, 0.72);
+  --text-ghost: rgba(251, 251, 251, 0.45);
+  --border: rgba(251, 251, 251, 0.14);
+  --border-mid: rgba(251, 251, 251, 0.24);
+  --border-bright: rgba(251, 251, 251, 0.4);
+  --status-success: #fbfbfb;
+  --status-success-bg: rgba(251, 251, 251, 0.08);
+  --status-success-border: rgba(251, 251, 251, 0.22);
+  --status-warning: #fbfbfb;
+  --status-warning-bg: rgba(251, 251, 251, 0.08);
+  --status-warning-border: rgba(251, 251, 251, 0.22);
+  --status-error: #fbfbfb;
+  --status-error-bg: rgba(251, 251, 251, 0.08);
+  --status-error-border: rgba(251, 251, 251, 0.22);
+  --status-info: #fbfbfb;
+  --status-info-bg: rgba(251, 251, 251, 0.08);
+  --status-info-border: rgba(251, 251, 251, 0.22);
+  --shadow-raised: none;
+  --surface-soft: rgba(251, 251, 251, 0.08);
+  --surface-strong: rgba(251, 251, 251, 0.14);
+  --focus-ring: rgba(251, 251, 251, 0.22);
+}
+
+html[data-theme="tokyo-night"] {
+  color-scheme: dark;
+  --bg-base: #0e0f11;
+  --bg-surface: #17191c;
+  --bg-elevated: #1e2024;
+  --bg-overlay: #22252a;
+  --blue-dim: #adb0b8;
+  --blue-mid: #adb0b8;
+  --blue-bright: #f7f7f8;
+  --text-primary: #f7f7f8;
+  --text-secondary: #d2d4d8;
+  --text-dim: rgba(247, 247, 248, 0.72);
+  --text-ghost: rgba(247, 247, 248, 0.45);
+  --border: rgba(247, 247, 248, 0.14);
+  --border-mid: rgba(247, 247, 248, 0.24);
+  --border-bright: rgba(247, 247, 248, 0.4);
+  --status-success: #f7f7f8;
+  --status-success-bg: rgba(247, 247, 248, 0.08);
+  --status-success-border: rgba(247, 247, 248, 0.22);
+  --status-warning: #f7f7f8;
+  --status-warning-bg: rgba(247, 247, 248, 0.08);
+  --status-warning-border: rgba(247, 247, 248, 0.22);
+  --status-error: #f7f7f8;
+  --status-error-bg: rgba(247, 247, 248, 0.08);
+  --status-error-border: rgba(247, 247, 248, 0.22);
+  --status-info: #f7f7f8;
+  --status-info-bg: rgba(247, 247, 248, 0.08);
+  --status-info-border: rgba(247, 247, 248, 0.22);
+  --shadow-raised: none;
+  --surface-soft: rgba(247, 247, 248, 0.08);
+  --surface-strong: rgba(247, 247, 248, 0.14);
+  --focus-ring: rgba(247, 247, 248, 0.22);
+}
+
+html[data-theme="catppuccin"] {
+  color-scheme: light;
+  --bg-base: #fdfcfc;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-overlay: #ffffff;
+  --blue-dim: #000000;
+  --blue-mid: #000000;
+  --blue-bright: #000000;
+  --text-primary: #000000;
+  --text-secondary: #000000;
+  --text-dim: rgba(0, 0, 0, 0.72);
+  --text-ghost: rgba(0, 0, 0, 0.48);
+  --border: rgba(0, 0, 0, 0.12);
+  --border-mid: rgba(0, 0, 0, 0.2);
+  --border-bright: rgba(0, 0, 0, 0.36);
+  --status-success: #000000;
+  --status-success-bg: rgba(0, 0, 0, 0.04);
+  --status-success-border: rgba(0, 0, 0, 0.18);
+  --status-warning: #000000;
+  --status-warning-bg: rgba(0, 0, 0, 0.04);
+  --status-warning-border: rgba(0, 0, 0, 0.18);
+  --status-error: #000000;
+  --status-error-bg: rgba(0, 0, 0, 0.04);
+  --status-error-border: rgba(0, 0, 0, 0.18);
+  --status-info: #000000;
+  --status-info-bg: rgba(0, 0, 0, 0.04);
+  --status-info-border: rgba(0, 0, 0, 0.18);
+  --shadow-raised: none;
+  --surface-soft: rgba(0, 0, 0, 0.04);
+  --surface-strong: rgba(0, 0, 0, 0.08);
+  --focus-ring: rgba(0, 0, 0, 0.16);
 }

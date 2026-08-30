@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="{{.Theme}}">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -10,14 +10,8 @@
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
         <script>
-            (function () {
-                try {
-                    const storedTheme = localStorage.getItem("velm-theme");
-                    document.documentElement.dataset.theme = storedTheme === "dark" ? "dark" : "light";
-                } catch (error) {
-                    document.documentElement.dataset.theme = "light";
-                }
-            })();
+            // Initial theme is rendered server-side into <html data-theme="...">
+            // from the user's persisted preference (R4); no client-side guess needed.
         </script>
         <script src="https://unpkg.com/htmx.org@1.9.2"></script>
         <script src="https://unpkg.com/hyperscript.org@0.9.11"></script>
@@ -114,44 +108,62 @@
                 const pageContent = document.getElementById("page-content");
                 const progressBar = document.getElementById("progress-bar");
                 const errorBanner = document.getElementById("global-error-banner");
-                const themeStorageKey = "velm-theme";
+                const velmThemes = {
+                    "light": "Velm light",
+                    "dark": "Velm dark",
+                    "nord": "Nord",
+                    "tokyo-night": "Tokyo Night",
+                    "catppuccin": "Catppuccin Latte"
+                };
+                const defaultTheme = "light";
                 let navigationTimer = null;
                 let navigationInFlight = false;
 
                 function normaliseTheme(theme) {
-                    return theme === "dark" ? "dark" : "light";
+                    return velmThemes[theme] ? theme : defaultTheme;
                 }
 
                 function getActiveTheme() {
                     return normaliseTheme(document.documentElement.dataset.theme);
                 }
 
-                function persistTheme(theme) {
-                    try {
-                        localStorage.setItem(themeStorageKey, theme);
-                    } catch (error) {
-                        // Ignore storage failures and keep the in-memory theme.
-                    }
-                }
-
-                function syncThemeToggles() {
-                    const isDark = getActiveTheme() === "dark";
-                    document.querySelectorAll("[data-theme-toggle]").forEach((toggle) => {
-                        toggle.setAttribute("aria-checked", isDark ? "true" : "false");
-
-                        const hint = toggle.querySelector("[data-theme-toggle-hint]");
-                        if (hint) {
-                            hint.textContent = isDark ? "Black background / white text" : "White background / black text";
-                        }
-                    });
+                function syncThemeSelector() {
+                    const select = document.getElementById("velm-theme-select");
+                    if (select) select.value = getActiveTheme();
                 }
 
                 function applyTheme(theme) {
                     const resolved = normaliseTheme(theme);
                     document.documentElement.dataset.theme = resolved;
-                    syncThemeToggles();
+                    syncThemeSelector();
                     return resolved;
                 }
+
+                function persistTheme(theme) {
+                    // Persist server-side into the user's preference record (R4).
+                    const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+                    fetch("/api/preferences/theme", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": csrf
+                        },
+                        body: JSON.stringify({ value: theme })
+                    }).catch(function () {
+                        // Non-fatal: keep the applied theme in-memory for the session.
+                    });
+                }
+
+                (function initTheme() {
+                    const select = document.getElementById("velm-theme-select");
+                    if (select) {
+                        select.addEventListener("change", function () {
+                            const theme = applyTheme(select.value);
+                            persistTheme(theme);
+                        });
+                    }
+                    syncThemeSelector();
+                })();
 
                 function startProgressBar() {
                     if (!progressBar) return;
@@ -283,15 +295,6 @@
                         const expanded = disclosureButton.getAttribute("aria-expanded") === "true";
                         closeDisclosures(disclosureButton);
                         setDisclosureState(disclosureButton, !expanded);
-                        return;
-                    }
-
-                    const themeToggle = event.target.closest("[data-theme-toggle]");
-                    if (themeToggle) {
-                        event.preventDefault();
-                        const nextTheme = getActiveTheme() === "dark" ? "light" : "dark";
-                        persistTheme(nextTheme);
-                        applyTheme(nextTheme);
                         return;
                     }
 
