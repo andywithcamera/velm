@@ -144,6 +144,7 @@
                     const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
                     fetch("/api/preferences/theme", {
                         method: "POST",
+                        keepalive: true,
                         headers: {
                             "Content-Type": "application/json",
                             "X-CSRF-Token": csrf
