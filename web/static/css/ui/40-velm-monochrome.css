@@ -773,7 +773,8 @@ body,
   backdrop-filter: none;
 }
 
-html[data-theme="light"] .ui-reference-modal-backdrop {
+html[data-theme="light"] .ui-reference-modal-backdrop,
+html[data-theme="catppuccin"] .ui-reference-modal-backdrop {
   background: rgba(255, 255, 255, 0.92);
 }
 
