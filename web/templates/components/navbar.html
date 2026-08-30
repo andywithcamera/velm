@@ -146,21 +146,14 @@
                 <a _="on click toggle .hidden on #user-menu" href="/admin/app-editor" class="ui-menu-link" data-nav>Application editor</a>
                 {{end}}
                 <div class="ui-dropdown-label">Appearance</div>
-                <button
-                    type="button"
-                    class="ui-theme-toggle"
-                    data-theme-toggle
-                    role="switch"
-                    aria-checked="false"
-                >
-                    <span class="ui-theme-toggle-copy">
-                        <strong>Dark mode</strong>
-                        <small data-theme-toggle-hint>White background / black text</small>
-                    </span>
-                    <span class="ui-theme-toggle-switch" aria-hidden="true">
-                        <span class="ui-theme-toggle-thumb"></span>
-                    </span>
-                </button>
+                <label class="ui-sr-only" for="velm-theme-select">Theme</label>
+                <select id="velm-theme-select" class="ui-select ui-theme-select">
+                    <option value="light">Velm light</option>
+                    <option value="dark">Velm dark</option>
+                    <option value="nord">Nord</option>
+                    <option value="tokyo-night">Tokyo Night</option>
+                    <option value="catppuccin">Catppuccin Latte</option>
+                </select>
                 <div class="ui-dropdown-label">Session</div>
                 <form method="POST" action="/logout">
                     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">

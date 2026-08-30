@@ -50,6 +50,7 @@ func registerRoutes() {
 	http.Handle("/d/", withAuth(authz.PermissionView, http.HandlerFunc(handleDocsArticle)))
 	http.Handle("/knowledge", withAuth(authz.PermissionView, http.HandlerFunc(handleLegacyDocsRedirect)))
 	http.Handle("/api/preferences/list-view", withAuth(authz.PermissionView, http.HandlerFunc(handleListViewPreference)))
+	http.Handle("/api/preferences/theme", withAuth(authz.PermissionView, http.HandlerFunc(handleThemePreference)))
 	http.Handle("/api/preferences/list-view/saved", withAuth(authz.PermissionView, http.HandlerFunc(handleListViewSavedViews)))
 	http.Handle("/builder/schema", withAuth(authz.PermissionWrite, http.HandlerFunc(handleSchemaBuilderPage)))
 	http.Handle("/builder/pages", withAuth(authz.PermissionWrite, http.HandlerFunc(handlePageBuilder)))
