@@ -31,3 +31,6 @@ tools/tailwindcss
 # Root-level compiled binaries (build artifacts)
 /server
 /bin/
+
+# agent-token build artifact
+/agent-token

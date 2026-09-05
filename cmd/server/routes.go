@@ -28,6 +28,32 @@ func registerRoutes() {
 		)
 	}
 
+	// withAuthOrAgent is the API-surface authN for issue #68: a request
+	// authenticates with EITHER a human session OR a scoped agent bearer
+	// token. Both resolve to the same request context, so authz is identical;
+	// CSRF and session-freshness are skipped for bearer requests (the scoped
+	// token is the machine-audited anti-forgery).
+	agentStore := db.NewAgentTokenStore()
+	withAuthOrAgent := func(permission authz.Permission, handler http.Handler) http.Handler {
+		return auth.RequireAuthWithAgents(
+			requireFreshSession(
+				security.RequestLog(
+					security.Audit(
+						authz.RequirePermission(
+							permission,
+							security.WithAppScope(
+								auth.RequireCSRF(handler, store),
+							),
+						),
+					),
+				),
+			),
+			store,
+			agentStore,
+			agentStore,
+		)
+	}
+
 	http.Handle("/", security.RequestLog(http.HandlerFunc(handleRootRoute)))
 	http.Handle("/health", security.RequestLog(http.HandlerFunc(handleHealth)))
 	http.Handle("/healthz", security.RequestLog(http.HandlerFunc(handleHealth)))
@@ -98,25 +124,11 @@ func registerRoutes() {
 	http.Handle("/api/scripts/scope", withAuth(authz.PermissionView, http.HandlerFunc(handleScriptScope)))
 	http.Handle("/api/scripts/test", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleTestScriptDryRun)))
 	http.Handle("/api/scripts/run-adhoc", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleRunAdhocScript)))
-	http.Handle("/api/app-runtime/call", auth.RequireAuth(
-		requireFreshSession(
-			security.RequestLog(
-				security.Audit(
-					auth.RequireCSRF(http.HandlerFunc(handleAppRuntimeServiceCall), store),
-				),
-			),
-		),
-		store,
+	http.Handle("/api/app-runtime/call", withAuthOrAgent(authz.PermissionView,
+		http.HandlerFunc(handleAppRuntimeServiceCall),
 	))
-	http.Handle("/api/", auth.RequireAuth(
-		requireFreshSession(
-			security.RequestLog(
-				security.Audit(
-					auth.RequireCSRF(http.HandlerFunc(handleAppRuntimeEndpoint), store),
-				),
-			),
-		),
-		store,
+	http.Handle("/api/", withAuthOrAgent(authz.PermissionView,
+		http.HandlerFunc(handleAppRuntimeEndpoint),
 	))
 	http.Handle("/api/authz/roles/create", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleCreateRole)))
 	http.Handle("/api/authz/permissions/create", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleCreatePermission)))
