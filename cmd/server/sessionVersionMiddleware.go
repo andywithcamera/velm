@@ -16,6 +16,14 @@ func requireFreshSession(next http.Handler) http.Handler {
 			return
 		}
 
+		// Agent/API requests authenticate via scoped bearer tokens, not browser
+		// cookies, so there is no session-freshness concept to enforce (issue
+		// #68). Session-version checks apply to human session requests only.
+		if auth.IsAgentRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		session, err := store.Get(r, "mysession")
 		if err != nil {
 			forceLogin(w, r)

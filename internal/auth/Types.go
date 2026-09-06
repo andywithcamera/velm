@@ -13,6 +13,7 @@ const (
 	userNameContextKey  contextKey = "user_name"
 	userRoleContextKey  contextKey = "user_role"
 	appIDContextKey     contextKey = "app_id"
+	isAgentContextKey   contextKey = "is_agent"
 )
 
 func WithUserContext(ctx context.Context, userID, userEmail, userName, userRole string) context.Context {
@@ -65,4 +66,23 @@ func AppIDFromRequest(r *http.Request) string {
 	}
 	appID, _ := r.Context().Value(appIDContextKey).(string)
 	return appID
+}
+
+// WithAgentContext marks the request as authenticated via an agent API token
+// (issue #68). Authorization stays identical -- only the authN mechanism
+// differs, and this flag is what lets e.g. CAPTCHA/rate-opacity skip human-only
+// prompts for API calls. It carries no scope/authority: ACLs are user-based and
+// enforced downstream exactly as they are for a session.
+func WithAgentContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, isAgentContextKey, true)
+}
+
+// IsAgentRequest reports whether the current request authenticated through an
+// agent token rather than a human session.
+func IsAgentRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	agent, _ := r.Context().Value(isAgentContextKey).(bool)
+	return agent
 }

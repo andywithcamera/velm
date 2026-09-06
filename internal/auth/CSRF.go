@@ -30,6 +30,12 @@ func EnsureCSRFToken(w http.ResponseWriter, r *http.Request, store *sessions.Coo
 
 func RequireCSRF(next http.Handler, store *sessions.CookieStore) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Agent/API requests authenticate with a scoped bearer token, which is
+		// their own anti-forgery signal (issue #68). Skip cookie-CSRF for them.
+		if IsBearerRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !requiresCSRFCheck(r.Method) {
 			next.ServeHTTP(w, r)
 			return
