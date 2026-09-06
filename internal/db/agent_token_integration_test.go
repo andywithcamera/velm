@@ -49,8 +49,11 @@ func TestAgentTokenLifecycle(t *testing.T) {
 	store := NewAgentTokenStore()
 
 	// 3. Create a token (store only a SHA-256 hash; raw secret shown once).
+	//    Note: the token binds an identity but carries NO scopes/authority —
+	//    ACLs are user-based and resolved from the bound _user row, exactly as
+	//    for a session (issue #68: authN differs, authZ identical).
 	raw := auth.HashAgentToken("velm_integration_test_secret")
-	if err := store.CreateAgentToken(ctx, userID, raw, "integration-test", "scope:a|scope:b"); err != nil {
+	if err := store.CreateAgentToken(ctx, userID, raw, "integration-test"); err != nil {
 		t.Fatalf("CreateAgentToken: %v", err)
 	}
 
@@ -64,9 +67,6 @@ func TestAgentTokenLifecycle(t *testing.T) {
 	}
 	if tok.Revoked {
 		t.Fatal("freshly created token should not be revoked")
-	}
-	if len(tok.Scopes) != 2 || tok.Scopes[0] != "scope:a" {
-		t.Fatalf("scopes = %v, want [scope:a scope:b]", tok.Scopes)
 	}
 
 	email, name, err := store.LookupUserIdentity(ctx, userID)

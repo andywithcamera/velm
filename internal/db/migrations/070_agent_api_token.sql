@@ -1,9 +1,13 @@
--- Agent API tokens: scoped bearer tokens bound to a real _user identity.
+-- Agent API tokens: bearer tokens bound to a real _user identity.
 --
 -- Principle (issue #68): agents are users without a body. An agent is an
 -- ordinary _user row; the ONLY difference is authN. Humans get a session via
--- cookie/magic link; agents present a scoped bearer token that resolves to the
--- same request context, so authZ (roles, org membership) is identical.
+-- cookie/magic link; agents present a bearer token that resolves to the same
+-- request context, so authZ (roles, org membership) is identical.
+--
+-- ACLs are user-based only: an agent token carries no scope/authority of its
+-- own. All authorization is resolved from the bound _user's roles/org exactly
+-- as it is for a human session.
 --
 -- We store only a SHA-256 hash of the raw secret -- never the plaintext token.
 
@@ -15,9 +19,6 @@ CREATE TABLE IF NOT EXISTS _agent_api_token (
 	user_id TEXT NOT NULL,
 	token_hash TEXT NOT NULL UNIQUE,
 	label TEXT NOT NULL DEFAULT '',
-	-- scopes: pipe-separated permission gates (resource:action), e.g.
-	-- 'platform:write|base_task:write'. Empty = all permissions the user has.
-	scopes TEXT NOT NULL DEFAULT '',
 	is_revoked BOOLEAN NOT NULL DEFAULT FALSE,
 	_created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	last_used_at TIMESTAMPTZ,

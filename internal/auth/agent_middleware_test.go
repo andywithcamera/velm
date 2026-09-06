@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 
@@ -22,14 +21,10 @@ func newFakeTokenStore() *fakeTokenStore {
 	return &fakeTokenStore{byID: map[string]AgentToken{}}
 }
 
-func (f *fakeTokenStore) CreateAgentToken(_ context.Context, userID, tokenHash, label, scopes string) error {
+func (f *fakeTokenStore) CreateAgentToken(_ context.Context, userID, tokenHash, label string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var sc []string
-	if scopes != "" {
-		sc = strings.Split(scopes, "|")
-	}
-	f.byID[tokenHash] = AgentToken{ID: tokenHash, UserID: userID, Label: label, Scopes: sc}
+	f.byID[tokenHash] = AgentToken{ID: tokenHash, UserID: userID, Label: label}
 	return nil
 }
 
@@ -74,7 +69,7 @@ func TestRequireAuthWithAgents_BearerResolvesSharedContext(t *testing.T) {
 
 	const wantUserID = "wgr5prcaenm3j5g"
 	tokens := newFakeTokenStore()
-	if err := IssueAgentToken(context.Background(), tokens, wantUserID, "ci-runner", "ci-secret-token", []string{"base_core:bootstrap"}); err != nil {
+	if err := IssueAgentToken(context.Background(), tokens, wantUserID, "ci-runner", "ci-secret-token"); err != nil {
 		t.Fatalf("issue token: %v", err)
 	}
 

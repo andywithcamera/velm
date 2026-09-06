@@ -17,7 +17,7 @@ type IdentityResolver interface {
 
 // RequireAuthWithAgents is RequireAuth plus the bearer-token path (issue #68).
 // A request authenticates if EITHER a valid human session exists OR a valid
-// scoped agent bearer token is presented. Both resolve to the same context
+// agent bearer token is presented. Both resolve to the same context
 // populated by WithUserContext, so authorization (roles/org membership) is
 // identical and UserIDFromRequest(r) works the same for both.
 func RequireAuthWithAgents(next http.Handler, store *sessions.CookieStore, tokens TokenStore, identity IdentityResolver) http.Handler {

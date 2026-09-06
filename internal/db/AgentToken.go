@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,14 +21,14 @@ type AgentTokenStore struct{}
 
 func NewAgentTokenStore() *AgentTokenStore { return &AgentTokenStore{} }
 
-func (s *AgentTokenStore) CreateAgentToken(ctx context.Context, userID, tokenHash, label, scopes string) error {
+func (s *AgentTokenStore) CreateAgentToken(ctx context.Context, userID, tokenHash, label string) error {
 	if Pool == nil {
 		return fmt.Errorf("database pool is not initialized")
 	}
 	_, err := Pool.Exec(ctx, `
-		INSERT INTO _agent_api_token (user_id, token_hash, label, scopes, is_revoked)
-		VALUES ($1, $2, $3, $4, FALSE)
-	`, userID, tokenHash, label, scopes)
+		INSERT INTO _agent_api_token (user_id, token_hash, label, is_revoked)
+		VALUES ($1, $2, $3, FALSE)
+	`, userID, tokenHash, label)
 	return err
 }
 
@@ -42,15 +41,14 @@ func (s *AgentTokenStore) LookupAgentToken(ctx context.Context, tokenHash string
 	}
 
 	var tok auth.AgentToken
-	var scopes string
 	var revoked bool
 	var expiresAt *time.Time
 	row := Pool.QueryRow(ctx, `
-		SELECT _id::text, user_id, label, scopes, is_revoked, expires_at
+		SELECT _id::text, user_id, label, is_revoked, expires_at
 		FROM _agent_api_token
 		WHERE token_hash = $1
 	`, tokenHash)
-	if err := row.Scan(&tok.ID, &tok.UserID, &tok.Label, &scopes, &revoked, &expiresAt); err != nil {
+	if err := row.Scan(&tok.ID, &tok.UserID, &tok.Label, &revoked, &expiresAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return auth.AgentToken{}, auth.ErrNoAgentToken
 		}
@@ -58,7 +56,6 @@ func (s *AgentTokenStore) LookupAgentToken(ctx context.Context, tokenHash string
 	}
 
 	tok.Revoked = revoked
-	tok.Scopes = splitScopes(scopes)
 	if expiresAt != nil {
 		tok.Expires = expiresAt.Before(time.Now())
 	}
@@ -72,21 +69,6 @@ func (s *AgentTokenStore) TouchAgentToken(ctx context.Context, tokenID string) e
 	_, err := Pool.Exec(ctx,
 		`UPDATE _agent_api_token SET last_used_at = NOW() WHERE _id::text = $1`, tokenID)
 	return err
-}
-
-func splitScopes(scopes string) []string {
-	scopes = strings.TrimSpace(scopes)
-	if scopes == "" {
-		return nil
-	}
-	parts := strings.Split(scopes, "|")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
 }
 
 // LookupUserIdentity implements auth.IdentityResolver: agents are plain _user

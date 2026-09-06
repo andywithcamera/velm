@@ -12,7 +12,6 @@ import (
 func main() {
 	userID := flag.String("user", "", "Platform user_id (_id::text) to bind the token to (an agent's real identity)")
 	label := flag.String("label", "", "Human label for the token (e.g. 'github-webhook')")
-	scopes := flag.String("scopes", "", "Pipe-separated scopes, e.g. base_task:write|platform:read. Empty = all permissions the identity has.")
 	flag.Parse()
 
 	if strings.TrimSpace(*userID) == "" {
@@ -34,25 +33,10 @@ func main() {
 	}
 
 	store := db.NewAgentTokenStore()
-	if err := auth.IssueAgentToken(context.Background(), store, *userID, *label, raw, split(*scopes)); err != nil {
+	if err := auth.IssueAgentToken(context.Background(), store, *userID, *label, raw); err != nil {
 		log.Fatal("issue token:", err)
 	}
 
-	log.Printf("token issued (user=%s label=%q scopes=%q)", *userID, *label, *scopes)
+	log.Printf("token issued (user=%s label=%q)", *userID, *label)
 	log.Printf("SHOW THE RAW TOKEN ONCE ONLY:\n%s", raw)
-}
-
-func split(scopes string) []string {
-	scopes = strings.TrimSpace(scopes)
-	if scopes == "" {
-		return nil
-	}
-	parts := strings.Split(scopes, "|")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
 }

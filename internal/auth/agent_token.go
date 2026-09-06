@@ -11,13 +11,13 @@ import (
 )
 
 // Agent tokens (issue #68): agents are users without a body. AuthN differs
-// (scoped bearer token vs session cookie), authZ is identical — both resolve to
+// (bearer token vs session cookie), authZ is identical — both resolve to
 // the same request context read by UserIDFromRequest / RoleFromContext.
 
 // TokenStore is the storage boundary for agent tokens. Implemented by
 // internal/db so the auth package stays DB-agnostic and unit-testable.
 type TokenStore interface {
-	CreateAgentToken(ctx context.Context, userID, tokenHash, label, scopes string) error
+	CreateAgentToken(ctx context.Context, userID, tokenHash, label string) error
 	LookupAgentToken(ctx context.Context, tokenHash string) (AgentToken, error)
 	TouchAgentToken(ctx context.Context, tokenID string) error
 }
@@ -27,7 +27,6 @@ type AgentToken struct {
 	ID      string
 	UserID  string
 	Label   string
-	Scopes  []string
 	Revoked bool
 	Expires bool
 }
@@ -35,7 +34,6 @@ type AgentToken struct {
 // AgentScope is the in-context representation of an authenticated agent.
 type AgentScope struct {
 	UserID string
-	Scopes []string
 }
 
 var (
@@ -77,7 +75,7 @@ func ParseBearer(authzHeader string) string {
 
 // IsBearerRequest reports whether the request presents a Bearer credential.
 // Used by CSRF and rate-opacity layers to skip browser-only protections for
-// machine/agent clients (a scoped bearer token is the machine-audited
+// machine/agent clients (a bearer token is the machine-audited
 // anti-forgery, so no cookie CSRF is required).
 func IsBearerRequest(r *http.Request) bool {
 	return r != nil && ParseBearer(r.Header.Get("Authorization")) != ""
@@ -86,15 +84,17 @@ func IsBearerRequest(r *http.Request) bool {
 // IssueAgentToken creates a token bound to a real user identity and returns the
 // raw secret (exactly once). Pass the already-hashed hash to keep raw handling
 // in the caller that surfaces it to the operator.
-func IssueAgentToken(ctx context.Context, store TokenStore, userID, label, raw string, scopes []string) error {
+func IssueAgentToken(ctx context.Context, store TokenStore, userID, label, raw string) error {
 	if userID == "" || raw == "" {
 		return ErrAgentInvalid
 	}
-	return store.CreateAgentToken(ctx, userID, HashAgentToken(raw), label, strings.Join(scopes, "|"))
+	return store.CreateAgentToken(ctx, userID, HashAgentToken(raw), label)
 }
 
-// ResolveAgentToken authenticates a raw bearer token to an identity + scopes.
-// It rejects revoked or expired tokens and refuses empty/unknown hashes.
+// ResolveAgentToken authenticates a raw bearer token to an identity. It rejects
+// revoked or expired tokens and refuses empty/unknown hashes. It carries no
+// scope/authority — ACLs are user-based and enforced downstream exactly as they
+// are for a session.
 func ResolveAgentToken(ctx context.Context, store TokenStore, raw string) (AgentScope, error) {
 	if raw == "" {
 		return AgentScope{}, ErrNoAgentToken
@@ -113,5 +113,5 @@ func ResolveAgentToken(ctx context.Context, store TokenStore, raw string) (Agent
 	if err := store.TouchAgentToken(ctx, tok.ID); err != nil {
 		return AgentScope{}, err
 	}
-	return AgentScope{UserID: tok.UserID, Scopes: tok.Scopes}, nil
+	return AgentScope{UserID: tok.UserID}, nil
 }
