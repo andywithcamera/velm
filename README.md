@@ -154,3 +154,5 @@ Short version: stability → documentation → managed hosting → the world.
 
 ---
 # pr env test 2026-09-07
+
+- PR environments: bot PRs off by default (Railway setting).
