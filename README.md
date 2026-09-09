@@ -79,7 +79,7 @@ docker run -p 3000:3000 \
 ```
 
 ```bash
-# Build from source (requires Go 1.22+)
+# Build from source (requires Go 1.26+)
 git clone https://github.com/andywithcamera/velm.git
 cd velm
 go build -o velm ./cmd/server
@@ -151,6 +151,5 @@ Contributions intended for inclusion in the project are accepted only under the 
 ## Roadmap
 
 Short version: stability → documentation → managed hosting → the world.
-
 ---
-# pr env test 2026-09-07
+
