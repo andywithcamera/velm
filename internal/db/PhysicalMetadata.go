@@ -164,6 +164,34 @@ var builtinTableMetadata = map[string]builtinTableMeta{
 		Description:   "Historical links between observables, actions, and spawned tasks.",
 		DisplayField:  "task_id",
 	},
+	"_ai_provider": {
+		LabelSingular: "AI Provider",
+		LabelPlural:   "AI Providers",
+		Description:   "AI provider catalog: endpoints and auth conventions. No secrets stored here.",
+		DisplayField:  "name",
+	},
+	"_ai_connection": {
+		LabelSingular: "AI Connection",
+		LabelPlural:   "AI Connections",
+		Description:   "Named connections to AI providers holding the API key (encrypted at rest).",
+		DisplayField:  "label",
+	},
+	"_ai_model": {
+		LabelSingular: "AI Model",
+		LabelPlural:   "AI Models",
+		Description:   "Models available through a connection, populated from the provider's list-models endpoint.",
+		DisplayField:  "model_id",
+	},
+}
+
+// builtinColumnOverrides hides specific physical columns from generic lists
+// and forms. api_key_enc holds ciphertext; it must never render in generic
+// views — key changes go through the dedicated admin API (PR #103).
+var builtinColumnOverrides = map[string]map[string]bool{
+	"_ai_connection": {
+		"api_key_enc":         true,
+		"api_key_fingerprint": false, // display only, safe
+	},
 }
 
 func GetPhysicalTable(ctx context.Context, tableName string) (Table, bool, error) {
@@ -264,7 +292,7 @@ func GetPhysicalColumns(ctx context.Context, tableName string) ([]Column, error)
 			DATA_TYPE:        normalizeCatalogDataType(dataType, udtName),
 			IS_NULLABLE:      strings.EqualFold(strings.TrimSpace(isNullable), "YES"),
 			DEFAULT_VALUE:    nullableCatalogString(defaultValue),
-			IS_HIDDEN:        strings.HasPrefix(name, "_"),
+			IS_HIDDEN:        strings.HasPrefix(name, "_") || builtinColumnOverrides[tableName][name],
 			IS_READONLY:      false,
 			VALIDATION_REGEX: sql.NullString{},
 			CONDITION_EXPR:   sql.NullString{},
