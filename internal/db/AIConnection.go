@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"context"
 	"time"
 )
@@ -67,15 +68,35 @@ func CreateAIConnection(ctx context.Context, providerID, label, encryptedKey, fi
 	return GetAIConnection(ctx, id)
 }
 
-func UpdateAIConnection(ctx context.Context, id, label string, encryptedKey, fingerprint *string) error {
+// UpdateAIConnection applies only the supplied fields; nil leaves a column
+// unchanged so a key-only PATCH does not wipe the label.
+func UpdateAIConnection(ctx context.Context, id string, label *string, encryptedKey, fingerprint *string) error {
+	sets := []string{"_updated_at=NOW()"}
+	args := []any{id}
+	if label != nil {
+		sets = append(sets, "label=$2")
+		args = append(args, *label)
+	}
 	if encryptedKey != nil {
-		_, err := Pool.Exec(ctx,
-			`UPDATE _ai_connection SET label=$2, api_key_enc=$3, api_key_fingerprint=$4, _updated_at=NOW() WHERE _id=$1`,
-			id, label, *encryptedKey, *fingerprint)
-		return err
+		if len(args) == 1 {
+			sets = append(sets, "api_key_enc=$2")
+		} else {
+			sets = append(sets, "api_key_enc=$3")
+		}
+		args = append(args, *encryptedKey)
+	}
+	if fingerprint != nil {
+		if len(args) == 1 {
+			sets = append(sets, "api_key_fingerprint=$2")
+		} else if len(args) == 2 {
+			sets = append(sets, "api_key_fingerprint=$3")
+		} else {
+			sets = append(sets, "api_key_fingerprint=$4")
+		}
+		args = append(args, *fingerprint)
 	}
 	_, err := Pool.Exec(ctx,
-		`UPDATE _ai_connection SET label=$2, _updated_at=NOW() WHERE _id=$1`, id, label)
+		`UPDATE _ai_connection SET `+strings.Join(sets, ", ")+` WHERE _id=$1`, args...)
 	return err
 }
 

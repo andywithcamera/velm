@@ -109,7 +109,14 @@ func handleCreateAIConnection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create connection", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusCreated, conn)
+	// Per the #93 decision: models populate from a live provider call, so run
+	// the sync as part of creation. Report sync failure but keep the connection.
+	synced, syncErr := syncConnectionModels(r, conn.ID)
+	if syncErr != nil {
+		writeJSON(w, http.StatusCreated, map[string]any{"connection": conn, "sync_error": syncErr.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"connection": conn, "models": synced})
 }
 
 func handleGetAIConnection(w http.ResponseWriter, r *http.Request) {
@@ -123,8 +130,8 @@ func handleGetAIConnection(w http.ResponseWriter, r *http.Request) {
 
 func handleUpdateAIConnection(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Label  string `json:"label"`
-		APIKey string `json:"api_key"`
+		Label  *string `json:"label"`
+		APIKey string  `json:"api_key"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 64<<10)).Decode(&in); err != nil {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
@@ -161,55 +168,50 @@ func handleDeleteAIConnection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleSyncAIConnectionModels decrypts the stored key, calls the provider's
+// syncConnectionModels decrypts the stored key, calls the provider's
 // list-models endpoint, and rewrites the connection's _ai_model rows.
-func handleSyncAIConnectionModels(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+func syncConnectionModels(r *http.Request, id string) ([]db.AIModel, error) {
 	conn, err := db.GetAIConnection(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Not found", http.StatusNotFound)
-		return
+		return nil, err
 	}
 	provider, err := db.GetAIProvider(r.Context(), conn.ProviderID)
 	if err != nil {
-		http.Error(w, "Provider not found", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	enc, err := db.GetAIConnectionKey(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Failed to load key", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	cipher, err := security.NewMFASecretCipherFromEnv()
 	if err != nil {
-		http.Error(w, "Secret cipher unavailable", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	plaintext, err := cipher.Decrypt(enc)
 	if err != nil {
-		http.Error(w, "Failed to decrypt key", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	models, err := security.NewProviderClient().ListModels(provider.BaseURL, provider.DefaultListModelsPath, plaintext, provider.ProviderMetadata)
 	if err != nil {
-		http.Error(w, "Provider call failed: "+err.Error(), http.StatusBadGateway)
-		return
+		return nil, err
 	}
 	if err := db.MarkAIConnectionVerified(r.Context(), id); err != nil {
-		http.Error(w, "Failed to record verification", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
 	rows := make([]db.AIModel, 0, len(models))
 	for _, m := range models {
 		rows = append(rows, db.AIModel{ConnectionID: id, ModelID: m.ModelID, DisplayName: m.DisplayName, ModelMetadata: m.Metadata, IsActive: true})
 	}
 	if err := db.SyncAIModels(r.Context(), id, rows); err != nil {
-		http.Error(w, "Failed to sync models", http.StatusInternalServerError)
-		return
+		return nil, err
 	}
-	synced, err := db.ListAIModelsByConnection(r.Context(), id)
+	return db.ListAIModelsByConnection(r.Context(), id)
+}
+
+func handleSyncAIConnectionModels(w http.ResponseWriter, r *http.Request) {
+	synced, err := syncConnectionModels(r, r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "Failed to load models", http.StatusInternalServerError)
+		http.Error(w, "Sync failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"models": synced})

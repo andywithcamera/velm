@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/json"
 	"context"
 )
 
@@ -65,7 +66,12 @@ func SyncAIModels(ctx context.Context, connectionID string, models []AIModel) er
 // 'agent' namespace (User.active_model in the decision, implemented as a
 // _user_preference row so _user itself is untouched).
 func SetUserActiveModel(ctx context.Context, userID, modelID string) error {
-	return UpsertUserPreference(ctx, userID, "agent", "active_model", []byte(modelID))
+	// _user_preference.value is jsonb; encode so plain model IDs store as JSON strings.
+	enc, err := json.Marshal(modelID)
+	if err != nil {
+		return err
+	}
+	return UpsertUserPreference(ctx, userID, "agent", "active_model", enc)
 }
 
 func GetUserActiveModel(ctx context.Context, userID string) (string, error) {
@@ -73,5 +79,10 @@ func GetUserActiveModel(ctx context.Context, userID string) (string, error) {
 	if err != nil || raw == nil {
 		return "", err
 	}
-	return string(raw), nil
+	var modelID string
+	if err := json.Unmarshal(raw, &modelID); err != nil {
+		// Tolerate legacy/plain-text rows written before JSON encoding.
+		return string(raw), nil
+	}
+	return modelID, nil
 }
