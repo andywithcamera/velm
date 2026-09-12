@@ -41,14 +41,14 @@ var builtinColumnMetadata = map[string]map[string]builtinColumnOverride{
 			REFERENCE_TABLE: "_ai_provider",
 		},
 		"api_key_fingerprint": {
-			LABEL:     "API Key Fingerprint",
+			LABEL: "API Key Fingerprint",
 		},
 		"is_active": {
 			LABEL:     "Is Active",
 			DATA_TYPE: "boolean",
 		},
 		"last_verified_at": {
-			LABEL:     "Last Verified At",
+			LABEL: "Last Verified At",
 		},
 		"models_synced_at": {
 			LABEL:     "Models Synced At",
