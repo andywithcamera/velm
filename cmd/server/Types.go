@@ -28,6 +28,9 @@ var adminLinks = []MenuItem{
 	{Title: "Access Control", Href: "/admin/access"},
 	{Title: "System Log", Href: "/admin/audit"},
 	{Title: "Request Metrics", Href: "/admin/monitoring"},
+	{Title: "AI Providers", Href: "/t/_ai_provider"},
+	{Title: "AI Connections", Href: "/t/_ai_connection"},
+	{Title: "AI Models", Href: "/t/_ai_model"},
 	{Title: "Run Script", Href: "/admin/run-script"},
 	{Title: "Application Editor", Href: "/admin/app-editor"},
 }
