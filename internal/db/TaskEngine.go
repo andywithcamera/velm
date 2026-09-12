@@ -19,16 +19,36 @@ import (
 // user is the audit principal for every CRUD write the script performs
 // via ctx.records (captured by _audit_data_change, 009).
 
-// Real state codes per 047: new/triage/ready/in_progress/blocked/done/
-// cancelled (+ skipped from 077). The engine's "waiting" state is ready —
-// children of a container spawn into ready; run_if gates ready ->
-// in_progress, false -> skipped (077 transitions).
+// State codes on the real (055 + 077) model: new/pending/ready/
+// in_progress/ready_to_close/closed/skipped, stored in the text `state`
+// column and guarded by chk_base_task_state. The design doc (rev 3) has
+// children spawn in PENDING; the engine uses ready as its spawn state
+// (same run_if gate: ready/pending -> in_progress, false -> skipped).
+// 'skipped' is terminal.
 const (
 	taskStateReady      = "ready"
 	taskStateInProgress = "in_progress"
 	taskStateSkipped    = "skipped"
-	taskStateDone       = "done"
+	taskStateDone       = "closed"
 )
+
+// taskTransitions is the engine's allowed-edge set, validated in Go
+// against the text state column (077 removed base_task_transition).
+var taskTransitions = map[string]map[string]bool{
+	"ready":          {"ready": true, "in_progress": true, "skipped": true},
+	"in_progress":    {"in_progress": true, "ready_to_close": true, "pending": true, "skipped": true, "closed": true},
+	"pending":        {"pending": true, "ready": true, "in_progress": true, "skipped": true},
+	"ready_to_close": {"ready_to_close": true, "closed": true, "in_progress": true, "skipped": true},
+	"closed":         {},
+	"skipped":        {},
+}
+
+// allowedTaskTransition reports whether from -> to is an engine edge.
+// Same-state writes are allowed (engine re-asserts current state).
+func allowedTaskTransition(from, to string) bool {
+	edges, ok := taskTransitions[from]
+	return ok && edges[to]
+}
 
 type TaskDefinition struct {
 	ID             string
@@ -137,12 +157,12 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 
 	var taskID string
 	err = q.QueryRow(ctx, `
-		INSERT INTO base_task (number, title, work_type, state_id, priority, parent_task_id,
+		INSERT INTO base_task (number, title, work_type, state, priority, parent_task_id,
 			assignment_group_id, requested_by_user_id, definition_id, variables)
 		VALUES (
 			'T-' || lpad(nextval('base_task_number_seq')::text, 6, '0'),
 			$1, 'TASK',
-			(SELECT _id FROM base_task_state WHERE code = $2 AND _deleted_at IS NULL),
+			$2,
 			'p3', $3, $4, $5, $6, $7::jsonb)
 		RETURNING _id`,
 		def.DisplayName, taskStateReady, nullable(parentTaskID), nullable(def.DefaultGroupID),
@@ -199,32 +219,19 @@ func StartTask(ctx context.Context, taskID, actorUserID string) error {
 func transitionTaskInTx(ctx context.Context, tx scriptQuerier, taskID, toStateCode string) error {
 	var fromState string
 	err := tx.QueryRow(ctx, `
-		SELECT s.code FROM base_task t
-		JOIN base_task_state s ON s._id = t.state_id
-		WHERE t._id = $1 AND t._deleted_at IS NULL
+		SELECT state FROM base_task
+		WHERE _id = $1 AND _deleted_at IS NULL
 		FOR UPDATE`, taskID).Scan(&fromState)
 	if err != nil {
 		return fmt.Errorf("load task: %w", err)
 	}
 
-	var allowed bool
-	err = tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM base_task_transition tr
-			JOIN base_task_state f ON f._id = tr.from_state_id
-			JOIN base_task_state t2 ON t2._id = tr.to_state_id
-			WHERE f.code = $1 AND t2.code = $2)`, fromState, toStateCode).Scan(&allowed)
-	if err != nil {
-		return err
-	}
-	if !allowed {
+	if !allowedTaskTransition(fromState, toStateCode) {
 		return fmt.Errorf("invalid task transition %s -> %s", fromState, toStateCode)
 	}
 
 	_, err = tx.Exec(ctx, `
-		UPDATE base_task
-		SET state_id = (SELECT _id FROM base_task_state WHERE code = $2 AND _deleted_at IS NULL)
-		WHERE _id = $1`, taskID, toStateCode)
+		UPDATE base_task SET state = $2 WHERE _id = $1`, taskID, toStateCode)
 	return err
 }
 
@@ -303,8 +310,9 @@ func executeTaskGoja(ctx context.Context, tx pgx.Tx, taskID, code string, vars m
 	return result.Result, nil
 }
 
-// CompleteTask closes a task as done, publishing its declared outputs to
-// the parent scope and firing the definition's spawn rules.
+// CompleteTask closes a task (state closed, closure_reason completed),
+// publishing its declared outputs to the parent scope and firing the
+// definition's spawn rules.
 func CompleteTask(ctx context.Context, taskID, actorUserID string) error {
 	tx, err := Pool.Begin(ctx)
 	if err != nil {
@@ -313,6 +321,9 @@ func CompleteTask(ctx context.Context, taskID, actorUserID string) error {
 	defer tx.Rollback(ctx)
 
 	if err := transitionTaskInTx(ctx, tx, taskID, taskStateDone); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE base_task SET closure_reason = 'completed' WHERE _id = $1`, taskID); err != nil {
 		return err
 	}
 	if err := onTaskClosed(ctx, tx, taskID, actorUserID); err != nil {
@@ -363,7 +374,7 @@ func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) er
 		}
 	}
 
-	return fireSpawnRules(ctx, tx, taskID, taskStateDone, actorUserID)
+	return fireSpawnRules(ctx, tx, taskID, "completed", actorUserID)
 }
 
 // fireSpawnRules spawns follow-on tasks per the definition's spawn_rules
