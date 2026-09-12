@@ -1,43 +1,118 @@
--- Fix-forward for 076 (issue #112). 076 assumed base_task.state was a
--- CHECK-constrained enum; the real model (047) uses base_task_state rows
--- referenced by state_id, with a base_task_transition table. There is no
--- 'state' column, so 076's ALTER ... CHECK block was a no-op against a
--- non-existent column. This migration supplies the real implementation:
+-- Fix-forward for 076/077 (issue #112). The task engine (#114) and this
+-- migration's first draft assumed the 047 model (base_task_state rows
+-- referenced by state_id, with a base_task_transition table). That model
+-- was dropped by 048 and simplified by 054/055 into a text `state`
+-- column with a CHECK constraint and a before-write trigger.
 --
--- 1. 'skipped' as a first-class terminal task state (run_if false).
--- 2. Transitions ready -> skipped (the engine skips from the waiting
---    state), in_progress -> skipped (mid-flight bail-out), and
---    blocked -> skipped. Terminal: publishes nothing, no reopen edge.
--- 3. No DROP of 076's bogus CHECK (it never bound: the column does not
---    exist, so the ALTER would have failed loudly if it ran — kept here
---    as documentation of the mistake).
+-- This migration reconciles the two on the real (055) model:
+--
+-- 1. 'ready' — spawn state for engine-created tasks; the design doc (rev 3)
+--    container spawn here. (055's CHECK already folds 'ready' into
+--    'new' during migration, but the live CHECK does not accept it.)
+-- 2. 'skipped' — terminal state for tasks whose run_if evaluated false.
+--    Publishes nothing, no reopen edge, mirrors 'cancelled' semantics.
+--
+-- Both flow through the existing trigger: 'ready' must satisfy the
+-- same assignment rule as any non-new state, 'skipped' is terminal.
+ALTER TABLE base_task
+	DROP CONSTRAINT IF EXISTS chk_base_task_state;
 
-DO $$
+ALTER TABLE base_task
+	ADD CONSTRAINT chk_base_task_state CHECK (
+		state IN ('new', 'pending', 'ready', 'in_progress', 'ready_to_close', 'closed', 'skipped')
+	);
+
+CREATE OR REPLACE FUNCTION base_task_before_write()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
 DECLARE
-	skipped_id UUID;
-	ready_id UUID;
-	inprog_id UUID;
-	blocked_id UUID;
+	next_state TEXT;
+	next_closure_reason TEXT;
 BEGIN
-	-- Terminal 'skipped' state, board lane after cancelled.
-	INSERT INTO base_task_state (code, label, description, category, board_lane, sort_order, is_initial, is_terminal, is_closed)
-	SELECT 'skipped', 'Skipped', 'Task did not run: run_if condition evaluated false.', 'cancelled', 'cancelled', 60, FALSE, TRUE, TRUE
-	WHERE NOT EXISTS (SELECT 1 FROM base_task_state WHERE code = 'skipped');
+	IF NEW.assigned_user_id IS NOT NULL THEN
+		IF NEW.assignment_group_id IS NULL THEN
+			RAISE EXCEPTION 'assigned_user_id requires assignment_group_id';
+		END IF;
+		IF NOT EXISTS (
+			SELECT 1
+			FROM _group_membership gm
+			WHERE gm.group_id = NEW.assignment_group_id
+			  AND gm.user_id = NEW.assigned_user_id::text
+		) THEN
+			RAISE EXCEPTION 'assigned_user_id must be a member of assignment_group_id';
+		END IF;
+	END IF;
 
-	SELECT _id INTO skipped_id FROM base_task_state WHERE code = 'skipped';
-	SELECT _id INTO ready_id FROM base_task_state WHERE code = 'ready';
-	SELECT _id INTO inprog_id FROM base_task_state WHERE code = 'in_progress';
-	SELECT _id INTO blocked_id FROM base_task_state WHERE code = 'blocked';
+	next_state := COALESCE(NULLIF(BTRIM(NEW.state), ''), 'new');
+	NEW.state := next_state;
 
-	INSERT INTO base_task_transition (name, description, from_state_id, to_state_id, require_assignment)
-	SELECT 'ready_to_skipped', 'run_if condition false: task does not run.', ready_id, skipped_id, FALSE
-	WHERE NOT EXISTS (SELECT 1 FROM base_task_transition WHERE from_state_id = ready_id AND to_state_id = skipped_id);
+	CASE next_state
+		WHEN 'new', 'pending', 'ready', 'in_progress', 'ready_to_close', 'closed', 'skipped' THEN
+			NULL;
+		ELSE
+			RAISE EXCEPTION 'invalid task state %', next_state;
+	END CASE;
 
-	INSERT INTO base_task_transition (name, description, from_state_id, to_state_id, require_assignment)
-	SELECT 'in_progress_to_skipped', 'Bail out mid-flight: condition or script aborted the task.', inprog_id, skipped_id, FALSE
-	WHERE NOT EXISTS (SELECT 1 FROM base_task_transition WHERE from_state_id = inprog_id AND to_state_id = skipped_id);
+	IF next_state IN ('pending', 'in_progress', 'ready_to_close') AND (NEW.assignment_group_id IS NULL OR NEW.assigned_user_id IS NULL) THEN
+		RAISE EXCEPTION 'task must be assigned before leaving new';
+	END IF;
 
-	INSERT INTO base_task_transition (name, description, from_state_id, to_state_id, require_assignment)
-	SELECT 'blocked_to_skipped', 'Blocked work abandoned as skipped.', blocked_id, skipped_id, FALSE
-	WHERE NOT EXISTS (SELECT 1 FROM base_task_transition WHERE from_state_id = blocked_id AND to_state_id = skipped_id);
-END $$;
+	next_closure_reason := NULLIF(BTRIM(COALESCE(NEW.closure_reason, '')), '');
+	IF next_state = 'closed' THEN
+		next_closure_reason := COALESCE(next_closure_reason, 'completed');
+		CASE next_closure_reason
+			WHEN 'completed', 'cancelled' THEN
+				NULL;
+			ELSE
+				RAISE EXCEPTION 'invalid task closure_reason %', next_closure_reason;
+		END CASE;
+		NEW.closure_reason := next_closure_reason;
+	ELSE
+		NEW.closure_reason := NULL;
+	END IF;
+
+	IF TG_OP = 'INSERT' THEN
+		NEW.state_changed_at := NOW();
+		IF next_state IN ('in_progress', 'ready_to_close') AND NEW.started_at IS NULL THEN
+			NEW.started_at := NEW.state_changed_at;
+		END IF;
+		IF next_state IN ('closed', 'skipped') THEN
+			NEW.closed_at := COALESCE(NEW.closed_at, NEW.state_changed_at);
+		ELSE
+			NEW.closed_at := NULL;
+		END IF;
+		RETURN NEW;
+	END IF;
+
+	IF NEW.state IS DISTINCT FROM OLD.state THEN
+		NEW.state_changed_at := NOW();
+		NEW.started_at := OLD.started_at;
+		IF NEW.started_at IS NULL AND next_state IN ('in_progress', 'ready_to_close') THEN
+			NEW.started_at := NEW.state_changed_at;
+		END IF;
+		IF next_state IN ('closed', 'skipped') THEN
+			NEW.closed_at := COALESCE(OLD.closed_at, NEW.state_changed_at);
+		ELSE
+			NEW.closed_at := NULL;
+		END IF;
+	ELSE
+		NEW.state_changed_at := OLD.state_changed_at;
+		NEW.started_at := OLD.started_at;
+		IF next_state IN ('closed', 'skipped') THEN
+			NEW.closed_at := COALESCE(OLD.closed_at, NEW.closed_at, OLD.state_changed_at);
+		ELSE
+			NEW.closed_at := NULL;
+		END IF;
+	END IF;
+
+	RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_base_task_before_write ON base_task;
+
+CREATE TRIGGER trg_base_task_before_write
+BEFORE INSERT OR UPDATE ON base_task
+FOR EACH ROW
+EXECUTE FUNCTION base_task_before_write();
