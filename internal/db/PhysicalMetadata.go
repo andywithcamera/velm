@@ -308,6 +308,7 @@ func GetPhysicalColumns(ctx context.Context, tableName string) ([]Column, error)
 		return nil, fmt.Errorf("iterate physical columns: %w", err)
 	}
 	columns = appendVirtualColumns(tableName, columns)
+	columns = applyBuiltinColumnMetadata(tableName, columns)
 	return columns, nil
 }
 
