@@ -11,3 +11,6 @@ CREATE INDEX IF NOT EXISTS idx_base_task_definition ON base_task(definition_id);
 -- engine filters on it.
 ALTER TABLE _task_definition
 	ADD COLUMN IF NOT EXISTS _deleted_at TIMESTAMPTZ;
+
+-- Audit + record-version plumbing for the catalog table (009 pattern).
+SELECT _ensure_record_version_trigger('_task_definition');
