@@ -307,7 +307,32 @@ func GetPhysicalColumns(ctx context.Context, tableName string) ([]Column, error)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate physical columns: %w", err)
 	}
+	columns = appendVirtualColumns(tableName, columns)
 	return columns, nil
+}
+
+// builtinVirtualColumns defines write-only virtual columns rendered by the
+// generic form but never persisted directly. applyBuiltinRecordTransforms
+// translates their submitted values into real columns before the write.
+var builtinVirtualColumns = map[string][]Column{
+	"_ai_connection": {
+		{
+			NAME:      "api_key",
+			DATA_TYPE: "text",
+			LABEL:     "API Key",
+			IS_HIDDEN: false,
+		},
+	},
+}
+
+// appendVirtualColumns appends a table's virtual columns to the physical
+// column list used to build the generic form view.
+func appendVirtualColumns(tableName string, columns []Column) []Column {
+	virtual, ok := builtinVirtualColumns[tableName]
+	if !ok {
+		return columns
+	}
+	return append(columns, virtual...)
 }
 
 func builtinReferenceTable(columnName string) string {
