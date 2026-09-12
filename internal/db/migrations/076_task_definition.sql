@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS _task_definition (
 	run_if_script TEXT NOT NULL DEFAULT '',
 	-- Default routing group; copied onto the instance's assignment_group_id.
 	-- Group, never member — routing policy stays a separate future layer.
-	default_group_id UUID REFERENCES "group"(_id) ON DELETE SET NULL,
+	default_group_id UUID REFERENCES _group(_id) ON DELETE SET NULL,
 	-- Spawn rules per closure reason. Shape (JSONB):
 	-- [{ "on": "approved", "definition_slug": "publish-doc",
 	--    "input_mapping": {"doc_id": "$outputs.doc_id"},
