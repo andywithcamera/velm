@@ -195,6 +195,7 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	applyBuiltinRecordTransforms(tableName, formData, nullColumns)
 	filterSubmittedColumns(view.Columns, formData, nullColumns)
 	if taskTypeValue := TaskTypeValueForTable(r.Context(), tableName); taskTypeValue != "" && allowedColumns["work_type"] {
 		formData["work_type"] = taskTypeValue
@@ -331,6 +332,11 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyAuthzSaveSideEffects(context.Background(), tableName, oldSnapshot, newSnapshot)
+	if tableName == "_ai_connection" {
+		if err := syncConnectionAfterSave(r.Context(), id); err != nil {
+			log.Printf("failed to sync AI models after save table=%s id=%s err=%v", tableName, id, err)
+		}
+	}
 	if err := CaptureDataChange(context.Background(), updatedBy, tableName, id, operation, oldSnapshot, newSnapshot); err != nil {
 		log.Printf("failed to capture data change audit table=%s id=%s err=%v", tableName, id, err)
 	}

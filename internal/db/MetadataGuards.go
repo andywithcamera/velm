@@ -44,6 +44,9 @@ var protectedTableNames = map[string]bool{
 	"_docs_library":         true,
 	"_docs_article":         true,
 	"_docs_article_version": true,
+	"_ai_provider":          true,
+	"_ai_connection":        true,
+	"_ai_model":             true,
 	"base_counters":         true,
 }
 
@@ -59,6 +62,9 @@ var adminOnlyTableNames = map[string]bool{
 	"_role_inheritance": true,
 	"_role_permission":  true,
 	"_user_role":        true,
+	"_ai_provider":      true,
+	"_ai_connection":    true,
+	"_ai_model":         true,
 }
 
 var immutableTableNames = map[string]bool{
