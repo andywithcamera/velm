@@ -6,3 +6,8 @@ ALTER TABLE base_task
 	ADD COLUMN IF NOT EXISTS definition_id UUID REFERENCES _task_definition(_id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_base_task_definition ON base_task(definition_id);
+
+-- 076 omitted the standard soft-delete column on _task_definition; the
+-- engine filters on it.
+ALTER TABLE _task_definition
+	ADD COLUMN IF NOT EXISTS _deleted_at TIMESTAMPTZ;
