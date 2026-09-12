@@ -631,6 +631,12 @@ h4,
   border-radius: var(--radius-lg);
   background: var(--bg-base);
   box-shadow: 0 18px 42px rgba(6, 9, 26, 0.28);
+  /* Long menus (e.g. admin) must scroll on small screens instead of
+     overflowing past the viewport, where they are unreachable. */
+  max-height: min(70vh, 40rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ui-query-suggestions {
