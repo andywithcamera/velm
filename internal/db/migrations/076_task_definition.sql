@@ -119,7 +119,7 @@ tables:
         label: Default Group
         data_type: reference
         is_nullable: true
-        reference_table: "group"
+        reference_table: "_group"
       - name: spawn_rules
         label: Spawn Rules
         data_type: json
@@ -204,7 +204,7 @@ tables:
         label: Default Group
         data_type: reference
         is_nullable: true
-        reference_table: "group"
+        reference_table: "_group"
       - name: spawn_rules
         label: Spawn Rules
         data_type: json
