@@ -53,12 +53,10 @@ CREATE INDEX IF NOT EXISTS idx_task_definition_active
 ALTER TABLE base_task
 	ADD COLUMN IF NOT EXISTS variables JSONB NOT NULL DEFAULT '{}'::jsonb;
 
--- Skipped is a first-class closure path (run_if false).
-ALTER TABLE base_task
-	DROP CONSTRAINT IF EXISTS chk_base_task_state;
-ALTER TABLE base_task
-	ADD CONSTRAINT chk_base_task_state
-	CHECK (state IN ('new','pending','in_progress','ready_to_close','closed','skipped'));
+-- NOTE: an earlier revision of this migration added a CHECK on a
+-- nonexistent base_task.state column. The real state model is state_id +
+-- base_task_state rows + base_task_transition (047); 'skipped' is added
+-- there by 077_fix_task_state_model.sql.
 
 -- Catalog app for definitions. Definitions are business data: admins edit
 -- these rows through the normal record forms; YAML is only the seed channel.
