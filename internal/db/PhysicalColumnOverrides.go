@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"strings"
 )
 
 // builtinColumnMetadata carries human-facing metadata for physical columns
