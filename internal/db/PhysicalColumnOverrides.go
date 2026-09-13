@@ -18,6 +18,15 @@ type builtinColumnOverride struct {
 	REFERENCE_TABLE string
 	CONDITION_EXPR  string
 	CHOICES         []ChoiceOption
+	// NULLABLE relaxes the NOT NULL constraint at the form layer for
+	// system-populated columns (e.g. api_key_enc is filled by the save
+	// path, not the user). Does not alter the physical schema.
+	NULLABLE bool
+	// HIDDEN / READONLY override catalog-derived visibility. Hidden columns
+	// never render in generic forms or lists; readonly renders but is
+	// not editable.
+	HIDDEN   bool
+	READONLY bool
 }
 
 var builtinColumnMetadata = map[string]map[string]builtinColumnOverride{
@@ -39,8 +48,20 @@ var builtinColumnMetadata = map[string]map[string]builtinColumnOverride{
 			DATA_TYPE:       "reference",
 			REFERENCE_TABLE: "_ai_provider",
 		},
+		"api_key_enc": {
+			// System-populated by the save path (encrypted API key).
+			// Never rendered; not form-required.
+			NULLABLE: true,
+			HIDDEN:   true,
+		},
 		"api_key_fingerprint": {
-			LABEL: "API Key Fingerprint",
+			// System-generated from the key for display; not form-required.
+			NULLABLE: true,
+			HIDDEN:   true,
+		},
+		"account_info": {
+			// Free-form bookkeeping JSONB; optional.
+			NULLABLE: true,
 		},
 		"is_active": {
 			LABEL:     "Is Active",
@@ -90,6 +111,15 @@ func applyBuiltinColumnMetadata(tableName string, columns []Column) []Column {
 		}
 		if len(over.CHOICES) > 0 {
 			columns[i].CHOICES = append([]ChoiceOption(nil), over.CHOICES...)
+		}
+		if over.NULLABLE {
+			columns[i].IS_NULLABLE = true
+		}
+		if over.HIDDEN {
+			columns[i].IS_HIDDEN = true
+		}
+		if over.READONLY {
+			columns[i].IS_READONLY = true
 		}
 	}
 	return columns
