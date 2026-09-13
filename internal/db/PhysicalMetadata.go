@@ -322,6 +322,11 @@ var builtinVirtualColumns = map[string][]Column{
 			DATA_TYPE: "text",
 			LABEL:     "API Key",
 			IS_HIDDEN: false,
+			// Virtual columns are consumed by applyBuiltinRecordTransforms
+			// before the post-transform ValidateFormWrite pass, so they must
+			// never be form-required - IS_NULLABLE=false would fail that
+			// pass after the value has been translated into api_key_enc.
+			IS_NULLABLE: true,
 		},
 	},
 }
