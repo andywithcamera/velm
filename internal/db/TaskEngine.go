@@ -78,7 +78,7 @@ func getTaskDefinition(ctx context.Context, q scriptQuerier, id string) (*TaskDe
 	err := q.QueryRow(ctx, `
 		SELECT _id::text, slug, display_name, is_container, script_text, run_if_script,
 			default_group_id::text, spawn_rules, is_active
-		FROM _task_definition WHERE _id = $1 AND _deleted_at IS NULL`, id).Scan(
+		FROM base_task_definition WHERE _id = $1 AND _deleted_at IS NULL`, id).Scan(
 		&d.ID, &d.Slug, &d.DisplayName, &d.IsContainer, &d.ScriptText, &d.RunIfScript,
 		&groupID, &spawnRulesJSON, &d.IsActive)
 	if err != nil {
@@ -108,7 +108,7 @@ type childSpec struct {
 func getTaskDefinitionChildren(ctx context.Context, q scriptQuerier, containerID string) ([]childSpec, error) {
 	rows, err := q.Query(ctx, `
 		SELECT child_definition_id::text, input_mapping
-		FROM _task_definition_child
+		FROM base_task_definition_child
 		WHERE container_definition_id = $1
 		ORDER BY sort_order, _created_at`, containerID)
 	if err != nil {
@@ -355,7 +355,7 @@ func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) er
 		_ = tx.QueryRow(ctx, `SELECT definition_id::text FROM base_task WHERE _id = $1`, taskID).Scan(&defID)
 		if defID != nil && *defID != "" {
 			var slug string
-			if err := tx.QueryRow(ctx, `SELECT slug FROM _task_definition WHERE _id = $1`, *defID).Scan(&slug); err == nil {
+			if err := tx.QueryRow(ctx, `SELECT slug FROM base_task_definition WHERE _id = $1`, *defID).Scan(&slug); err == nil {
 				var parentVars map[string]any
 				var parentJSON []byte
 				if err := tx.QueryRow(ctx, `SELECT variables FROM base_task WHERE _id = $1`, *parentID).Scan(&parentJSON); err == nil {
@@ -421,7 +421,7 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, groupID *string, requestedBy string, inputs map[string]any) error {
 	var defID string
 	err := tx.QueryRow(ctx,
-		`SELECT _id::text FROM _task_definition WHERE slug = $1 AND is_active AND _deleted_at IS NULL`, slug).Scan(&defID)
+		`SELECT _id::text FROM base_task_definition WHERE slug = $1 AND is_active AND _deleted_at IS NULL`, slug).Scan(&defID)
 	if err != nil {
 		return fmt.Errorf("spawn rule references unknown definition %q: %w", slug, err)
 	}

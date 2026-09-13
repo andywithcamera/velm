@@ -15,7 +15,7 @@
 --
 -- parent_task_id already exists on base_task (047) — reused, not recreated.
 
-CREATE TABLE IF NOT EXISTS _task_definition (
+CREATE TABLE IF NOT EXISTS base_task_definition (
 	_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	slug TEXT NOT NULL UNIQUE,          -- 'write-doc-draft', 'reboot-server'
 	display_name TEXT NOT NULL,
@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS _task_definition (
 	_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_task_definition_active
-	ON _task_definition(is_active);
+CREATE INDEX IF NOT EXISTS idx_base_task_definition_active
+	ON base_task_definition(is_active);
 
 -- Instance side: variable scope lives on the task row.
 ALTER TABLE base_task
@@ -73,7 +73,7 @@ description: Composable task definitions. Container tasks hold children; leaf ta
 dependencies:
   - base
 tables:
-  - name: _task_definition
+  - name: base_task_definition
     label_singular: Task Definition
     label_plural: Task Definitions
     display_field: display_name
@@ -158,7 +158,7 @@ description: Composable task definitions. Container tasks hold children; leaf ta
 dependencies:
   - base
 tables:
-  - name: _task_definition
+  - name: base_task_definition
     label_singular: Task Definition
     label_plural: Task Definitions
     display_field: display_name
