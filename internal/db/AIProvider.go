@@ -9,14 +9,14 @@ import (
 // AIProvider is a catalog row describing an external model API surface
 // (endpoint, wire style, auth header conventions). No secrets live here.
 type AIProvider struct {
-	ID                   string `json:"_id"`
-	Slug                 string `json:"slug"`
-	DisplayName          string `json:"display_name"`
-	BaseURL              string `json:"base_url"`
-	APIStyle             string `json:"api_style"`
-	DefaultListModelsPath string `json:"default_list_models_path"`
-	IsActive             bool   `json:"is_active"`
-	ProviderMetadata     map[string]any `json:"provider_metadata"`
+	ID                    string         `json:"_id"`
+	Slug                  string         `json:"slug"`
+	DisplayName           string         `json:"display_name"`
+	BaseURL               string         `json:"base_url"`
+	APIStyle              string         `json:"api_style"`
+	DefaultListModelsPath string         `json:"default_list_models_path"`
+	IsActive              bool           `json:"is_active"`
+	ProviderMetadata      map[string]any `json:"provider_metadata"`
 }
 
 const aiProviderColumns = `_id, slug, display_name, base_url, api_style, default_list_models_path, is_active, provider_metadata`

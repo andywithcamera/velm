@@ -1,8 +1,8 @@
 package db
 
 import (
-	"encoding/json"
 	"context"
+	"encoding/json"
 )
 
 // AIModel is a callable model owned by a Connection (issue #93 decision:
