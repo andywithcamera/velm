@@ -318,9 +318,9 @@ func GetPhysicalColumns(ctx context.Context, tableName string) ([]Column, error)
 var builtinVirtualColumns = map[string][]Column{
 	"_ai_connection": {
 		{
-			NAME: "api_key",
+			NAME:      "api_key",
 			DATA_TYPE: "text",
-			LABEL: "API Key",
+			LABEL:     "API Key",
 			IS_HIDDEN: false,
 			// Virtual columns (e.g. write-only secrets) are consumed by
 			// applyBuiltinRecordTransforms before the post-transform
