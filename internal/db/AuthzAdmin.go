@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -194,6 +195,9 @@ func ListRolePermissionAssignments(ctx context.Context) ([]RolePermissionAssignm
 }
 
 func CreateRole(ctx context.Context, name, description string, priority int) error {
+	if isReservedRoleName(name) {
+		return fmt.Errorf("role name %q is reserved: it matches any signed-in user and is set on service methods and endpoints, not granted to people", strings.TrimSpace(name))
+	}
 	_, err := Pool.Exec(ctx, `
 		INSERT INTO _role (name, description, is_system, priority)
 		VALUES ($1, $2, FALSE, $3)
