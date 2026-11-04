@@ -285,6 +285,12 @@ func validateAutoNumberPrefix(prefix string) error {
 	return nil
 }
 
+// IsProtectedTableName reports whether the table is reserved for platform
+// metadata and must not be read through app runtime service calls.
+func IsProtectedTableName(name string) bool {
+	return isProtectedTableName(name)
+}
+
 func isProtectedTableName(name string) bool {
 	n := strings.ToLower(strings.TrimSpace(name))
 	if n == "" {
