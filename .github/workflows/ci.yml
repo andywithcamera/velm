@@ -32,13 +32,32 @@ jobs:
 
       - name: Verify gofmt on changed Go files
         run: |
+          base=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git fetch origin "${{ github.base_ref }}" --depth=1
-            files="$(git diff --name-only --diff-filter=ACMRT "origin/${{ github.base_ref }}"...HEAD -- '*.go')"
+            base="origin/${{ github.base_ref }}"
+            # Fetch the base branch in full. A depth-limited fetch grafts the base
+            # tip with its parents cut, so `base...HEAD` fails with "no merge base"
+            # as soon as the base branch moves past the branch point — which every
+            # PR that sits for review eventually hits. The checkout already pulls
+            # full history for HEAD, so this shares nearly all objects.
+            git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
           elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-            files="$(git diff --name-only --diff-filter=ACMRT "${{ github.event.before }}"...HEAD -- '*.go')"
-          else
+            # A force-push can name a commit this runner has never seen.
+            if git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
+              base="${{ github.event.before }}"
+            else
+              echo "Commit ${{ github.event.before }} is not present locally; checking every Go file."
+            fi
+          fi
+
+          if [ -z "$base" ]; then
             files="$(git ls-files '*.go')"
+          elif ! files="$(git diff --name-only --diff-filter=ACMRT "$base...HEAD" -- '*.go' 2>/dev/null)"; then
+            # No merge base. A two-dot diff yields the same file set for the
+            # purpose of a format check, so fall back rather than fail with a
+            # message that says nothing about formatting.
+            echo "No merge base with $base; falling back to a two-dot diff."
+            files="$(git diff --name-only --diff-filter=ACMRT "$base..HEAD" -- '*.go')"
           fi
 
           if [ -z "$files" ]; then
