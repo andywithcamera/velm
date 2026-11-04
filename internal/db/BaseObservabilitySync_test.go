@@ -106,4 +106,12 @@ tables:
 	if got := definition.Endpoints[0].Call; got != "observability.ingest_event" {
 		t.Fatalf("expected observability ingest endpoint call, got %q", got)
 	}
+	// Fail-closed authorization: an enabled endpoint with no roles denies every
+	// caller, so the shipped base app must gate both the method and the endpoint.
+	if got := definition.Services[0].Methods[0].Roles; len(got) != 1 || got[0] != AuthenticatedRole {
+		t.Fatalf("expected ingest_event roles [%s], got %v", AuthenticatedRole, got)
+	}
+	if got := definition.Endpoints[0].Roles; len(got) != 1 || got[0] != AuthenticatedRole {
+		t.Fatalf("expected observability ingest endpoint roles [%s], got %v", AuthenticatedRole, got)
+	}
 }
