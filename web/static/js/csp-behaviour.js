@@ -6,11 +6,15 @@
 
   function navigate(url) {
     if (!url) return;
+    // The URL can come from a data attribute rendered into the page, so it is
+    // sanitised here before it reaches any navigation sink.
+    var safeUrl = window.velmSafeNavigationHref(url);
+    if (!safeUrl) return;
     if (typeof window.navigateWithTransition === "function") {
-      window.navigateWithTransition(url);
+      window.navigateWithTransition(safeUrl);
       return;
     }
-    window.location.href = url;
+    window.location.href = safeUrl;
   }
 
   function isModifiedClick(event) {
@@ -50,7 +54,7 @@
 
     var navigable = event.target.closest("[data-navigate-url], [data-navigate-record]");
     if (navigable && !isModifiedClick(event)) {
-      var url = navigable.getAttribute("data-navigate-url") || navigable.dataset.recordUrl;
+      var url = navigable.getAttribute("data-navigate-url") || navigable.getAttribute("data-record-url");
       if (url) {
         event.preventDefault();
         navigate(url);
