@@ -836,6 +836,46 @@ Rules:
 - `roles` is a coarse role gate: user must have at least one listed role
 - `rules` are evaluated in ascending `order`
 - the first matching rule for the operation and field decides the result
+- **order matters more than intent.** A deny placed after a rule that already
+  matches those records never runs. Restrict a role to a subset of records by
+  allowing the subset first and denying everything else last:
+
+  ```yaml
+  # correct — closed records are hidden
+  rules:
+    - name: open_records_readable
+      order: 10
+      effect: allow
+      operation: R
+      role: reader
+      condition: "state == 'open'"
+    - name: everything_else_denied
+      order: 20
+      effect: deny
+      operation: R
+      role: reader
+  ```
+
+  ```yaml
+  # wrong — hide_closed never fires, readers see every record
+  rules:
+    - name: reader_can_read
+      order: 10
+      effect: allow
+      operation: R
+      role: reader
+    - name: hide_closed
+      order: 20
+      effect: deny
+      operation: R
+      role: reader
+      condition: "state == 'closed'"
+  ```
+
+  Saving a definition with a rule that can never decide anything is now a
+  validation error naming both rules. Only provable shadowing is rejected: an
+  earlier rule in the same scope, for the same role, with no condition or an
+  identical one.
 - `operation` must normalize to one of:
   - `C`
   - `R`
