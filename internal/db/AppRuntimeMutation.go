@@ -14,7 +14,9 @@ func loadRecordSnapshotWithQuerier(ctx context.Context, querier scriptQuerier, t
 	if recordID == "" || recordID == "new" {
 		return map[string]any{}
 	}
-	record, err := getScriptRecordWithQuerier(ctx, querier, tableName, recordID)
+	// A snapshot is read for a row this operation is already working on (the
+	// caller loaded it by ID for a write), so it is not filtered again here.
+	record, err := loadScriptRecord(ctx, querier, tableName, recordID)
 	if err != nil || record == nil {
 		return map[string]any{}
 	}

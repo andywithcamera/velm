@@ -22,13 +22,19 @@ type ScriptRuntimeConfig struct {
 }
 
 type ScriptExecutionOptions struct {
-	Code           string
-	AppScope       string
-	TableName      string
-	EventName      string
-	TriggerType    string
-	Language       string
-	UserID         string
+	Code        string
+	AppScope    string
+	TableName   string
+	EventName   string
+	TriggerType string
+	Language    string
+	UserID      string
+	// System marks a run with no acting user: a scheduled trigger, or a
+	// task-engine run started outside any request. Row-level `security` rules
+	// are not applied to a system run. Set it only where the work genuinely
+	// has no user behind it — an empty UserID is not a system run, it is a
+	// user with no identity, and row-level rules refuse it.
+	System         bool
 	RequestID      string
 	Input          any
 	Payload        any
@@ -65,6 +71,7 @@ type scriptRuntimeContext struct {
 	modelDescriptors map[string]scriptModelDescriptor
 	appScope         string
 	currentTableName string
+	access           *scriptAccess
 	userID           string
 	requestID        string
 	logs             []ScriptExecutionLog
@@ -124,6 +131,7 @@ func executeJavaScriptWithQuerier(ctx context.Context, querier scriptQuerier, op
 		userID:    strings.TrimSpace(opts.UserID),
 		requestID: strings.TrimSpace(opts.RequestID),
 	}
+	runtimeCtx.access = newScriptAccess(ctx, scriptActorForOptions(opts))
 	if runtimeCtx.db == nil {
 		runtimeCtx.db = Pool
 	}
@@ -373,7 +381,7 @@ func (runtimeCtx *scriptRuntimeContext) newTableObject(tableName string) (*goja.
 func (runtimeCtx *scriptRuntimeContext) ctxRecordsGet(call goja.FunctionCall) goja.Value {
 	tableName := runtimeCtx.mustResolveTableArgument(call.Argument(0))
 	id := runtimeCtx.mustStringArgument(call.Argument(1), "record id")
-	record, err := getScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, id)
+	record, err := getScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, id)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return goja.Null()
@@ -386,7 +394,7 @@ func (runtimeCtx *scriptRuntimeContext) ctxRecordsGet(call goja.FunctionCall) go
 func (runtimeCtx *scriptRuntimeContext) ctxRecordsList(call goja.FunctionCall) goja.Value {
 	tableName := runtimeCtx.mustResolveTableArgument(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
-	items, err := listScriptRecordsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query)
+	items, err := listScriptRecordsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, query, securityOperationRead, 1000)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -396,7 +404,7 @@ func (runtimeCtx *scriptRuntimeContext) ctxRecordsList(call goja.FunctionCall) g
 func (runtimeCtx *scriptRuntimeContext) ctxRecordsListIDs(call goja.FunctionCall) goja.Value {
 	tableName := runtimeCtx.mustResolveTableArgument(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
-	ids, err := listScriptRecordIDsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query)
+	ids, err := listScriptRecordIDsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, query, securityOperationRead)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -417,7 +425,7 @@ func (runtimeCtx *scriptRuntimeContext) ctxRecordsUpdate(call goja.FunctionCall)
 	tableName := runtimeCtx.mustResolveTableArgument(call.Argument(0))
 	id := runtimeCtx.mustStringArgument(call.Argument(1), "record id")
 	patch := runtimeCtx.mustMapArgument(call.Argument(2), "patch")
-	record, err := updateScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, id, patch, runtimeCtx.userID)
+	record, err := updateScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, id, patch, runtimeCtx.userID)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -428,7 +436,7 @@ func (runtimeCtx *scriptRuntimeContext) ctxRecordsBulkPatch(call goja.FunctionCa
 	tableName := runtimeCtx.mustResolveTableArgument(call.Argument(0))
 	ids := runtimeCtx.mustStringSliceArgument(call.Argument(1), "ids")
 	patch := runtimeCtx.mustMapArgument(call.Argument(2), "patch")
-	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, ScriptRecordQuery{IDs: ids}, patch, runtimeCtx.userID)
+	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, ScriptRecordQuery{IDs: ids}, patch, runtimeCtx.userID, runtimeCtx.access)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -442,7 +450,7 @@ func (runtimeCtx *scriptRuntimeContext) ctxRecordsUpdateWhere(call goja.Function
 	tableName := runtimeCtx.mustResolveTableArgument(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
 	patch := runtimeCtx.mustMapArgument(call.Argument(2), "patch")
-	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, patch, runtimeCtx.userID)
+	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, patch, runtimeCtx.userID, runtimeCtx.access)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -455,7 +463,7 @@ func (runtimeCtx *scriptRuntimeContext) ctxRecordsUpdateWhere(call goja.Function
 func (runtimeCtx *scriptRuntimeContext) ctxRecordsDeleteWhere(call goja.FunctionCall) goja.Value {
 	tableName := runtimeCtx.mustResolveTableArgument(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
-	result, err := deleteScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, runtimeCtx.userID)
+	result, err := deleteScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, runtimeCtx.userID, runtimeCtx.access)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -588,7 +596,7 @@ func (runtimeCtx *scriptRuntimeContext) consoleLog(call goja.FunctionCall) goja.
 
 func (runtimeCtx *scriptRuntimeContext) boundTableGet(tableName string) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
-		record, err := getScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, runtimeCtx.mustStringArgument(call.Argument(0), "record id"))
+		record, err := getScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, runtimeCtx.mustStringArgument(call.Argument(0), "record id"))
 		if err != nil {
 			if strings.Contains(strings.ToLower(err.Error()), "not found") {
 				return goja.Null()
@@ -602,7 +610,7 @@ func (runtimeCtx *scriptRuntimeContext) boundTableGet(tableName string) func(goj
 func (runtimeCtx *scriptRuntimeContext) boundTableList(tableName string) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		query := runtimeCtx.mustQueryArgument(call.Argument(0))
-		items, err := listScriptRecordsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query)
+		items, err := listScriptRecordsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, query, securityOperationRead, 1000)
 		if err != nil {
 			panic(runtimeCtx.vm.NewGoError(err))
 		}
@@ -613,7 +621,7 @@ func (runtimeCtx *scriptRuntimeContext) boundTableList(tableName string) func(go
 func (runtimeCtx *scriptRuntimeContext) boundTableListIDs(tableName string) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		query := runtimeCtx.mustQueryArgument(call.Argument(0))
-		ids, err := listScriptRecordIDsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query)
+		ids, err := listScriptRecordIDsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, query, securityOperationRead)
 		if err != nil {
 			panic(runtimeCtx.vm.NewGoError(err))
 		}
@@ -636,7 +644,7 @@ func (runtimeCtx *scriptRuntimeContext) boundTableUpdate(tableName string) func(
 	return func(call goja.FunctionCall) goja.Value {
 		id := runtimeCtx.mustStringArgument(call.Argument(0), "record id")
 		patch := runtimeCtx.mustMapArgument(call.Argument(1), "patch")
-		record, err := updateScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, id, patch, runtimeCtx.userID)
+		record, err := updateScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, tableName, id, patch, runtimeCtx.userID)
 		if err != nil {
 			panic(runtimeCtx.vm.NewGoError(err))
 		}
@@ -648,7 +656,7 @@ func (runtimeCtx *scriptRuntimeContext) boundTableBulkPatch(tableName string) fu
 	return func(call goja.FunctionCall) goja.Value {
 		ids := runtimeCtx.mustStringSliceArgument(call.Argument(0), "ids")
 		patch := runtimeCtx.mustMapArgument(call.Argument(1), "patch")
-		result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, ScriptRecordQuery{IDs: ids}, patch, runtimeCtx.userID)
+		result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, ScriptRecordQuery{IDs: ids}, patch, runtimeCtx.userID, runtimeCtx.access)
 		if err != nil {
 			panic(runtimeCtx.vm.NewGoError(err))
 		}
@@ -663,7 +671,7 @@ func (runtimeCtx *scriptRuntimeContext) boundTableUpdateWhere(tableName string) 
 	return func(call goja.FunctionCall) goja.Value {
 		query := runtimeCtx.mustQueryArgument(call.Argument(0))
 		patch := runtimeCtx.mustMapArgument(call.Argument(1), "patch")
-		result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, patch, runtimeCtx.userID)
+		result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, patch, runtimeCtx.userID, runtimeCtx.access)
 		if err != nil {
 			panic(runtimeCtx.vm.NewGoError(err))
 		}
@@ -677,7 +685,7 @@ func (runtimeCtx *scriptRuntimeContext) boundTableUpdateWhere(tableName string) 
 func (runtimeCtx *scriptRuntimeContext) boundTableDeleteWhere(tableName string) func(goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		query := runtimeCtx.mustQueryArgument(call.Argument(0))
-		result, err := deleteScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, runtimeCtx.userID)
+		result, err := deleteScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, tableName, query, runtimeCtx.userID, runtimeCtx.access)
 		if err != nil {
 			panic(runtimeCtx.vm.NewGoError(err))
 		}

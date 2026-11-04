@@ -298,6 +298,11 @@ func executeTaskGoja(ctx context.Context, tx pgx.Tx, taskID, code string, vars m
 		TriggerType: "task_engine",
 		EventName:   "task_run",
 		UserID:      actorUserID,
+		// A task run with no actor was started by the engine, not by a
+		// person: a scheduled job, or a definition spawned by another task.
+		// It runs as the system, with actorUserID still stamped for audit
+		// when one was supplied.
+		System: strings.TrimSpace(actorUserID) == "",
 		Input: map[string]any{
 			"task_id":   taskID,
 			"variables": vars,
