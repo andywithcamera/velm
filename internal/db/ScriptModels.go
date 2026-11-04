@@ -270,7 +270,7 @@ func (runtimeCtx *scriptRuntimeContext) mustModelDescriptor(value goja.Value) sc
 func (runtimeCtx *scriptRuntimeContext) modelHelperGet(call goja.FunctionCall) goja.Value {
 	descriptor := runtimeCtx.mustModelDescriptor(call.Argument(0))
 	id := runtimeCtx.mustStringArgument(call.Argument(1), "record id")
-	record, err := getScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, id)
+	record, err := getScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, descriptor.TableName, id)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not found") {
 			return goja.Null()
@@ -283,7 +283,7 @@ func (runtimeCtx *scriptRuntimeContext) modelHelperGet(call goja.FunctionCall) g
 func (runtimeCtx *scriptRuntimeContext) modelHelperList(call goja.FunctionCall) goja.Value {
 	descriptor := runtimeCtx.mustModelDescriptor(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
-	items, err := listScriptRecordsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, query)
+	items, err := listScriptRecordsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, descriptor.TableName, query, securityOperationRead, 1000)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -293,7 +293,7 @@ func (runtimeCtx *scriptRuntimeContext) modelHelperList(call goja.FunctionCall) 
 func (runtimeCtx *scriptRuntimeContext) modelHelperListIDs(call goja.FunctionCall) goja.Value {
 	descriptor := runtimeCtx.mustModelDescriptor(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
-	ids, err := listScriptRecordIDsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, query)
+	ids, err := listScriptRecordIDsWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, descriptor.TableName, query, securityOperationRead)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -314,7 +314,7 @@ func (runtimeCtx *scriptRuntimeContext) modelHelperUpdate(call goja.FunctionCall
 	descriptor := runtimeCtx.mustModelDescriptor(call.Argument(0))
 	id := runtimeCtx.mustStringArgument(call.Argument(1), "record id")
 	patch := runtimeCtx.mustMapArgument(call.Argument(2), "patch")
-	record, err := updateScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, id, patch, runtimeCtx.userID)
+	record, err := updateScriptRecordWithQuerier(runtimeCtx.ctx, runtimeCtx.db, runtimeCtx.access, descriptor.TableName, id, patch, runtimeCtx.userID)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -325,7 +325,7 @@ func (runtimeCtx *scriptRuntimeContext) modelHelperBulkPatch(call goja.FunctionC
 	descriptor := runtimeCtx.mustModelDescriptor(call.Argument(0))
 	ids := runtimeCtx.mustStringSliceArgument(call.Argument(1), "ids")
 	patch := runtimeCtx.mustMapArgument(call.Argument(2), "patch")
-	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, ScriptRecordQuery{IDs: ids}, patch, runtimeCtx.userID)
+	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, ScriptRecordQuery{IDs: ids}, patch, runtimeCtx.userID, runtimeCtx.access)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -339,7 +339,7 @@ func (runtimeCtx *scriptRuntimeContext) modelHelperUpdateWhere(call goja.Functio
 	descriptor := runtimeCtx.mustModelDescriptor(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
 	patch := runtimeCtx.mustMapArgument(call.Argument(2), "patch")
-	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, query, patch, runtimeCtx.userID)
+	result, err := updateScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, query, patch, runtimeCtx.userID, runtimeCtx.access)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -352,7 +352,7 @@ func (runtimeCtx *scriptRuntimeContext) modelHelperUpdateWhere(call goja.Functio
 func (runtimeCtx *scriptRuntimeContext) modelHelperDeleteWhere(call goja.FunctionCall) goja.Value {
 	descriptor := runtimeCtx.mustModelDescriptor(call.Argument(0))
 	query := runtimeCtx.mustQueryArgument(call.Argument(1))
-	result, err := deleteScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, query, runtimeCtx.userID)
+	result, err := deleteScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, query, runtimeCtx.userID, runtimeCtx.access)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
@@ -368,7 +368,7 @@ func (runtimeCtx *scriptRuntimeContext) modelHelperDeleteRecord(call goja.Functi
 	result, err := deleteScriptRecordsWhereWithQuerier(runtimeCtx.ctx, runtimeCtx.db, descriptor.TableName, ScriptRecordQuery{
 		IDs:   []string{id},
 		Limit: 1,
-	}, runtimeCtx.userID)
+	}, runtimeCtx.userID, runtimeCtx.access)
 	if err != nil {
 		panic(runtimeCtx.vm.NewGoError(err))
 	}
