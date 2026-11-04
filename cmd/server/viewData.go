@@ -31,6 +31,7 @@ func newViewData(w http.ResponseWriter, r *http.Request, uri, title, section str
 		"Theme":       activeUserTheme(r.Context(), auth.UserIDFromRequest(r)),
 		"CSRFToken":   ensureCSRFToken(w, r),
 		"RequestID":   security.RequestIDFromContext(r.Context()),
+		"CSPNonce":    security.NonceFromContext(r.Context()),
 		"Breadcrumbs": buildBreadcrumbs(uri, title),
 	}
 }

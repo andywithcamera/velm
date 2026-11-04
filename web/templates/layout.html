@@ -9,14 +9,16 @@
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-        <script>
+        <script nonce="{{.CSPNonce}}">
             // Initial theme is rendered server-side into <html data-theme="...">
             // from the user's persisted preference (R4); no client-side guess needed.
         </script>
         <script src="https://unpkg.com/htmx.org@1.9.2"></script>
         <script src="https://unpkg.com/hyperscript.org@0.9.11"></script>
         <script src="/static/js/maintain-base-url.js"></script>
+        <script src="/static/js/navigation-guard.js"></script>
         <script src="/static/js/request-monitoring.js"></script>
+        <script src="/static/js/csp-behaviour.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
         <link rel="stylesheet" href="/static/css/ui.css?v=20260401a" />
         <style>
@@ -93,7 +95,7 @@
         </main>
         {{template "footer" .}}
 
-        <script>
+        <script nonce="{{.CSPNonce}}">
             history.pushState({}, "", "{{.Uri | js}}");
 
             document.body.addEventListener("htmx:configRequest", function (event) {
@@ -262,8 +264,9 @@
                 window.navigateWithTransition = function navigateWithTransition(rawHref) {
                     const destination = resolveNavigationDestination(rawHref);
                     if (!destination) {
-                        if (rawHref) {
-                            window.location.href = rawHref;
+                        const safeHref = window.velmSafeNavigationHref(rawHref);
+                        if (safeHref) {
+                            window.location.href = safeHref;
                         }
                         return false;
                     }

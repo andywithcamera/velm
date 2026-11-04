@@ -48,7 +48,7 @@
 	            class="ui-btn ui-btn-danger"
 	            formaction="{{if .FormDeleteAction}}{{.FormDeleteAction}}{{else}}/api/delete/{{.FormTable}}{{end}}"
 	            formmethod="post"
-	            onclick="return confirm('{{if .FormDeleteConfirm}}{{.FormDeleteConfirm}}{{else}}Soft-delete this record?{{end}}');"
+	            data-confirm="{{if .FormDeleteConfirm}}{{.FormDeleteConfirm}}{{else}}Soft-delete this record?{{end}}"
 	          >
 	            {{if .FormDeleteLabel}}{{.FormDeleteLabel}}{{else}}Delete{{end}}
 		          </button>
@@ -477,7 +477,7 @@
                     </thead>
                     <tbody>
                       {{range $row := .Rows}}
-                        <tr{{if $row.Href}} class="cursor-pointer" onclick='return window.navigateWithTransition("{{$row.Href}}")'>{{else}}>{{end}}
+                        <tr{{if $row.Href}} class="cursor-pointer" data-navigate-url="{{$row.Href}}"{{else}}>{{end}}
                           {{range $cellIndex, $cell := $row.Cells}}
                             <td>
                               {{if and $row.Href (eq $cellIndex 0)}}
@@ -611,7 +611,7 @@
   </div>
 </section>
 <div id="toast" class="ui-toast hidden"></div>
-<script>
+<script nonce="{{.CSPNonce}}">
   function showToast(message, isError = false) {
     const toast = document.getElementById("toast");
     toast.textContent = message;
