@@ -54,29 +54,49 @@ type scriptQuerier interface {
 	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }
 
-func GetScriptRecord(ctx context.Context, tableName, id string) (map[string]any, error) {
-	return getScriptRecordWithQuerier(ctx, Pool, tableName, id)
+// GetScriptRecord reads one record as the actor. Records the actor may not read
+// are reported as not found, so a script cannot probe for IDs.
+func GetScriptRecord(ctx context.Context, tableName, id string, actor ScriptActor) (map[string]any, error) {
+	return getScriptRecordWithQuerier(ctx, Pool, newScriptAccess(ctx, actor), tableName, id)
 }
 
-func getScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, tableName, id string) (map[string]any, error) {
-	items, err := listScriptRecordsWithQuerier(ctx, querier, tableName, ScriptRecordQuery{
+// getScriptRecordWithQuerier applies row-level security for the access actor.
+func getScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, access *scriptAccess, tableName, id string) (map[string]any, error) {
+	record, err := loadScriptRecord(ctx, querier, tableName, id)
+	if err != nil {
+		return nil, err
+	}
+	allowed, err := access.allows(tableName, securityOperationRead, record)
+	if err != nil {
+		return nil, err
+	}
+	if !allowed {
+		return nil, denyRecordError(tableName, id)
+	}
+	return record, nil
+}
+
+// loadScriptRecord reads a record with no row-level filtering. Use it only for
+// rows the caller has already been authorised for, or has just written itself.
+func loadScriptRecord(ctx context.Context, querier scriptQuerier, tableName, id string) (map[string]any, error) {
+	items, err := listScriptRecordsWithQuerier(ctx, querier, newScriptAccess(ctx, SystemScriptActor()), tableName, ScriptRecordQuery{
 		IDs:   []string{id},
 		Limit: 1,
-	})
+	}, securityOperationRead, 1)
 	if err != nil {
 		return nil, err
 	}
 	if len(items) == 0 {
-		return nil, fmt.Errorf("record %q not found in %q", id, tableName)
+		return nil, denyRecordError(tableName, id)
 	}
 	return items[0], nil
 }
 
-func ListScriptRecords(ctx context.Context, tableName string, query ScriptRecordQuery) ([]map[string]any, error) {
-	return listScriptRecordsWithQuerier(ctx, Pool, tableName, query)
+func ListScriptRecords(ctx context.Context, tableName string, query ScriptRecordQuery, actor ScriptActor) ([]map[string]any, error) {
+	return listScriptRecordsWithQuerier(ctx, Pool, newScriptAccess(ctx, actor), tableName, query, securityOperationRead, 1000)
 }
 
-func listScriptRecordsWithQuerier(ctx context.Context, querier scriptQuerier, tableName string, query ScriptRecordQuery) ([]map[string]any, error) {
+func listScriptRecordsWithQuerier(ctx context.Context, querier scriptQuerier, access *scriptAccess, tableName string, query ScriptRecordQuery, operation string, maxLimit int) ([]map[string]any, error) {
 	view, err := scriptViewForTable(tableName)
 	if err != nil {
 		return nil, err
@@ -91,10 +111,25 @@ func listScriptRecordsWithQuerier(ctx context.Context, querier scriptQuerier, ta
 	if limit <= 0 {
 		limit = 100
 	}
-	if limit > 1000 {
-		limit = 1000
+	if maxLimit <= 0 {
+		maxLimit = 1000
 	}
-	args = append(args, limit)
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+
+	// Filtering happens after the query, so a restricted actor can come back
+	// with fewer rows than it asked for. Widen the fetch to the cap so a page
+	// of records is not silently thinned out by rules on the first rows.
+	fetchLimit := limit
+	restricted, err := access.restricts(tableName, operation)
+	if err != nil {
+		return nil, err
+	}
+	if restricted {
+		fetchLimit = maxLimit
+	}
+	args = append(args, fetchLimit)
 
 	quotedTable, err := QuoteIdentifier(view.Table.NAME)
 	if err != nil {
@@ -147,6 +182,14 @@ func listScriptRecordsWithQuerier(ctx context.Context, querier scriptQuerier, ta
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+
+	items, err = access.filter(tableName, operation, items)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > limit {
+		items = items[:limit]
 	}
 	return items, nil
 }
@@ -221,14 +264,14 @@ func createScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, t
 		return nil, err
 	}
 
-	return getScriptRecordWithQuerier(ctx, querier, tableName, recordID)
+	return loadScriptRecord(ctx, querier, tableName, recordID)
 }
 
-func UpdateScriptRecord(ctx context.Context, tableName, id string, patch map[string]any, userID string) (map[string]any, error) {
-	return updateScriptRecordWithQuerier(ctx, Pool, tableName, id, patch, userID)
+func UpdateScriptRecord(ctx context.Context, tableName, id string, patch map[string]any, userID string, actor ScriptActor) (map[string]any, error) {
+	return updateScriptRecordWithQuerier(ctx, Pool, newScriptAccess(ctx, actor), tableName, id, patch, userID)
 }
 
-func updateScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, tableName, id string, patch map[string]any, userID string) (map[string]any, error) {
+func updateScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, access *scriptAccess, tableName, id string, patch map[string]any, userID string) (map[string]any, error) {
 	view, err := scriptViewForTable(tableName)
 	if err != nil {
 		return nil, err
@@ -236,7 +279,16 @@ func updateScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, t
 
 	oldSnapshot := loadRecordSnapshotWithQuerier(ctx, querier, tableName, id)
 	if len(oldSnapshot) == 0 {
-		return nil, fmt.Errorf("record %q not found in %q", id, tableName)
+		return nil, denyRecordError(tableName, id)
+	}
+	// An update returns the record, so it is a read too: refuse the row here
+	// rather than after the write.
+	allowedToUpdate, err := access.allows(tableName, securityOperationUpdate, oldSnapshot)
+	if err != nil {
+		return nil, err
+	}
+	if !allowedToUpdate {
+		return nil, denyRecordError(tableName, id)
 	}
 
 	formData, nullColumns, err := buildScriptWriteData(view, patch, strings.TrimSpace(userID), time.Now().Format(time.RFC3339), false)
@@ -311,92 +363,52 @@ func updateScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, t
 		return nil, err
 	}
 	if commandTag.RowsAffected() == 0 {
-		return nil, fmt.Errorf("record %q not found in %q", id, tableName)
+		return nil, denyRecordError(tableName, id)
 	}
-	return getScriptRecordWithQuerier(ctx, querier, tableName, id)
+	return loadScriptRecord(ctx, querier, tableName, id)
 }
 
-func ListScriptRecordIDs(ctx context.Context, tableName string, query ScriptRecordQuery) ([]string, error) {
-	return listScriptRecordIDsWithQuerier(ctx, Pool, tableName, query)
+func ListScriptRecordIDs(ctx context.Context, tableName string, query ScriptRecordQuery, actor ScriptActor) ([]string, error) {
+	return listScriptRecordIDsWithQuerier(ctx, Pool, newScriptAccess(ctx, actor), tableName, query, securityOperationRead)
 }
 
-func listScriptRecordIDsWithQuerier(ctx context.Context, querier scriptQuerier, tableName string, query ScriptRecordQuery) ([]string, error) {
-	view, err := scriptViewForTable(tableName)
+func listScriptRecordIDsWithQuerier(ctx context.Context, querier scriptQuerier, access *scriptAccess, tableName string, query ScriptRecordQuery, operation string) ([]string, error) {
+	records, err := listScriptRecordsWithQuerier(ctx, querier, access, tableName, query, operation, 5000)
 	if err != nil {
 		return nil, err
 	}
-
-	whereClause, args, err := buildScriptWhereClause(view, query, 1)
-	if err != nil {
-		return nil, err
-	}
-
-	limit := query.Limit
-	if limit <= 0 {
-		limit = 500
-	}
-	if limit > 5000 {
-		limit = 5000
-	}
-	args = append(args, limit)
-
-	quotedTable, err := QuoteIdentifier(view.Table.NAME)
-	if err != nil {
-		return nil, err
-	}
-
-	querySQL := fmt.Sprintf(`SELECT _id::text FROM %s`, quotedTable)
-	if whereClause != "" {
-		querySQL += ` WHERE ` + whereClause
-	}
-	orderClause, err := buildScriptOrderClause(view, query)
-	if err != nil {
-		return nil, err
-	}
-	querySQL += ` ORDER BY ` + orderClause
-	querySQL += fmt.Sprintf(` LIMIT $%d`, len(args))
-
-	rows, err := querier.Query(ctx, querySQL, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	ids := make([]string, 0, limit)
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		if id := strings.TrimSpace(fmt.Sprint(record["_id"])); id != "" {
+			ids = append(ids, id)
 		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	return ids, nil
 }
 
-func BulkPatchScriptRecords(ctx context.Context, tableName string, ids []string, patch map[string]any, userID string) (ScriptMutationResult, error) {
-	return UpdateScriptRecordsWhere(ctx, tableName, ScriptRecordQuery{IDs: ids}, patch, userID)
+func BulkPatchScriptRecords(ctx context.Context, tableName string, ids []string, patch map[string]any, userID string, actor ScriptActor) (ScriptMutationResult, error) {
+	return UpdateScriptRecordsWhere(ctx, tableName, ScriptRecordQuery{IDs: ids}, patch, userID, actor)
 }
 
-func UpdateScriptRecordsWhere(ctx context.Context, tableName string, query ScriptRecordQuery, patch map[string]any, userID string) (ScriptMutationResult, error) {
-	return updateScriptRecordsWhereWithQuerier(ctx, Pool, tableName, query, patch, userID)
+func UpdateScriptRecordsWhere(ctx context.Context, tableName string, query ScriptRecordQuery, patch map[string]any, userID string, actor ScriptActor) (ScriptMutationResult, error) {
+	return updateScriptRecordsWhereWithQuerier(ctx, Pool, tableName, query, patch, userID, newScriptAccess(ctx, actor))
 }
 
-func updateScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuerier, tableName string, query ScriptRecordQuery, patch map[string]any, userID string) (ScriptMutationResult, error) {
+func updateScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuerier, tableName string, query ScriptRecordQuery, patch map[string]any, userID string, access *scriptAccess) (ScriptMutationResult, error) {
 	if !scriptQueryHasSelectors(query) {
 		return ScriptMutationResult{}, fmt.Errorf("script mutation requires ids or filters")
 	}
 
-	ids, err := listScriptRecordIDsWithQuerier(ctx, querier, tableName, query)
+	// Resolve the targets under the update rules first, so a filter cannot be
+	// used to walk rows the actor may only read (or not even read).
+	ids, err := listScriptRecordIDsWithQuerier(ctx, querier, access, tableName, query, securityOperationUpdate)
 	if err != nil {
 		return ScriptMutationResult{}, err
 	}
 
 	updatedIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
-		record, err := updateScriptRecordWithQuerier(ctx, querier, tableName, id, patch, userID)
+		record, err := updateScriptRecordWithQuerier(ctx, querier, access, tableName, id, patch, userID)
 		if err != nil {
 			return ScriptMutationResult{}, err
 		}
@@ -416,11 +428,11 @@ func updateScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuer
 	}, nil
 }
 
-func DeleteScriptRecordsWhere(ctx context.Context, tableName string, query ScriptRecordQuery, userID string) (ScriptMutationResult, error) {
-	return deleteScriptRecordsWhereWithQuerier(ctx, Pool, tableName, query, userID)
+func DeleteScriptRecordsWhere(ctx context.Context, tableName string, query ScriptRecordQuery, userID string, actor ScriptActor) (ScriptMutationResult, error) {
+	return deleteScriptRecordsWhereWithQuerier(ctx, Pool, tableName, query, userID, newScriptAccess(ctx, actor))
 }
 
-func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuerier, tableName string, query ScriptRecordQuery, userID string) (ScriptMutationResult, error) {
+func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuerier, tableName string, query ScriptRecordQuery, userID string, access *scriptAccess) (ScriptMutationResult, error) {
 	if !scriptQueryHasSelectors(query) {
 		return ScriptMutationResult{}, fmt.Errorf("script delete requires ids or filters")
 	}
@@ -437,6 +449,25 @@ func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuer
 	if err != nil {
 		return ScriptMutationResult{}, err
 	}
+
+	// The delete runs as one statement, so the rules cannot be applied row by
+	// row afterwards. Resolve the permitted target IDs first and constrain the
+	// statement to them.
+	restricted, err := access.restricts(tableName, securityOperationDelete)
+	if err != nil {
+		return ScriptMutationResult{}, err
+	}
+	permittedIDs := []string(nil)
+	if restricted {
+		permittedIDs, err = listScriptRecordIDsWithQuerier(ctx, querier, access, tableName, query, securityOperationDelete)
+		if err != nil {
+			return ScriptMutationResult{}, err
+		}
+		if len(permittedIDs) == 0 {
+			return ScriptMutationResult{}, nil
+		}
+	}
+
 	orderClause, err := buildScriptOrderClause(view, query)
 	if err != nil {
 		return ScriptMutationResult{}, err
@@ -473,11 +504,17 @@ func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuer
 		limitClause = fmt.Sprintf(" LIMIT $%d", len(args))
 	}
 
+	idClause := ""
+	if restricted {
+		args = append(args, permittedIDs)
+		idClause = fmt.Sprintf(" AND _id::text = ANY($%d)", len(args))
+	}
+
 	sqlQuery := fmt.Sprintf(
 		`WITH target AS (
 			SELECT _id
 			FROM %s
-			WHERE %s
+			WHERE %s%s
 			ORDER BY %s%s
 		)
 		UPDATE %s AS t
@@ -487,6 +524,7 @@ func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuer
 		RETURNING t._id::text`,
 		quotedTable,
 		whereClause,
+		idClause,
 		orderClause,
 		limitClause,
 		quotedTable,

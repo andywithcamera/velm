@@ -16,12 +16,16 @@ type AppRuntimeEndpoint struct {
 }
 
 type AppServiceMethodCall struct {
-	App           RegisteredApp
-	Call          string
-	TableName     string
-	EventName     string
-	TriggerType   string
-	UserID        string
+	App         RegisteredApp
+	Call        string
+	TableName   string
+	EventName   string
+	TriggerType string
+	UserID      string
+	// System marks a call with no acting user, so row-level security rules do
+	// not apply. A before-write trigger fired by a write that had no acting
+	// user is a system write, and runs as one.
+	System        bool
 	RequestID     string
 	Input         any
 	Payload       any
@@ -313,6 +317,7 @@ func executeAppServiceMethodWithQuerier(ctx context.Context, querier scriptQueri
 		TriggerType:    strings.TrimSpace(strings.ToLower(call.TriggerType)),
 		Language:       firstNonEmpty(method.Language, "javascript"),
 		UserID:         strings.TrimSpace(call.UserID),
+		System:         call.System,
 		RequestID:      strings.TrimSpace(call.RequestID),
 		Input:          call.Input,
 		Payload:        call.Payload,
@@ -351,6 +356,7 @@ func RunAppBeforeWriteTriggersWithQuerier(ctx context.Context, querier scriptQue
 			EventName:   eventName,
 			TriggerType: "record",
 			UserID:      userID,
+			System:      strings.TrimSpace(userID) == "",
 			RequestID:   requestID,
 			Record:      currentRecord,
 			Previous:    previous,
