@@ -94,7 +94,7 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 
 	var record map[string]any
 	if tableName != "" && recordID != "" {
-		record, err = db.GetScriptRecord(r.Context(), tableName, recordID)
+		record, err = db.GetScriptRecord(r.Context(), tableName, recordID, db.UserScriptActor(auth.UserIDFromRequest(r)))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
