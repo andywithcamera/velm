@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,18 @@ import (
 )
 
 const appRuntimeRequestBodyLimit = 2 << 20
+
+// Indirection over the db calls the service-call handler makes, so tests can
+// assert ordering (nothing reads the record store before authorization) without
+// a live PostgreSQL instance.
+var (
+	runtimeResolveApp           = db.ResolveRuntimeApp
+	runtimeResolveAppByTable    = db.ResolveRuntimeAppByTable
+	runtimeResolveServiceMethod = db.ResolveRuntimeServiceMethod
+	runtimeServiceMethodAllowed = db.AppServiceMethodAccessAllowed
+	runtimeGetScriptRecord      = db.GetScriptRecord
+	runtimeExecuteServiceMethod = db.ExecuteAppServiceMethod
+)
 
 func handleAppRuntimeEndpoint(w http.ResponseWriter, r *http.Request) {
 	endpoint, found, err := db.ResolveAppRuntimeEndpoint(r.Context(), r.Method, r.URL.Path)
@@ -82,7 +95,7 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	app, found, err := db.ResolveRuntimeApp(r.Context(), appName)
+	app, found, err := runtimeResolveApp(r.Context(), appName)
 	if err != nil {
 		http.Error(w, "Failed to resolve app", http.StatusInternalServerError)
 		return
@@ -90,15 +103,6 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 	if !found {
 		http.Error(w, "App not found", http.StatusNotFound)
 		return
-	}
-
-	var record map[string]any
-	if tableName != "" && recordID != "" {
-		record, err = db.GetScriptRecord(r.Context(), tableName, recordID, db.UserScriptActor(auth.UserIDFromRequest(r)))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
 	}
 
 	var methodInput any = input
@@ -114,7 +118,7 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	serviceApp, method, found, err := db.ResolveRuntimeServiceMethod(r.Context(), app, callName, true)
+	serviceApp, method, found, err := runtimeResolveServiceMethod(r.Context(), app, callName, true)
 	if err != nil {
 		http.Error(w, "Failed to resolve service method", http.StatusInternalServerError)
 		return
@@ -123,7 +127,11 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Service method not found", http.StatusNotFound)
 		return
 	}
-	allowed, err := db.AppServiceMethodAccessAllowed(r.Context(), serviceApp, method, auth.UserIDFromRequest(r))
+	// Authorization runs before anything touches the record store. Previously
+	// the record was fetched first (#134), so an unauthorized caller could use
+	// the reflected error text as an oracle to enumerate which tables and
+	// record ids exist. Any failure below is now reported opaquely.
+	allowed, err := runtimeServiceMethodAllowed(r.Context(), serviceApp, method, auth.UserIDFromRequest(r))
 	if err != nil {
 		http.Error(w, "Failed to authorize service method", http.StatusInternalServerError)
 		return
@@ -133,7 +141,25 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := db.ExecuteAppServiceMethod(r.Context(), db.AppServiceMethodCall{
+	if tableName != "" {
+		if err := validateRuntimeTableName(r.Context(), app, tableName); err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+	}
+
+	var record map[string]any
+	if tableName != "" && recordID != "" {
+		// Reached only after the caller has been authorized for this method.
+		// The actor keeps #146's row-level security on the read itself.
+		record, err = runtimeGetScriptRecord(r.Context(), tableName, recordID, db.UserScriptActor(auth.UserIDFromRequest(r)))
+		if err != nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+	}
+
+	result, err := runtimeExecuteServiceMethod(r.Context(), db.AppServiceMethodCall{
 		App:           app,
 		Call:          callName,
 		TableName:     tableName,
@@ -150,6 +176,27 @@ func handleAppRuntimeServiceCall(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAppRuntimeResult(w, result)
+}
+
+// validateRuntimeTableName rejects table names a service call may not read:
+// anything that is not a plain identifier, anything on the existing protected
+// list, and anything the resolved app does not own.
+func validateRuntimeTableName(ctx context.Context, app db.RegisteredApp, tableName string) error {
+	tableName = strings.TrimSpace(strings.ToLower(tableName))
+	if !db.IsSafeIdentifier(tableName) {
+		return fmt.Errorf("invalid table name")
+	}
+	if db.IsProtectedTableName(tableName) {
+		return fmt.Errorf("protected table")
+	}
+	owner, found, err := runtimeResolveAppByTable(ctx, tableName)
+	if err != nil {
+		return err
+	}
+	if !found || owner.ID != app.ID {
+		return fmt.Errorf("table not available to app")
+	}
+	return nil
 }
 
 func appRuntimeRequestPayload(r *http.Request) (any, map[string]any, error) {

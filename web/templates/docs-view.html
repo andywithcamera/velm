@@ -181,7 +181,7 @@
             <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
             <input type="hidden" name="article_slug" value="{{.DocsArticleSelected.Slug}}">
             <button type="submit" class="ui-btn ui-btn-secondary"
-                    onclick="return confirm('Archive this doc? Current and historical versions will be retained.');">Archive Doc</button>
+                    data-confirm="Archive this doc? Current and historical versions will be retained.">Archive Doc</button>
           </form>
         </div>
       {{end}}
@@ -278,7 +278,7 @@
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
             <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
             <button type="submit" class="ui-btn ui-btn-secondary"
-                    onclick="return confirm('Archive this library? Existing docs stay in history but the library is removed from active navigation.');">Archive Library</button>
+                    data-confirm="Archive this library? Existing docs stay in history but the library is removed from active navigation.">Archive Library</button>
           </form>
         {{end}}
       </div>
@@ -286,7 +286,7 @@
   {{end}}
 </section>
 
-<script>
+<script nonce="{{.CSPNonce}}">
   (function () {
     var editor = document.getElementById('docs-article-body');
     var hidden = document.getElementById('docs-markdown-source');

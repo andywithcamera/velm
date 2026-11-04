@@ -11,7 +11,7 @@
 {{else}}
 <p class="ui-search-empty">No results found.</p>
 {{end}}
-<script>
+<script nonce="{{.CSPNonce}}">
 (function () {
   if (window.__velmSearchResultsBound) {
     return;

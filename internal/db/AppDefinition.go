@@ -2234,7 +2234,98 @@ func validateAppDefinitionSecurity(roleSet map[string]bool, security AppDefiniti
 			}
 		}
 	}
+	if err := validateSecurityRuleShadowing(security.Rules, context, expectedTable); err != nil {
+		return err
+	}
 	return nil
+}
+
+// validateSecurityRuleShadowing rejects rules that can never decide anything.
+//
+// Rules are evaluated in ascending order and the first match for an operation
+// and field wins, so an earlier rule that matches a superset of a later rule's
+// records makes that later rule dead. The dangerous case is a shadowed deny: it
+// reads as though it protects the table while the earlier allow already granted
+// access, and nothing else reports it.
+//
+// Only provable shadowing is rejected — an earlier rule in the same scope, for
+// the same role, with no condition (so it matches unconditionally) or with an
+// identical condition. Anything needing reasoning about condition implication
+// is left alone, so a valid definition is never refused on a guess.
+//
+// A conditional allow followed by an unconditional deny is the whitelist shape
+// and is untouched: the deny comes last and is reached for every record the
+// allow did not take.
+func validateSecurityRuleShadowing(rules []AppDefinitionSecurityRule, context, expectedTable string) error {
+	if len(rules) < 2 {
+		return nil
+	}
+
+	// Mirror the evaluator's ordering rather than trusting the caller to have
+	// sorted already.
+	ordered := make([]AppDefinitionSecurityRule, len(rules))
+	copy(ordered, rules)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		if ordered[i].Order == ordered[j].Order {
+			return ordered[i].Name < ordered[j].Name
+		}
+		return ordered[i].Order < ordered[j].Order
+	})
+
+	for i, later := range ordered {
+		for _, earlier := range ordered[:i] {
+			if securityRuleScopeKey(earlier, expectedTable) != securityRuleScopeKey(later, expectedTable) {
+				continue
+			}
+			if earlier.Role != later.Role {
+				continue
+			}
+			unconditional := earlier.Condition == ""
+			sameCondition := earlier.Condition == later.Condition
+			if !unconditional && !sameCondition {
+				continue
+			}
+
+			reason := "has the same condition"
+			if unconditional {
+				reason = "has no condition, so it matches every record for that role"
+			}
+			hint := "give it a lower order so it is evaluated first"
+			if unconditional {
+				hint = "move it before the unconditional rule, or add a condition to the earlier rule"
+			}
+			effect := normalizeSecurityEffect(later.Effect)
+			if effect == "" {
+				effect = "allow"
+			}
+			if effect == "deny" {
+				return fmt.Errorf("%s security rule %q can never deny anything: rule %q (%s) %s and is evaluated first. This deny is silently inert — %s",
+					context, later.Name, earlier.Name, securityRuleEffectLabel(earlier), reason, hint)
+			}
+			return fmt.Errorf("%s security rule %q can never apply: rule %q (%s) %s and is evaluated first. %s",
+				context, later.Name, earlier.Name, securityRuleEffectLabel(earlier), reason, hint)
+		}
+	}
+	return nil
+}
+
+// securityRuleScopeKey identifies the rules that compete to decide an outcome:
+// same table, same operation, same field. Field is case-normalised and empty
+// means the record as a whole.
+func securityRuleScopeKey(rule AppDefinitionSecurityRule, expectedTable string) string {
+	table := strings.TrimSpace(strings.ToLower(rule.Table))
+	if table == "" {
+		table = strings.TrimSpace(strings.ToLower(expectedTable))
+	}
+	return table + "\x00" + rule.Operation + "\x00" + strings.TrimSpace(strings.ToLower(rule.Field))
+}
+
+func securityRuleEffectLabel(rule AppDefinitionSecurityRule) string {
+	effect := normalizeSecurityEffect(rule.Effect)
+	if effect == "" {
+		effect = "allow"
+	}
+	return "effect " + effect
 }
 
 func validateAppDefinitionActionRoles(roleSet map[string]bool, actions []AppDefinitionAction, context string) error {

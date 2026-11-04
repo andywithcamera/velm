@@ -99,7 +99,7 @@
 }{{end}}</textarea>
           <textarea id="scriptDryRunPayload" class="ui-textarea font-mono" rows="8" placeholder='{"record":{"id":"123"}}'>{}</textarea>
           <div class="ui-form-actions">
-            <button type="button" class="ui-btn ui-btn-primary" onclick="runScriptDryRun()">Run Dry Test</button>
+            <button type="button" class="ui-btn ui-btn-primary" data-action="run-script-dry-run">Run Dry Test</button>
             {{with .ScriptSelected}}
               <a href="/admin/app-editor?app={{.AppName | urlquery}}&active={{.EditorObject | urlquery}}" class="ui-btn ui-btn-secondary">Edit In App Editor</a>
             {{end}}
@@ -198,7 +198,7 @@
     </div>
   </div>
 </section>
-<script>
+<script nonce="{{.CSPNonce}}">
   (function () {
     const select = document.getElementById("scriptDryRunDef");
     if (!select) return;

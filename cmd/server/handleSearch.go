@@ -9,6 +9,7 @@ import (
 	"strings"
 	"velm/internal/auth"
 	"velm/internal/db"
+	"velm/internal/security"
 )
 
 const taskSearchResultLimit = 8
@@ -77,7 +78,8 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Results": results,
+		"Results":  results,
+		"CSPNonce": security.NonceFromContext(r.Context()),
 	}
 
 	err = templates.ExecuteTemplate(w, "search-results.html", data)
