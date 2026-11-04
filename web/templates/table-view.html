@@ -72,7 +72,7 @@
           </thead>
           <tbody>
             {{range .Rows}} {{ $row := . }}
-            <tr class="cursor-pointer" data-record-table="{{index $row "_record_table"}}" data-record-url="{{index $row "_record_url"}}" onclick="return window.navigateWithTransition(this.dataset.recordUrl)">
+            <tr class="cursor-pointer" data-record-table="{{index $row "_record_table"}}" data-record-url="{{index $row "_record_url"}}" data-navigate-record>
               {{range $i, $col := $.QueryColumns}}
               <td data-col-index="{{$i}}" data-col-name="{{$col.Name}}" data-col-label="{{$col.Label}}">
                 {{index $row $col.Name}}
@@ -114,7 +114,7 @@
     </div>
   </div>
 </section>
-<script>
+<script nonce="{{.CSPNonce}}">
   document.addEventListener('DOMContentLoaded', () => {
     const table = document.getElementById('recordsTable');
     if (!table) return;
@@ -684,7 +684,7 @@
   </div>
 </section>
 
-<script>
+<script nonce="{{.CSPNonce}}">
   document.addEventListener('DOMContentLoaded', () => {
     const queryColumns = [
       {{range $index, $col := .QueryColumns}}{{if $index}},{{end}}{
