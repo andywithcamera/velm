@@ -155,6 +155,11 @@ func migrateLegacyScriptsIntoDefinition(definition *AppDefinition, scripts []App
 
 		call := serviceName + "." + methodName
 		if scriptHasEndpointBinding(script) {
+			endpointRoles := mergeIdentifierLists(script.Roles, script.Endpoint.Roles)
+			endpointEnabled := script.Endpoint.Enabled && enabled
+			if endpointEnabled && len(endpointRoles) == 0 {
+				endpointRoles = []string{AuthenticatedRole}
+			}
 			definition.Endpoints = append(definition.Endpoints, AppDefinitionEndpoint{
 				Name:        uniqueLegacyEndpointName(definition.Endpoints, script.Name),
 				Label:       label,
@@ -162,8 +167,8 @@ func migrateLegacyScriptsIntoDefinition(definition *AppDefinition, scripts []App
 				Method:      script.Endpoint.Method,
 				Path:        script.Endpoint.Path,
 				Call:        call,
-				Roles:       mergeIdentifierLists(script.Roles, script.Endpoint.Roles),
-				Enabled:     script.Endpoint.Enabled && enabled,
+				Roles:       endpointRoles,
+				Enabled:     endpointEnabled,
 			})
 		}
 		if scriptHasTriggerBinding(script) {
@@ -202,7 +207,14 @@ func legacyScriptMethodRoles(script AppDefinitionScript, enabled bool) []string 
 	if scriptHasEndpointBinding(script) || scriptHasTriggerBinding(script) || !enabled {
 		return nil
 	}
-	return append([]string(nil), script.Roles...)
+	roles := mergeIdentifierLists(script.Roles)
+	if len(roles) == 0 {
+		// Such a script migrates to a public method. Its legacy meaning was "any
+		// signed-in user may run this", so say that explicitly rather than
+		// inheriting the list that used to grant it by default.
+		return []string{AuthenticatedRole}
+	}
+	return roles
 }
 
 func legacyScriptTriggerMode(script AppDefinitionScript) string {
