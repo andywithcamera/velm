@@ -23,13 +23,18 @@ func NonceFromContext(ctx context.Context) string {
 	return nonce
 }
 
+// newNonce returns 144 bits of randomness in URL-safe base64. The alphabet is
+// [A-Za-z0-9_-]: CSP's base64-value grammar allows those characters, and unlike
+// standard base64 it never emits '+', '/', or '=', so html/template writes the
+// nonce into the attribute verbatim. Standard base64 broke that: '+' came out as
+// "&#43;", so the markup no longer matched the header byte for byte.
 func newNonce() string {
 	buf := make([]byte, 18)
 	if _, err := rand.Read(buf); err != nil {
 		// Without a nonce the CSP blocks every inline script, which fails closed.
 		return ""
 	}
-	return base64.StdEncoding.EncodeToString(buf)
+	return base64.RawURLEncoding.EncodeToString(buf)
 }
 
 func SecurityHeaders(next http.Handler) http.Handler {

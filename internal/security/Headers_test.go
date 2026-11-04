@@ -75,3 +75,19 @@ func scriptSrcDirective(csp string) string {
 	}
 	return ""
 }
+
+// The nonce is written into a <script nonce="..."> attribute by html/template,
+// which escapes characters such as '+'. A nonce outside [A-Za-z0-9_-] would no
+// longer appear verbatim in the markup, so keep the alphabet constrained.
+func TestNonceIsAttributeSafe(t *testing.T) {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	for i := 0; i < 200; i++ {
+		nonce := newNonce()
+		if nonce == "" {
+			t.Fatal("newNonce() returned an empty nonce")
+		}
+		if strings.Trim(nonce, alphabet) != "" {
+			t.Fatalf("nonce %q contains characters outside the attribute-safe alphabet", nonce)
+		}
+	}
+}
