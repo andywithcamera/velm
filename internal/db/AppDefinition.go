@@ -1702,6 +1702,13 @@ func validateAppDefinitionForApp(ctx context.Context, app RegisteredApp, definit
 	}
 	roleSet := map[string]bool{}
 	for _, role := range definition.Roles {
+		// Reject a declared role called `authenticated`: the runtime resolves that
+		// name to "any signed-in user" before it ever looks at _role, so a real
+		// role of the same name would never be consulted and would silently
+		// widen access to everything that references it.
+		if isReservedRoleName(role.Name) {
+			return fmt.Errorf("role name %q is reserved and cannot be declared by an app", role.Name)
+		}
 		roleSet[role.Name] = true
 	}
 
@@ -1821,6 +1828,10 @@ func validateAppDefinitionForApp(ctx context.Context, app RegisteredApp, definit
 			methods[method.Name] = method
 		}
 		serviceIndex[service.Name] = methods
+	}
+
+	if err := validateAppEntryPointRoleDeclarations(definition); err != nil {
+		return err
 	}
 
 	for _, trigger := range definition.Triggers {
@@ -2120,13 +2131,61 @@ func normalizeEndpointPath(path string) string {
 	return "/" + path
 }
 
+// validateAppEntryPointRoleDeclarations enforces an explicit role list on
+// everything reachable from outside the app: a public service method and an
+// enabled endpoint. The runtime denies an empty list, so a definition that omits
+// one is refused here, where the author can see the error, instead of failing
+// silently for whoever calls it. Private methods are only ever called from inside
+// the app, where roles are not consulted, so they may leave it empty.
+func validateAppEntryPointRoleDeclarations(definition *AppDefinition) error {
+	if definition == nil {
+		return nil
+	}
+	for _, service := range definition.Services {
+		for _, method := range service.Methods {
+			if method.Visibility != "public" {
+				continue
+			}
+			if len(declaredRoles(method.Roles)) == 0 {
+				return fmt.Errorf("method %q on service %q is public and must declare roles; use roles: [\"%s\"] to allow any signed-in user", method.Name, service.Name, AuthenticatedRole)
+			}
+		}
+	}
+	for _, endpoint := range definition.Endpoints {
+		if !endpoint.Enabled {
+			continue
+		}
+		if len(declaredRoles(endpoint.Roles)) == 0 {
+			return fmt.Errorf("endpoint %q is enabled and must declare roles; use roles: [\"%s\"] to allow any signed-in user", endpoint.Name, AuthenticatedRole)
+		}
+	}
+	return nil
+}
+
 func validateIdentifierRoles(roleSet map[string]bool, roles []string, context string) error {
 	for _, role := range roles {
+		if isReservedRoleName(role) {
+			continue
+		}
 		if !roleSet[role] {
 			return fmt.Errorf("%s references unknown role %q", context, role)
 		}
 	}
 	return nil
+}
+
+// declaredRoles drops blank entries and reports whether anything is left. A
+// list of nothing but whitespace JSON is an empty list as far as the runtime is
+// concerned, so validation has to treat it the same way.
+func declaredRoles(roles []string) []string {
+	names := make([]string, 0, len(roles))
+	for _, role := range roles {
+		if strings.TrimSpace(role) == "" {
+			continue
+		}
+		names = append(names, role)
+	}
+	return names
 }
 
 func validateAppDefinitionSecurity(roleSet map[string]bool, security AppDefinitionSecurity, context string, expectedTable string, allowedFields map[string]bool) error {

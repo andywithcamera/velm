@@ -649,8 +649,9 @@ Rules:
 - `visibility` must be `private` or `public`
 - default `visibility` is `private`
 - default `language` is `javascript`
-- `roles` must reference top-level app roles
-- a dependency app can only call `public` methods
+- `roles` must reference top-level app roles, or the reserved role `authenticated`
+- a `public` method must declare `roles`; an empty list is refused at save time
+- an empty `roles` list denies every caller, so there is no accidental grant
 
 Use `public` when:
 
@@ -660,6 +661,29 @@ Use `public` when:
 Use `private` when:
 
 - the method is only used by local triggers, local endpoints, or internal actions
+
+Roles on a method are checked when the method is reached from outside the app: the runtime service-call API and cross-app dependency calls. Calls from a local endpoint, trigger, or schedule run with the app's own authority and are not re-gated by the method's `roles`.
+
+## The authenticated role
+
+`authenticated` is a reserved role name. It is not declared in `roles` and is not
+stored in `_role`: it matches any signed-in user, and it is the only way to open
+an entry point to everyone.
+
+```yaml
+endpoints:
+  - name: board_data
+    method: POST
+    path: /api/devworks/board-data
+    call: story.refresh_board
+    roles: [authenticated]
+    enabled: true
+```
+
+Requesting the webhook from outside the app with no session is still refused.
+Because the name is reserved, an app may not declare a role called
+`authenticated`, and creating a `_role` of that name through the access-control
+API fails.
 
 ## Endpoints
 
@@ -679,12 +703,16 @@ Rules:
 - use standard HTTP verbs: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`
 - `call` must use `service.method`
 - enabled endpoints must declare `method`, `path`, and `call`
+- enabled endpoints must declare `roles`; an empty list is refused at save time
+- `roles` may list app roles or the reserved role `authenticated`
 - dependency calls can only target `public` methods
 
 Current runtime note:
 
 - endpoints are served under authenticated `/api/*` routes in the current server
-- if `roles` is empty, the endpoint has no app-role gate of its own
+- the endpoint's `roles` gate is authoritative: if the list is empty the endpoint
+  denies every caller, and the method's own `roles` are not consulted on this
+  path
 
 ## Triggers
 
@@ -969,6 +997,8 @@ If you need guaranteed execution, prefer:
 - `reference` without `reference_table`
 - `autnumber` without a valid uppercase prefix
 - referencing unknown roles in `roles`, `security`, endpoints, or methods
+- leaving `roles` off a public method or an enabled endpoint, which denies every caller
+- declaring a role named `authenticated`; it is reserved for "any signed-in user"
 - calling dependency private methods
 - using unsupported client script events
 - depending on `data_policies` or `schedules` as if they are already full runtime features

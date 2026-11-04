@@ -16,12 +16,16 @@ type AppRuntimeEndpoint struct {
 }
 
 type AppServiceMethodCall struct {
-	App           RegisteredApp
-	Call          string
-	TableName     string
-	EventName     string
-	TriggerType   string
-	UserID        string
+	App         RegisteredApp
+	Call        string
+	TableName   string
+	EventName   string
+	TriggerType string
+	UserID      string
+	// System marks a call with no acting user, so row-level security rules do
+	// not apply. A before-write trigger fired by a write that had no acting
+	// user is a system write, and runs as one.
+	System        bool
 	RequestID     string
 	Input         any
 	Payload       any
@@ -69,6 +73,26 @@ func appScopedRoleName(app RegisteredApp, roleName string) string {
 		return roleName
 	}
 	return scope + "." + roleName
+}
+
+// AuthenticatedRole is a reserved role name. It is not stored in _role: it
+// matches any signed-in user, and it is the only way to declare an app entry
+// point open to everyone, because an empty role list now denies.
+const AuthenticatedRole = "authenticated"
+
+// isReservedRoleName reports whether a role name is interpreted by the runtime
+// rather than resolved against _role.
+func isReservedRoleName(name string) bool {
+	return strings.TrimSpace(strings.ToLower(name)) == AuthenticatedRole
+}
+
+func rolesGrantAnyAuthenticatedUser(roles []string) bool {
+	for _, role := range roles {
+		if isReservedRoleName(role) {
+			return true
+		}
+	}
+	return false
 }
 
 func appRoleCandidates(app RegisteredApp, roles []string) []string {
@@ -244,11 +268,7 @@ func ExecuteAppEndpointScript(ctx context.Context, endpoint AppRuntimeEndpoint, 
 }
 
 func AppEndpointAccessAllowed(ctx context.Context, endpoint AppRuntimeEndpoint, userID string) (bool, error) {
-	roleNames := appRoleCandidates(endpoint.App, endpoint.Endpoint.Roles)
-	if len(roleNames) == 0 {
-		return true, nil
-	}
-	return UserHasAnyRole(ctx, userID, endpoint.App.ID, roleNames)
+	return appEntryPointAccessAllowed(ctx, endpoint.App, endpoint.Endpoint.Roles, userID)
 }
 
 func ResolveRuntimeServiceMethod(ctx context.Context, currentApp RegisteredApp, call string, requirePublic bool) (RegisteredApp, AppDefinitionMethod, bool, error) {
@@ -261,9 +281,21 @@ func ResolveRuntimeServiceMethod(ctx context.Context, currentApp RegisteredApp, 
 }
 
 func AppServiceMethodAccessAllowed(ctx context.Context, app RegisteredApp, method AppDefinitionMethod, userID string) (bool, error) {
-	roleNames := appRoleCandidates(app, method.Roles)
+	return appEntryPointAccessAllowed(ctx, app, method.Roles, userID)
+}
+
+// appEntryPointAccessAllowed gates the two HTTP entry points into app code: an
+// enabled endpoint and a public service method. Both used to return true when
+// the role list was empty, which made an author's forgetfulness a grant of
+// access to every signed-in user. The default is now deny: an entry point that
+// any authenticated caller may reach has to say so with roles: [authenticated].
+func appEntryPointAccessAllowed(ctx context.Context, app RegisteredApp, roles []string, userID string) (bool, error) {
+	if rolesGrantAnyAuthenticatedUser(roles) {
+		return strings.TrimSpace(userID) != "", nil
+	}
+	roleNames := appRoleCandidates(app, roles)
 	if len(roleNames) == 0 {
-		return true, nil
+		return false, nil
 	}
 	return UserHasAnyRole(ctx, userID, app.ID, roleNames)
 }
@@ -313,6 +345,7 @@ func executeAppServiceMethodWithQuerier(ctx context.Context, querier scriptQueri
 		TriggerType:    strings.TrimSpace(strings.ToLower(call.TriggerType)),
 		Language:       firstNonEmpty(method.Language, "javascript"),
 		UserID:         strings.TrimSpace(call.UserID),
+		System:         call.System,
 		RequestID:      strings.TrimSpace(call.RequestID),
 		Input:          call.Input,
 		Payload:        call.Payload,
@@ -351,6 +384,7 @@ func RunAppBeforeWriteTriggersWithQuerier(ctx context.Context, querier scriptQue
 			EventName:   eventName,
 			TriggerType: "record",
 			UserID:      userID,
+			System:      strings.TrimSpace(userID) == "",
 			RequestID:   requestID,
 			Record:      currentRecord,
 			Previous:    previous,

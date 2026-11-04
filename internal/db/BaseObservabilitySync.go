@@ -1213,6 +1213,7 @@ func baseObservabilityServiceDefinition() AppDefinitionService {
 			Description: "Normalize and ingest an observation event inside one transactional service execution.",
 			Visibility:  "public",
 			Language:    "javascript",
+			Roles:       []string{AuthenticatedRole},
 			Script:      baseObservabilityIngestScript,
 		}},
 	}
@@ -1226,6 +1227,7 @@ func baseObservabilityEndpointDefinition() AppDefinitionEndpoint {
 		Method:      "POST",
 		Path:        baseObservabilityEndpointPath,
 		Call:        "observability.ingest_event",
+		Roles:       []string{AuthenticatedRole},
 		Enabled:     true,
 	}
 }
