@@ -70,6 +70,11 @@ func RunMigrations(ctx context.Context) error {
 	if err := MigrateLegacyScriptDefinitions(ctx); err != nil {
 		return err
 	}
+	// Must run before the sync passes below: each of them validates whatever
+	// definition is stored, so a stale empty role list would abort boot here.
+	if err := MigrateEntryPointRoles(ctx); err != nil {
+		return err
+	}
 	if err := SyncSystemAppDefinitionWithPhysicalTables(ctx); err != nil {
 		return err
 	}
