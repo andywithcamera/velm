@@ -146,7 +146,7 @@
         </div>
       </div>
 	      <div class="ui-form-actions">
-	        <button type="button" class="ui-btn ui-btn-primary" onclick="runAdhocScript()">Run Script</button>
+	        <button type="button" class="ui-btn ui-btn-primary" data-action="run-adhoc-script">Run Script</button>
 	      </div>
       <div class="ui-field">
         <label class="ui-field-label" for="run-script-result">Output</label>
@@ -161,7 +161,7 @@
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/closebrackets.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/selection/active-line.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/hint/show-hint.min.js"></script>
-<script>
+<script nonce="{{.CSPNonce}}">
   (function () {
     if (!window.CodeMirror) return;
 

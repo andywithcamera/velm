@@ -36,7 +36,7 @@
       <div class="ui-explorer-group">
         <form method="GET" action="/builder/schema" class="ui-field">
           <label class="ui-field-label" for="builder-app-selector">Application</label>
-          <select id="builder-app-selector" name="app" class="ui-select" onchange="this.form.submit()">
+          <select id="builder-app-selector" name="app" class="ui-select" data-submit-form>
             {{range .BuilderApps}}
               <option value="{{.Name}}" {{if eq $.BuilderSelectedApp .Name}}selected{{end}}>{{if .Label}}{{.Label}}{{else}}{{.Name}}{{end}}</option>
             {{else}}
@@ -117,7 +117,7 @@
             </div>
             <div class="ui-split-actions">
               <a class="ui-btn ui-btn-secondary" href="/t/{{.BuilderSelectedTable}}">Open Table View</a>
-              <form method="POST" action="/api/builder/table/delete" onsubmit="return confirm('Delete table {{.BuilderSelectedTable}}? Table must be empty.');">
+              <form method="POST" action="/api/builder/table/delete" data-confirm="Delete table {{.BuilderSelectedTable}}? Table must be empty.">
                 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
                 <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
                 <input type="hidden" name="table_name" value="{{.BuilderSelectedTable}}">
@@ -275,7 +275,7 @@
                 <input type="hidden" name="mode" value="dry_run">
                 <button type="submit" class="ui-btn ui-btn-primary">Dry Run Plan</button>
               </form>
-              <form method="POST" action="/api/builder/schema/apply" onsubmit="return confirm('Apply planned schema changes for {{.BuilderSelectedTable}}?');">
+              <form method="POST" action="/api/builder/schema/apply" data-confirm="Apply planned schema changes for {{.BuilderSelectedTable}}?">
                 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
                 <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
                 <input type="hidden" name="table_name" value="{{.BuilderSelectedTable}}">
@@ -345,7 +345,7 @@
                     <h4 class="ui-section-title font-mono">{{.Name}}</h4>
                     <p class="ui-section-copy">Type: {{.DataType}} | {{if .IsNullable}}Nullable{{else}}Required{{end}}</p>
                   </div>
-                  <form method="POST" action="/api/builder/column/delete" onsubmit="return confirm('Delete column {{.Name}} from {{$.BuilderSelectedTable}}? Table must be empty.');">
+                  <form method="POST" action="/api/builder/column/delete" data-confirm="Delete column {{.Name}} from {{$.BuilderSelectedTable}}? Table must be empty.">
                     <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                     <input type="hidden" name="app_name" value="{{$.BuilderSelectedApp}}">
                     <input type="hidden" name="table_name" value="{{$.BuilderSelectedTable}}">

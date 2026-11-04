@@ -61,7 +61,7 @@
                   <summary class="ui-tree-summary ui-tree-summary-group">
                     <span>Dependencies</span>
                     <span class="ui-tree-summary-actions">
-                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adependency" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                      <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adependency" class="ui-tree-action-link" data-stop-propagation>+</a>
                     </span>
                   </summary>
                   <div class="ui-tree-content ui-file-children">
@@ -85,7 +85,7 @@
               <summary class="ui-tree-summary">
                 <span>Tables</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atable" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atable" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content">
@@ -106,7 +106,7 @@
                         <summary class="ui-tree-summary ui-tree-summary-group">
                           <span>Columns</span>
                           <span class="ui-tree-summary-actions">
-                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Acolumn&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Acolumn&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" data-stop-propagation>+</a>
                           </span>
                         </summary>
                         <div class="ui-tree-content ui-file-children">
@@ -137,7 +137,7 @@
                           <span>Data Policies</span>
                           {{if .Table.Editable}}
                             <span class="ui-tree-summary-actions">
-                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adata-policy&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adata-policy&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" data-stop-propagation>+</a>
                             </span>
                           {{end}}
                         </summary>
@@ -160,7 +160,7 @@
                           <span>Triggers</span>
                           {{if .Table.Editable}}
                             <span class="ui-tree-summary-actions">
-                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atable-trigger&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atable-trigger&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" data-stop-propagation>+</a>
                             </span>
                           {{end}}
                         </summary>
@@ -182,7 +182,7 @@
                         <summary class="ui-tree-summary ui-tree-summary-group">
                           <span>Forms</span>
                           <span class="ui-tree-summary-actions">
-                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aform&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                            <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aform&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" data-stop-propagation>+</a>
                           </span>
                         </summary>
                         <div class="ui-tree-content">
@@ -230,7 +230,7 @@
                               <span>Client Scripts</span>
                               {{if .Table.Editable}}
                                 <span class="ui-tree-summary-actions">
-                                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aclient-script&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aclient-script&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" data-stop-propagation>+</a>
                                 </span>
                               {{end}}
                             </summary>
@@ -269,7 +269,7 @@
                           <span>Related Lists</span>
                           {{if .Table.Editable}}
                             <span class="ui-tree-summary-actions">
-                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Arelated-list&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Arelated-list&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" data-stop-propagation>+</a>
                             </span>
                           {{end}}
                         </summary>
@@ -292,7 +292,7 @@
                           <span>Security</span>
                           {{if .Table.Editable}}
                             <span class="ui-tree-summary-actions">
-                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Asecurity-rule&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                              <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Asecurity-rule&table={{.Table.PhysicalName | urlquery}}" class="ui-tree-action-link" data-stop-propagation>+</a>
                             </span>
                           {{end}}
                         </summary>
@@ -321,7 +321,7 @@
               <summary class="ui-tree-summary">
                 <span>Pages</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Apage" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Apage" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content">
@@ -363,7 +363,7 @@
               <summary class="ui-tree-summary">
                 <span>Client Scripts</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aclient-script" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aclient-script" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content">
@@ -398,7 +398,7 @@
               <summary class="ui-tree-summary">
                 <span>Services</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aservice" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aservice" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content">
@@ -442,7 +442,7 @@
               <summary class="ui-tree-summary">
                 <span>Endpoints</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aendpoint" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aendpoint" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content ui-file-children">
@@ -464,7 +464,7 @@
               <summary class="ui-tree-summary">
                 <span>Triggers</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atrigger" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Atrigger" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content ui-file-children">
@@ -486,7 +486,7 @@
               <summary class="ui-tree-summary">
                 <span>Schedules</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aschedule" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Aschedule" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content ui-file-children">
@@ -508,7 +508,7 @@
               <summary class="ui-tree-summary">
                 <span>Roles</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Arole" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Arole" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content ui-file-children">
@@ -549,7 +549,7 @@
               <summary class="ui-tree-summary">
                 <span>Documentation</span>
                 <span class="ui-tree-summary-actions">
-                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adocumentation" class="ui-tree-action-link" onclick="event.stopPropagation()">+</a>
+                  <a href="/admin/app-editor?app={{$selectedApp.Name | urlquery}}&active=new%3Adocumentation" class="ui-tree-action-link" data-stop-propagation>+</a>
                 </span>
               </summary>
               <div class="ui-tree-content">
@@ -891,7 +891,7 @@
   </div>
 </section>
 
-<script>
+<script nonce="{{.CSPNonce}}">
   (function () {
     const objects = [
       {{range $index, $obj := .AppEditorObjects}}{{if $index}},{{end}}{

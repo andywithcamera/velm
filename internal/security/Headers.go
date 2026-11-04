@@ -1,19 +1,50 @@
 package security
 
 import (
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"os"
 	"strings"
 )
 
+type nonceContextKey string
+
+const nonceKey nonceContextKey = "csp_nonce"
+
+// NonceFromContext returns the per-response CSP nonce, or "" when the request
+// did not pass through SecurityHeaders (tests, background work).
+func NonceFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	nonce, _ := ctx.Value(nonceKey).(string)
+	return nonce
+}
+
+func newNonce() string {
+	buf := make([]byte, 18)
+	if _, err := rand.Read(buf); err != nil {
+		// Without a nonce the CSP blocks every inline script, which fails closed.
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(buf)
+}
+
 func SecurityHeaders(next http.Handler) http.Handler {
-	csp := buildCSP()
 	enableHSTS := strings.EqualFold(os.Getenv("SECURITY_HSTS"), "true")
 	if !enableHSTS {
 		enableHSTS = strings.EqualFold(os.Getenv("SESSION_COOKIE_SECURE"), "true")
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nonce := newNonce()
+		csp := buildCSP(nonce)
+		if nonce != "" {
+			r = r.WithContext(context.WithValue(r.Context(), nonceKey, nonce))
+		}
+
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -29,7 +60,11 @@ func SecurityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func buildCSP() string {
+func buildCSP(nonce string) string {
+	scriptSrc := "script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://esm.sh"
+	if nonce != "" {
+		scriptSrc = "script-src 'self' 'nonce-" + nonce + "' https://unpkg.com https://cdn.jsdelivr.net https://esm.sh"
+	}
 	return strings.Join([]string{
 		"default-src 'self'",
 		"base-uri 'self'",
@@ -39,7 +74,7 @@ func buildCSP() string {
 		"font-src 'self' data:",
 		"connect-src 'self' https://esm.sh",
 		"form-action 'self'",
-		"script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net https://esm.sh",
+		scriptSrc,
 		"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://esm.sh",
 	}, "; ")
 }
