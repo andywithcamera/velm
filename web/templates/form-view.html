@@ -477,7 +477,7 @@
                     </thead>
                     <tbody>
                       {{range $row := .Rows}}
-                        <tr{{if $row.Href}} class="cursor-pointer" data-navigate-url="{{$row.Href}}"{{else}}>{{end}}
+                        <tr{{if $row.Href}} class="cursor-pointer" data-navigate-url="{{$row.Href}}"{{end}}>
                           {{range $cellIndex, $cell := $row.Cells}}
                             <td>
                               {{if and $row.Href (eq $cellIndex 0)}}
