@@ -70,6 +70,11 @@ type aiConnectionInput struct {
 
 var errInvalidInput = errors.New("invalid input")
 
+// errConnectionDestinationChanged means the provider endpoint moved after the
+// key was entered. The key is withheld until an admin re-enters it, which is
+// the act that authorises the new destination.
+var errConnectionDestinationChanged = errors.New("connection destination changed")
+
 func parseAIConnectionInput(r *http.Request) (*aiConnectionInput, error) {
 	var in aiConnectionInput
 	if err := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 64<<10)).Decode(&in); err != nil {
@@ -94,6 +99,18 @@ func handleCreateAIConnection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provider_id and api_key are required", http.StatusBadRequest)
 		return
 	}
+	provider, err := db.GetAIProvider(r.Context(), in.ProviderID)
+	if err != nil {
+		http.Error(w, "Unknown provider", http.StatusBadRequest)
+		return
+	}
+	// Refuse the destination before encrypting or storing anything: an admin
+	// who points base_url somewhere unacceptable finds out here, and no key is
+	// ever written alongside an endpoint that cannot be used.
+	if err := security.ValidateProviderDestination(r.Context(), provider.BaseURL); err != nil {
+		http.Error(w, syncFailureMessage(err), http.StatusBadRequest)
+		return
+	}
 	cipher, err := security.NewMFASecretCipherFromEnv()
 	if err != nil {
 		http.Error(w, "Secret cipher unavailable", http.StatusInternalServerError)
@@ -104,7 +121,7 @@ func handleCreateAIConnection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to secure key", http.StatusInternalServerError)
 		return
 	}
-	conn, err := db.CreateAIConnection(r.Context(), in.ProviderID, in.Label, enc, fingerprintKey(in.APIKey))
+	conn, err := db.CreateAIConnection(r.Context(), in.ProviderID, in.Label, enc, fingerprintKey(in.APIKey), provider.BaseURL)
 	if err != nil {
 		http.Error(w, "Failed to create connection", http.StatusInternalServerError)
 		return
@@ -137,8 +154,26 @@ func handleUpdateAIConnection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid input", http.StatusBadRequest)
 		return
 	}
-	var encKey, fingerprint *string
+	var encKey, fingerprint, pinned *string
 	if in.APIKey != "" {
+		// Entering a key is what authorises a destination. Read the provider's
+		// endpoint now, validate it, and pin it alongside the new key: without
+		// this an admin could move base_url and then re-key, and the old key
+		// would quietly follow the provider to a new host.
+		conn, err := db.GetAIConnection(r.Context(), r.PathValue("id"))
+		if err != nil {
+			http.Error(w, "Not found", http.StatusNotFound)
+			return
+		}
+		provider, err := db.GetAIProvider(r.Context(), conn.ProviderID)
+		if err != nil {
+			http.Error(w, "Unknown provider", http.StatusBadRequest)
+			return
+		}
+		if err := security.ValidateProviderDestination(r.Context(), provider.BaseURL); err != nil {
+			http.Error(w, syncFailureMessage(err), http.StatusBadRequest)
+			return
+		}
 		cipher, err := security.NewMFASecretCipherFromEnv()
 		if err != nil {
 			http.Error(w, "Secret cipher unavailable", http.StatusInternalServerError)
@@ -150,8 +185,9 @@ func handleUpdateAIConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		encKey, fingerprint = &enc, fp(fingerprintKey(in.APIKey))
+		pinned = fp(provider.BaseURL)
 	}
-	if err := db.UpdateAIConnection(r.Context(), r.PathValue("id"), in.Label, encKey, fingerprint); err != nil {
+	if err := db.UpdateAIConnection(r.Context(), r.PathValue("id"), in.Label, encKey, fingerprint, pinned); err != nil {
 		http.Error(w, "Failed to update connection", http.StatusInternalServerError)
 		return
 	}
@@ -178,11 +214,29 @@ func syncFailureMessage(err error) string {
 	switch {
 	case errors.Is(err, security.ErrProviderDestination):
 		return "provider URL refused: " + err.Error()
+	case errors.Is(err, errConnectionDestinationChanged):
+		return "the provider endpoint changed since this key was entered; re-enter the key to authorise the new destination"
 	case errors.Is(err, security.ErrProviderRequest):
 		return "could not reach the provider; check the base URL and network"
 	default:
 		return "sync failed"
 	}
+}
+
+// resolveSyncDestination decides where a connection's key may be sent. The key
+// travels only to the destination it was entered for: a provider row edited
+// after the key was stored must not move an existing credential to a different
+// host, because that edit is precisely how one admin would redirect another
+// admin's key to a server they control. Re-entering the key is the act that
+// authorises a new destination, and it re-pins in the same write.
+func resolveSyncDestination(conn *db.AIConnection, provider *db.AIProvider) (string, error) {
+	if conn == nil || provider == nil {
+		return "", errConnectionDestinationChanged
+	}
+	if conn.PinnedBaseURL == "" || conn.PinnedBaseURL != provider.BaseURL {
+		return "", errConnectionDestinationChanged
+	}
+	return conn.PinnedBaseURL, nil
 }
 
 // syncConnectionModels decrypts the stored key, calls the provider's
@@ -193,6 +247,10 @@ func syncConnectionModels(r *http.Request, id string) ([]db.AIModel, error) {
 		return nil, err
 	}
 	provider, err := db.GetAIProvider(r.Context(), conn.ProviderID)
+	if err != nil {
+		return nil, err
+	}
+	destination, err := resolveSyncDestination(conn, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +266,7 @@ func syncConnectionModels(r *http.Request, id string) ([]db.AIModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	models, err := security.NewProviderClient().ListModelsContext(r.Context(), provider.BaseURL, provider.DefaultListModelsPath, plaintext, provider.ProviderMetadata)
+	models, err := security.NewProviderClient().ListModelsContext(r.Context(), destination, provider.DefaultListModelsPath, plaintext, provider.ProviderMetadata)
 	if err != nil {
 		return nil, err
 	}

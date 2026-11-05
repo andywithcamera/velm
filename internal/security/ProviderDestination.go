@@ -228,3 +228,12 @@ func newSafeProviderHTTPClient() *http.Client {
 func logProviderFailure(host string, err error) {
 	log.Printf("level=warn event=provider_request_failed host=%q err=%v", host, err)
 }
+
+// ValidateProviderDestination reports whether raw is an acceptable place to
+// send a provider key, using exactly the checks a live call would apply. It
+// exists so a destination can be refused at the point a key is entered,
+// rather than only when a sync is attempted.
+func ValidateProviderDestination(ctx context.Context, raw string) error {
+	_, err := validateProviderURL(ctx, raw)
+	return err
+}
