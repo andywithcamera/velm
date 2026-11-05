@@ -1,8 +1,9 @@
 package db
 
 import (
-	"strings"
 	"context"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -18,14 +19,18 @@ type AIConnection struct {
 	IsActive          bool           `json:"is_active"`
 	LastVerifiedAt    *time.Time     `json:"last_verified_at"`
 	ModelsSyncedAt    *time.Time     `json:"models_synced_at"`
+	// PinnedBaseURL is the provider endpoint in force when the key was last
+	// entered. The key is only ever sent here: changing _ai_provider.base_url
+	// does not move an existing credential to a new destination.
+	PinnedBaseURL string `json:"pinned_base_url"`
 }
 
-const aiConnectionColumns = `_id, provider_id, label, api_key_fingerprint, account_info, is_active, last_verified_at, models_synced_at`
+const aiConnectionColumns = `_id, provider_id, label, api_key_fingerprint, account_info, is_active, last_verified_at, models_synced_at, pinned_base_url`
 
 func scanAIConnection(row pgxRow) (*AIConnection, error) {
 	var c AIConnection
 	err := row.Scan(&c.ID, &c.ProviderID, &c.Label, &c.APIKeyFingerprint,
-		&c.AccountInfo, &c.IsActive, &c.LastVerifiedAt, &c.ModelsSyncedAt)
+		&c.AccountInfo, &c.IsActive, &c.LastVerifiedAt, &c.ModelsSyncedAt, &c.PinnedBaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +50,7 @@ func ListAIConnections(ctx context.Context) ([]AIConnection, error) {
 	for rows.Next() {
 		var c AIConnection
 		if err := rows.Scan(&c.ID, &c.ProviderID, &c.Label, &c.APIKeyFingerprint,
-			&c.AccountInfo, &c.IsActive, &c.LastVerifiedAt, &c.ModelsSyncedAt); err != nil {
+			&c.AccountInfo, &c.IsActive, &c.LastVerifiedAt, &c.ModelsSyncedAt, &c.PinnedBaseURL); err != nil {
 			return nil, err
 		}
 		out = append(out, c)
@@ -58,42 +63,41 @@ func GetAIConnection(ctx context.Context, id string) (*AIConnection, error) {
 		`SELECT `+aiConnectionColumns+` FROM _ai_connection WHERE _id = $1`, id))
 }
 
-func CreateAIConnection(ctx context.Context, providerID, label, encryptedKey, fingerprint string) (*AIConnection, error) {
+// CreateAIConnection stores a key already encrypted, pinned to the destination
+// it was entered for. pinnedBaseURL must be the provider endpoint validated at
+// the point of entry, not one read back later.
+func CreateAIConnection(ctx context.Context, providerID, label, encryptedKey, fingerprint, pinnedBaseURL string) (*AIConnection, error) {
 	var id string
 	if err := Pool.QueryRow(ctx,
-		`INSERT INTO _ai_connection (provider_id, label, api_key_enc, api_key_fingerprint)
-		 VALUES ($1, $2, $3, $4) RETURNING _id`, providerID, label, encryptedKey, fingerprint).Scan(&id); err != nil {
+		`INSERT INTO _ai_connection (provider_id, label, api_key_enc, api_key_fingerprint, pinned_base_url)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING _id`, providerID, label, encryptedKey, fingerprint, pinnedBaseURL).Scan(&id); err != nil {
 		return nil, err
 	}
 	return GetAIConnection(ctx, id)
 }
 
 // UpdateAIConnection applies only the supplied fields; nil leaves a column
-// unchanged so a key-only PATCH does not wipe the label.
-func UpdateAIConnection(ctx context.Context, id string, label *string, encryptedKey, fingerprint *string) error {
+// unchanged so a key-only PATCH does not wipe the label. When a key is
+// supplied the destination is re-pinned with it: entering a key authorises the
+// endpoint, so the two columns never move independently.
+func UpdateAIConnection(ctx context.Context, id string, label *string, encryptedKey, fingerprint, pinnedBaseURL *string) error {
 	sets := []string{"_updated_at=NOW()"}
 	args := []any{id}
+	add := func(column string, value string) {
+		args = append(args, value)
+		sets = append(sets, fmt.Sprintf("%s=$%d", column, len(args)))
+	}
 	if label != nil {
-		sets = append(sets, "label=$2")
-		args = append(args, *label)
+		add("label", *label)
 	}
 	if encryptedKey != nil {
-		if len(args) == 1 {
-			sets = append(sets, "api_key_enc=$2")
-		} else {
-			sets = append(sets, "api_key_enc=$3")
-		}
-		args = append(args, *encryptedKey)
+		add("api_key_enc", *encryptedKey)
 	}
 	if fingerprint != nil {
-		if len(args) == 1 {
-			sets = append(sets, "api_key_fingerprint=$2")
-		} else if len(args) == 2 {
-			sets = append(sets, "api_key_fingerprint=$3")
-		} else {
-			sets = append(sets, "api_key_fingerprint=$4")
-		}
-		args = append(args, *fingerprint)
+		add("api_key_fingerprint", *fingerprint)
+	}
+	if pinnedBaseURL != nil {
+		add("pinned_base_url", *pinnedBaseURL)
 	}
 	_, err := Pool.Exec(ctx,
 		`UPDATE _ai_connection SET `+strings.Join(sets, ", ")+` WHERE _id=$1`, args...)
@@ -105,10 +109,13 @@ func DeleteAIConnection(ctx context.Context, id string) error {
 	return err
 }
 
-func SetAIConnectionKey(ctx context.Context, id, encryptedKey, fingerprint string) error {
+// SetAIConnectionKey replaces the key material and re-pins the destination.
+func SetAIConnectionKey(ctx context.Context, id, encryptedKey, fingerprint, pinnedBaseURL string) error {
 	_, err := Pool.Exec(ctx,
-		`UPDATE _ai_connection SET api_key_enc=$2, api_key_fingerprint=$3, _updated_at=NOW() WHERE _id=$1`,
-		id, encryptedKey, fingerprint)
+		`UPDATE _ai_connection
+		 SET api_key_enc=$2, api_key_fingerprint=$3, pinned_base_url=$4, _updated_at=NOW()
+		 WHERE _id=$1`,
+		id, encryptedKey, fingerprint, pinnedBaseURL)
 	return err
 }
 
