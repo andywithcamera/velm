@@ -2,8 +2,10 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"velm/internal/auth"
 )
@@ -36,15 +38,27 @@ func TestAgentTokenLifecycle(t *testing.T) {
 	}
 
 	// 2. Seed a real _user row — agents are indistinguishable _user identities.
+	//    Everything this test writes is cleaned up on exit, so it can run twice
+	//    against the same database: a fixed email or token hash would otherwise
+	//    trip a unique constraint on the second run and look like a real fault.
 	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	userEmail := "agent-" + suffix + "@example.test"
+	userName := "agent-integration"
+
 	var userID string
 	if err := Pool.QueryRow(ctx, `
 		INSERT INTO _user (name, email, password_hash)
-		VALUES ('agent-integration', 'agent@example.test', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy')
+		VALUES ($1, $2, '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy')
 		RETURNING _id::text
-	`).Scan(&userID); err != nil {
+	`, userName, userEmail).Scan(&userID); err != nil {
 		t.Fatalf("seed _user: %v", err)
 	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		_, _ = Pool.Exec(ctx, `DELETE FROM _agent_api_token WHERE user_id = $1`, userID)
+		_, _ = Pool.Exec(ctx, `DELETE FROM _user WHERE _id = $1::uuid`, userID)
+	})
 
 	store := NewAgentTokenStore()
 
@@ -52,7 +66,7 @@ func TestAgentTokenLifecycle(t *testing.T) {
 	//    Note: the token binds an identity but carries NO scopes/authority —
 	//    ACLs are user-based and resolved from the bound _user row, exactly as
 	//    for a session (issue #68: authN differs, authZ identical).
-	raw := auth.HashAgentToken("velm_integration_test_secret")
+	raw := auth.HashAgentToken("velm_integration_test_secret_" + suffix)
 	if err := store.CreateAgentToken(ctx, userID, raw, "integration-test"); err != nil {
 		t.Fatalf("CreateAgentToken: %v", err)
 	}
@@ -73,12 +87,12 @@ func TestAgentTokenLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LookupUserIdentity: %v", err)
 	}
-	if email != "agent@example.test" || name != "agent-integration" {
-		t.Fatalf("identity = %q/%q, want agent@example.test/agent-integration", email, name)
+	if email != userEmail || name != userName {
+		t.Fatalf("identity = %q/%q, want %q/%q", email, name, userEmail, userName)
 	}
 
 	// 5. Unknown hash -> ErrNoAgentToken (not a raw DB error).
-	unknown := auth.HashAgentToken("velm_does_not_exist")
+	unknown := auth.HashAgentToken("velm_does_not_exist_" + suffix)
 	if _, err := store.LookupAgentToken(ctx, unknown); err != auth.ErrNoAgentToken {
 		t.Fatalf("unknown hash error = %v, want auth.ErrNoAgentToken", err)
 	}
