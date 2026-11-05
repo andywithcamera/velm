@@ -10,22 +10,26 @@ import (
 
 // Build metadata, injected at link time:
 //
-//	go build -ldflags "-X main.buildCommit=$(git rev-parse HEAD) -X main.buildTime=$(date -u +%FT%TZ)" ./cmd/server
+//	go build -ldflags "-X main.buildCommit=$(git rev-parse HEAD) \
+//	  -X main.buildRelease=$(git describe --tags --always) \
+//	  -X main.buildTime=$(date -u +%FT%TZ)" ./cmd/server
 //
 // Stamped values win. Unstamped builds fall back to the platform's commit
 // variable (Railway sets RAILWAY_GIT_COMMIT_SHA at runtime), and finally to
 // "unknown" — so a missing stamp never reads as a plausible commit.
 var (
-	buildCommit = ""
-	buildTime   = ""
+	buildCommit  = ""
+	buildTime    = ""
+	buildRelease = ""
 )
 
 const unknownBuildValue = "unknown"
 
 type versionInfo struct {
-	Commit string `json:"commit"`
-	Built  string `json:"built"`
-	Go     string `json:"go"`
+	Commit  string `json:"commit"`
+	Release string `json:"release"`
+	Built   string `json:"built"`
+	Go      string `json:"go"`
 }
 
 // buildValueOrUnknown trims a candidate build field, reporting "unknown" when
@@ -42,9 +46,10 @@ func buildValueOrUnknown(value string) string {
 // describes the artifact rather than the environment it happens to boot in.
 func currentVersionInfo() versionInfo {
 	return versionInfo{
-		Commit: buildValueOrUnknown(firstNonEmpty(buildCommit, os.Getenv("RAILWAY_GIT_COMMIT_SHA"))),
-		Built:  buildValueOrUnknown(firstNonEmpty(buildTime, os.Getenv("RAILWAY_GIT_DEPLOYED_AT"))),
-		Go:     runtime.Version(),
+		Commit:  buildValueOrUnknown(firstNonEmpty(buildCommit, os.Getenv("RAILWAY_GIT_COMMIT_SHA"))),
+		Release: buildValueOrUnknown(firstNonEmpty(buildRelease, os.Getenv("BUILD_RELEASE"))),
+		Built:   buildValueOrUnknown(firstNonEmpty(buildTime, os.Getenv("RAILWAY_GIT_DEPLOYED_AT"))),
+		Go:      runtime.Version(),
 	}
 }
 

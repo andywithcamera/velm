@@ -84,11 +84,14 @@ bootstrap-user:
 # Build metadata stamped into the binary and reported by GET /version.
 GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 GIT_COMMIT_SHORT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+# Falls back to the bare sha when no tag is reachable, and suffixes -dirty on
+# an uncommitted tree, so the value never claims to be a release it is not.
+BUILD_RELEASE := $(shell git describe --tags --always --dirty 2>/dev/null || echo unknown)
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-VERSION_LDFLAGS := -X main.buildCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME)
+VERSION_LDFLAGS := -X main.buildCommit=$(GIT_COMMIT) -X main.buildRelease=$(BUILD_RELEASE) -X main.buildTime=$(BUILD_TIME)
 
 .PHONY: build
 build:
-	@echo "🔨 Building velm $(GIT_COMMIT_SHORT) ($(BUILD_TIME))..."
+	@echo "🔨 Building velm $(BUILD_RELEASE) ($(GIT_COMMIT_SHORT), $(BUILD_TIME))..."
 	go build -ldflags "$(VERSION_LDFLAGS)" -o velm ./cmd/server
 	@echo "✅ velm built; check the stamp with ./velm and GET /version"

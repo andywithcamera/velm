@@ -52,11 +52,24 @@ curl -s https://your-host/version
 # {"commit":"1295514e7e6ef660cb22c065634845ca5900da30","built":"2026-11-04T22:18:52Z","go":"go1.26.0"}
 ```
 
+`/version` reports `commit`, `release`, `built` and the Go version:
+
+```json
+{"commit":"5497507…","release":"v0.1.0","built":"2026-11-05T07:02:16Z","go":"go1.26.0"}
+```
+
+`release` comes from `git describe --tags --always --dirty`, so a build between tags reads `v0.1.0-3-gabc1234` and an uncommitted tree reads `v0.1.0-dirty` rather than claiming to be the tag itself.
+
 Stamp the values at build time. `make build` does this automatically, and the `Dockerfile` accepts `GIT_COMMIT` and `BUILD_TIME`:
 
 ```bash
-docker build --build-arg GIT_COMMIT=$(git rev-parse HEAD) --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
+docker build \
+  --build-arg GIT_COMMIT=$(git rev-parse HEAD) \
+  --build-arg BUILD_RELEASE=$(git describe --tags --always --dirty) \
+  --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 ```
+
+Railway cannot derive the tag itself (`.git` is excluded from the Docker context), so `release` reads `unknown` there until a pipeline passes `BUILD_RELEASE`.
 
 On Railway, no build args are needed: the Dockerfile declares `ARG RAILWAY_GIT_COMMIT_SHA`, so Railway injects the deployed commit for GitHub-triggered builds. Railway only passes variables whose name is declared as an `ARG` — that declaration is the whole contract. Deploys that do not come from GitHub (`railway up`, image deploys) have no commit to report and show `"unknown"`.
 

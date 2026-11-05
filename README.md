@@ -97,7 +97,7 @@ For a first production-style deploy behind a reverse proxy or platform edge, set
 - `SESSION_AUTH_KEY` and `SESSION_ENCRYPTION_KEY` as base64-encoded 32-byte values
 - `SECURITY_HSTS=true`
 
-The container exposes health endpoints at `/health` and `/healthz`, plus `GET /version` — unauthenticated, returns the commit and build time the running binary was stamped with, so a deploy can be verified from outside with one request. `make build` stamps it; the `Dockerfile` accepts `GIT_COMMIT` and `BUILD_TIME` build args. On Railway the commit is filled in automatically from `RAILWAY_GIT_COMMIT_SHA`, which the Dockerfile declares as an `ARG` so the platform will inject it.
+The container exposes health endpoints at `/health` and `/healthz`, plus `GET /version` — unauthenticated, returns the commit and build time the running binary was stamped with, so a deploy can be verified from outside with one request. `make build` stamps it; the `Dockerfile` accepts `GIT_COMMIT` and `BUILD_TIME` build args. On Railway the commit is filled in automatically from `RAILWAY_GIT_COMMIT_SHA`, which the Dockerfile declares as an `ARG` so the platform will inject it. `release` is derived from `git describe --tags --always --dirty`; Railway cannot compute it and reports `unknown` unless `BUILD_RELEASE` is passed.
 
 ---
 
