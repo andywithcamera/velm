@@ -73,7 +73,7 @@ func syncConnectionAfterSave(ctx context.Context, connectionID string) error {
 	if err != nil {
 		return fmt.Errorf("decrypt key: %w", err)
 	}
-	rows, err := ListProviderModelsForSync(connectionID, provider.BaseURL, provider.DefaultListModelsPath, plaintext, provider.ProviderMetadata)
+	rows, err := ListProviderModelsForSync(ctx, connectionID, provider.BaseURL, provider.DefaultListModelsPath, plaintext, provider.ProviderMetadata)
 	if err != nil {
 		return fmt.Errorf("list models: %w", err)
 	}
@@ -92,7 +92,7 @@ func syncConnectionAfterSave(ctx context.Context, connectionID string) error {
 var (
 	// ListProviderModelsForSync is injected by cmd/server; it wraps the
 	// security.ProviderClient without db importing security.
-	ListProviderModelsForSync func(connectionID, baseURL, listPath, plaintextKey string, meta map[string]any) ([]AIModel, error)
+	ListProviderModelsForSync func(ctx context.Context, connectionID, baseURL, listPath, plaintextKey string, meta map[string]any) ([]AIModel, error)
 	// MarkVerifiedAfterSync flags a connection as verified post-sync.
 	MarkVerifiedAfterSync func(ctx context.Context, id string) error
 )

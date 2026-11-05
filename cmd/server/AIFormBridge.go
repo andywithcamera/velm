@@ -32,8 +32,8 @@ func init() {
 		},
 	})
 
-	db.ListProviderModelsForSync = func(connectionID, baseURL, listPath, plaintextKey string, meta map[string]any) ([]db.AIModel, error) {
-		models, err := security.NewProviderClient().ListModels(baseURL, listPath, plaintextKey, meta)
+	db.ListProviderModelsForSync = func(ctx context.Context, connectionID, baseURL, listPath, plaintextKey string, meta map[string]any) ([]db.AIModel, error) {
+		models, err := security.NewProviderClient().ListModelsContext(ctx, baseURL, listPath, plaintextKey, meta)
 		if err != nil {
 			return nil, err
 		}
