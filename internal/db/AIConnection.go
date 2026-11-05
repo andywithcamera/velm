@@ -8,8 +8,9 @@ import (
 )
 
 // AIConnection is a per-account credential bound to a provider. The API key
-// is stored encrypted (see issue #102: generalise MFASecretCipher). Only the
-// fingerprint prefix is ever exposed outside this package.
+// is stored encrypted with security.SecretCipher (generalised from the MFA-only
+// cipher, issue #102). Only the fingerprint prefix is ever exposed outside
+// this package.
 type AIConnection struct {
 	ID                string         `json:"_id"`
 	ProviderID        string         `json:"provider_id"`

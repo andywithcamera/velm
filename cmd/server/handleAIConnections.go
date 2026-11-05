@@ -108,7 +108,7 @@ func handleCreateAIConnection(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, syncFailureMessage(err), http.StatusBadRequest)
 		return
 	}
-	cipher, err := security.NewMFASecretCipherFromEnv()
+	cipher, err := security.NewSecretCipherFromEnv()
 	if err != nil {
 		http.Error(w, "Secret cipher unavailable", http.StatusInternalServerError)
 		return
@@ -171,7 +171,7 @@ func handleUpdateAIConnection(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, syncFailureMessage(err), http.StatusBadRequest)
 			return
 		}
-		cipher, err := security.NewMFASecretCipherFromEnv()
+		cipher, err := security.NewSecretCipherFromEnv()
 		if err != nil {
 			http.Error(w, "Secret cipher unavailable", http.StatusInternalServerError)
 			return
@@ -255,7 +255,7 @@ func syncConnectionModels(r *http.Request, id string) ([]db.AIModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	cipher, err := security.NewMFASecretCipherFromEnv()
+	cipher, err := security.NewSecretCipherFromEnv()
 	if err != nil {
 		return nil, err
 	}
