@@ -52,11 +52,13 @@ curl -s https://your-host/version
 # {"commit":"1295514e7e6ef660cb22c065634845ca5900da30","built":"2026-11-04T22:18:52Z","go":"go1.26.0"}
 ```
 
-Stamp the values at build time — `make build` does this automatically, and the `Dockerfile` accepts `GIT_COMMIT` and `BUILD_TIME` build args:
+Stamp the values at build time. `make build` does this automatically, and the `Dockerfile` accepts `GIT_COMMIT` and `BUILD_TIME`:
 
 ```bash
 docker build --build-arg GIT_COMMIT=$(git rev-parse HEAD) --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 ```
+
+On Railway, no build args are needed: the Dockerfile declares `ARG RAILWAY_GIT_COMMIT_SHA`, so Railway injects the deployed commit for GitHub-triggered builds. Railway only passes variables whose name is declared as an `ARG` — that declaration is the whole contract. Deploys that do not come from GitHub (`railway up`, image deploys) have no commit to report and show `"unknown"`.
 
 An unstamped image falls back to the platform commit (`RAILWAY_GIT_COMMIT_SHA` on Railway) and reports `"unknown"` if neither is available, so a missing stamp is never mistaken for a real one.
 
