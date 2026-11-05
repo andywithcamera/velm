@@ -109,7 +109,8 @@ func startupUsersExist(ctx context.Context) (bool, error) {
 }
 
 func loadBootstrapUserPasswordFromFile(path string) (string, error) {
-	content, err := os.ReadFile(path)
+	// path comes from BOOTSTRAP_USER_PASSWORD_FILE, an operator-set env var.
+	content, err := os.ReadFile(path) // #nosec G304 -- operator-configured path, not user input
 	if err != nil {
 		return "", fmt.Errorf("read BOOTSTRAP_USER_PASSWORD_FILE %s: %w", path, err)
 	}

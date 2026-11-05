@@ -85,8 +85,17 @@ func startServer() {
 	if cfg.TLSEnabled {
 		if cfg.HTTPPort > 0 {
 			go func() {
-				redirectAddr := fmt.Sprintf(":%d", cfg.HTTPPort)
-				if err := http.ListenAndServe(redirectAddr, buildRedirectHandler(cfg.HTTPSPort, cfg.PublicHost)); err != nil {
+				// A bare http.ListenAndServe inherits no timeouts, so a client
+				// that opens a connection and never sends a request header holds
+				// it open forever. The redirect listener answers every request
+				// with 308, so it is cheap per request and worth hardening.
+				redirectServer := &http.Server{
+					Addr:              fmt.Sprintf(":%d", cfg.HTTPPort),
+					Handler:           buildRedirectHandler(cfg.HTTPSPort, cfg.PublicHost),
+					ReadHeaderTimeout: 10 * time.Second,
+					IdleTimeout:       60 * time.Second,
+				}
+				if err := redirectServer.ListenAndServe(); err != nil {
 					log.Fatal(err)
 				}
 			}()
@@ -104,10 +113,13 @@ func startServer() {
 			)
 		}
 
+		// No WriteTimeout: /api/realtime/stream holds a response open by design,
+		// so a write deadline would cut every SSE connection at the same age.
 		server := &http.Server{
 			Addr:              httpsAddr,
 			Handler:           rootHandler,
 			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		}
 		if err := server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile); err != nil {
 			log.Fatal(err)
@@ -117,10 +129,12 @@ func startServer() {
 
 	httpAddr := fmt.Sprintf(":%d", cfg.HTTPPort)
 	log.Printf("Server started at http://%s%s", displayHost(cfg.PublicHost), displayPortSuffix(cfg.HTTPPort))
+	// No WriteTimeout: see the TLS branch above.
 	server := &http.Server{
 		Addr:              httpAddr,
 		Handler:           rootHandler,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)

@@ -2,10 +2,6 @@ package db
 
 import "strings"
 
-func isUnscopedSystemAppName(appName, namespace string) bool {
-	return normalizeIdentifier(namespace) == "" && normalizeIdentifier(appName) == "system"
-}
-
 func isOOTBBaseAppName(appName, namespace string) bool {
 	return normalizeIdentifier(namespace) == "" && normalizeIdentifier(appName) == "base"
 }

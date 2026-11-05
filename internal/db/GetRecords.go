@@ -3,8 +3,8 @@ package db
 import (
 	"context"
 	"fmt"
-	"velm/internal/utils"
 	"strings"
+	"velm/internal/utils"
 )
 
 func GetRecords(tableName string, whereClause string, args ...any) MultiRow {

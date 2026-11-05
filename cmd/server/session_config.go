@@ -117,7 +117,9 @@ func loadOrCreatePersistedSessionKeys(path string) (persistedSessionKeys, error)
 		return persistedSessionKeys{}, fmt.Errorf("session key file path is required")
 	}
 
-	content, err := os.ReadFile(path)
+	// path comes from SESSION_KEY_FILE, a deployment configuration value, not
+	// from a request.
+	content, err := os.ReadFile(path) // #nosec G304 -- operator-configured path, not user input
 	if err == nil {
 		var keys persistedSessionKeys
 		if err := json.Unmarshal(content, &keys); err != nil {

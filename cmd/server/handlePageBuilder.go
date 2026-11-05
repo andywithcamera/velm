@@ -18,22 +18,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type pageBuilderItem struct {
-	Name       string
-	Slug       string
-	EditorMode string
-	Content    string
-	Status     string
-}
-
-type pageVersionItem struct {
-	VersionNum int
-	Status     string
-	EditorMode string
-	CreatedBy  string
-	CreatedAt  string
-}
-
 type formHiddenField struct {
 	Name  string
 	Value string
@@ -681,19 +665,6 @@ func publishedDefinitionHasPage(app appRegistryItem, slug string) bool {
 	slug = strings.TrimSpace(strings.ToLower(slug))
 	for _, page := range app.Definition.Pages {
 		if page.Slug == slug {
-			return true
-		}
-	}
-	return false
-}
-
-func publishedDefinitionHasFormAsset(app appRegistryItem, formName string) bool {
-	if app.Definition == nil {
-		return false
-	}
-	formName = strings.TrimSpace(strings.ToLower(formName))
-	for _, form := range app.Definition.Forms {
-		if form.Name == formName {
 			return true
 		}
 	}
@@ -1815,23 +1786,6 @@ func appUsesYAMLDefinition(registry []appRegistryItem, tableName string) bool {
 			if table.Name == tableName {
 				return true
 			}
-		}
-	}
-	return false
-}
-
-func appHasYAMLDefinitionForScope(registry []appRegistryItem, scope string) bool {
-	scope = strings.TrimSpace(strings.ToLower(scope))
-	for _, app := range registry {
-		definition := app.DraftDefinition
-		if definition == nil {
-			definition = app.Definition
-		}
-		if definition == nil {
-			continue
-		}
-		if app.Name == scope || app.Namespace == scope {
-			return true
 		}
 	}
 	return false
@@ -3035,31 +2989,6 @@ func handleSavePageBuilder(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/app-editor?slug="+slug+"&saved=1", http.StatusSeeOther)
 }
 
-func listPagesForBuilder() ([]pageBuilderItem, error) {
-	rows, err := db.Pool.Query(context.Background(), `
-		SELECT name, slug, COALESCE(editor_mode, 'wysiwyg'), content, COALESCE(status, 'draft')
-		FROM _page
-		ORDER BY name ASC
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	pages := make([]pageBuilderItem, 0, 32)
-	for rows.Next() {
-		var p pageBuilderItem
-		if err := rows.Scan(&p.Name, &p.Slug, &p.EditorMode, &p.Content, &p.Status); err != nil {
-			return nil, err
-		}
-		pages = append(pages, p)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return pages, nil
-}
-
 func upsertPageForBuilder(name, slug, content, editorMode, status, userID string) error {
 	tx, err := db.Pool.Begin(context.Background())
 	if err != nil {
@@ -3102,31 +3031,4 @@ func upsertPageForBuilder(name, slug, content, editorMode, status, userID string
 		return err
 	}
 	return nil
-}
-
-func listPageVersionsForBuilder(slug string) ([]pageVersionItem, error) {
-	rows, err := db.Pool.Query(context.Background(), `
-		SELECT version_num, status, editor_mode, COALESCE(created_by, ''), _created_at::text
-		FROM _page_version
-		WHERE page_slug = $1
-		ORDER BY version_num DESC
-		LIMIT 30
-	`, slug)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	versions := make([]pageVersionItem, 0, 30)
-	for rows.Next() {
-		var v pageVersionItem
-		if err := rows.Scan(&v.VersionNum, &v.Status, &v.EditorMode, &v.CreatedBy, &v.CreatedAt); err != nil {
-			return nil, err
-		}
-		versions = append(versions, v)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return versions, nil
 }

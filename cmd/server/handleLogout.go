@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"net/http"
 )
 
@@ -20,7 +21,12 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 		delete(session.Values, k)
 	}
 
-	session.Save(r, w)
+	// The cookie is already being cleared locally and the response redirects to
+	// /login either way, so a failed save is not worth failing the request over.
+	// It is worth a line in the log: it means the cookie on the client is stale.
+	if err := session.Save(r, w); err != nil {
+		log.Printf("logout: save cleared session: %v", err)
+	}
 
 	// If HTMX, do an HX-Redirect
 	if r.Header.Get("HX-Request") != "" {

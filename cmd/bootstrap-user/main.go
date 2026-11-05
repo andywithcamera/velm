@@ -7,8 +7,8 @@ import (
 	"io"
 	"log"
 	"os"
-	"velm/internal/db"
 	"strings"
+	"velm/internal/db"
 )
 
 func main() {

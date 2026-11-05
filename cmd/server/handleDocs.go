@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -602,7 +603,9 @@ func handleSaveDocsArticle(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
-			json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()})
+			if encodeErr := json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": err.Error()}); encodeErr != nil {
+				log.Printf("docs: write error response: %v", encodeErr)
+			}
 			return
 		}
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -611,11 +614,15 @@ func handleSaveDocsArticle(w http.ResponseWriter, r *http.Request) {
 
 	if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{
+		if encodeErr := json.NewEncoder(w).Encode(map[string]any{
 			"ok":   true,
 			"slug": slug,
 			"href": "/docs/manage?library=" + url.QueryEscape(librarySlug) + "&article=" + url.QueryEscape(slug),
-		})
+		}); encodeErr != nil {
+			// The record is saved; only the response failed. Log it, because the
+			// client will report a success it never received.
+			log.Printf("docs: write save response for %s: %v", slug, encodeErr)
+		}
 		return
 	}
 

@@ -936,10 +936,6 @@ func referenceLabelColumnWithContext(ctx context.Context, tableName string) stri
 	return preferredDisplayColumn(view)
 }
 
-func referenceTableLabel(tableName string) string {
-	return referenceTableLabelWithContext(context.Background(), tableName)
-}
-
 func referenceTableLabelWithContext(ctx context.Context, tableName string) string {
 	tableName = strings.TrimSpace(strings.ToLower(tableName))
 	if tableName == "" {

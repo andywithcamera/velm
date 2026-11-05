@@ -17,9 +17,11 @@ import (
 )
 
 const (
-	observabilityWebhookPath              = "/api/observability/webhook"
-	observabilityWebhookSecretEnvVar      = "OBSERVABILITY_WEBHOOK_SECRET"
-	observabilityWebhookSecretPropertyKey = "observability_webhook_secret"
+	observabilityWebhookPath = "/api/observability/webhook"
+	// These are the *names* of the env var and the settings property that hold
+	// the secret, not the secret itself. G101 matches on the identifier string.
+	observabilityWebhookSecretEnvVar      = "OBSERVABILITY_WEBHOOK_SECRET" // #nosec G101 -- name of the env var, not a credential
+	observabilityWebhookSecretPropertyKey = "observability_webhook_secret" // #nosec G101 -- name of the settings key, not a credential
 )
 
 func handleObservabilityWebhook(w http.ResponseWriter, r *http.Request) {

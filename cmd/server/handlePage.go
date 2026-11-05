@@ -57,7 +57,9 @@ func renderPageBySlug(w http.ResponseWriter, r *http.Request, slug, section stri
 	data := newViewData(w, r, "/p/"+pg.Slug, pg.Name, section)
 	data["Page"] = "p/" + pg.Slug
 	data["PageData"] = pg
-	data["PageHTML"] = template.HTML(sanitizePageHTML(pg.Content))
+	// sanitizePageHTML is the single sanitiser for page content: bluemonday's
+	// UGCPolicy plus the id post-pass from #166.
+	data["PageHTML"] = template.HTML(sanitizePageHTML(pg.Content)) // #nosec G203 -- output of sanitizePageHTML
 
 	if r.Header.Get("HX-Request") != "" {
 		err = templates.ExecuteTemplate(w, "page-view", data)

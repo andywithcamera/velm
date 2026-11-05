@@ -2,7 +2,7 @@ package db
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- see deterministicSeedUUID: stable row identifiers, not a security primitive
 	"fmt"
 	"sort"
 	"strconv"
@@ -360,8 +360,15 @@ func plannedSeedRecordID(app RegisteredApp, tableName string, rowIndex int, row 
 	return deterministicSeedUUID(source)
 }
 
+// deterministicSeedUUID derives a stable UUID for a seeded row from its content
+// key, so re-running a seed updates the same rows instead of duplicating them.
+//
+// SHA-1 is chosen for stability, not for security: these identifiers are not
+// authentication tokens and carry no secrecy requirement. Changing the hash
+// would re-key every seeded row in every existing install, so the algorithm is
+// fixed by the data already on disk. G401/G505 flag the primitive by name.
 func deterministicSeedUUID(source string) string {
-	sum := sha1.Sum([]byte(source))
+	sum := sha1.Sum([]byte(source)) // #nosec G401 -- stable identifier, not a security primitive
 	buf := [16]byte{}
 	copy(buf[:], sum[:16])
 	buf[6] = (buf[6] & 0x0f) | 0x50

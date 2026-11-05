@@ -3,8 +3,8 @@ package security
 import (
 	"net/http"
 	"regexp"
-	"velm/internal/auth"
 	"strings"
+	"velm/internal/auth"
 )
 
 var appIDRegex = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)

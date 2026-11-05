@@ -30,10 +30,10 @@ var (
 	observabilityAnalysisUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	observabilityAnalysisIntPattern  = regexp.MustCompile(`^\d+$`)
 
-	observabilityFailMu      sync.Mutex
-	observabilityLastFailLog time.Time
-	observabilityFailCount   int
-	observabilityAnalysisHexPattern  = regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`)
+	observabilityFailMu             sync.Mutex
+	observabilityLastFailLog        time.Time
+	observabilityFailCount          int
+	observabilityAnalysisHexPattern = regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`)
 
 	sensitiveDataChangeSeverity = map[string]int{
 		"_app":                    2,

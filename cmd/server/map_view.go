@@ -165,7 +165,10 @@ func handleRelationshipMapPage(w http.ResponseWriter, r *http.Request) {
 	}
 	viewData["Title"] = title
 	viewData["PageTitle"] = title
-	viewData["MapGraphJSON"] = template.JS(string(graphJSON))
+	// encoding/json escapes '<', '>' and '&' by default, so a record name
+	// containing "</script>" is emitted as \u003c/script\u003e and cannot close
+	// the surrounding script element.
+	viewData["MapGraphJSON"] = template.JS(string(graphJSON)) // #nosec G203 -- json.Marshal escapes HTML by default
 	viewData["MapSelectedEntity"] = selected
 	viewData["MapNodeCount"] = len(graph.Nodes)
 	viewData["MapEdgeCount"] = len(graph.Edges)
@@ -403,7 +406,7 @@ func relationshipMapNodeRanksBefore(candidate, current relationshipMapNode, asce
 	if candidate.Degree != current.Degree {
 		return candidate.Degree > current.Degree
 	}
-	if strings.ToLower(candidate.Name) != strings.ToLower(current.Name) {
+	if !strings.EqualFold(candidate.Name, current.Name) {
 		return strings.ToLower(candidate.Name) < strings.ToLower(current.Name)
 	}
 	return candidate.ID < current.ID

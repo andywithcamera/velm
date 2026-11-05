@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"slices"
 	"sort"
 	"strings"
 
@@ -570,9 +569,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func roleNamesContain(names []string, target string) bool {
-	target = strings.TrimSpace(strings.ToLower(target))
-	return target != "" && slices.Contains(names, target)
 }
