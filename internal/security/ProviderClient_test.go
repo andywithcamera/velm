@@ -24,8 +24,9 @@ func fakeResponse(status int, body string) *http.Response {
 
 func TestListModelsOpenAI(t *testing.T) {
 	var gotAuth string
+	stubProviderLookup(t, nil)
 	pc := NewProviderClient()
-	pc.HTTPClient = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+	pc.client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		gotAuth = r.Header.Get("Authorization")
 		return fakeResponse(200, `{"data":[{"id":"gpt-5"},{"id":"gpt-5-mini"}]}`), nil
 	})}
@@ -43,8 +44,9 @@ func TestListModelsOpenAI(t *testing.T) {
 
 func TestListModelsAnthropic(t *testing.T) {
 	var gotKey, gotVersion string
+	stubProviderLookup(t, nil)
 	pc := NewProviderClient()
-	pc.HTTPClient = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+	pc.client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		gotKey = r.Header.Get("x-api-key")
 		gotVersion = r.Header.Get("anthropic-version")
 		return fakeResponse(200, `{"data":[{"id":"claude-sonnet-4-5","display_name":"Claude Sonnet 4.5"}]}`), nil
@@ -63,8 +65,9 @@ func TestListModelsAnthropic(t *testing.T) {
 }
 
 func TestListModelsHTTPError(t *testing.T) {
+	stubProviderLookup(t, nil)
 	pc := NewProviderClient()
-	pc.HTTPClient = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+	pc.client = &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
 		return fakeResponse(401, `{"error":{"message":"bad key"}}`), nil
 	})}
 	if _, err := pc.ListModels("https://api.example.com", "/v1/models", "bad", nil); err == nil {

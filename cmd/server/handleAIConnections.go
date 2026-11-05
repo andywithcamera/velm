@@ -168,6 +168,23 @@ func handleDeleteAIConnection(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// syncFailureMessage renders a sync failure for an admin without turning it
+// into a network probe. A refused destination is worth naming -- it is the
+// admin's own configuration and the fix is on their side. Anything that
+// reached the network reports only that it failed: dial timeouts, TLS
+// refusals, DNS failures and reset-by-peer are otherwise distinguishable, and
+// that difference is what makes the endpoint a usable port scanner.
+func syncFailureMessage(err error) string {
+	switch {
+	case errors.Is(err, security.ErrProviderDestination):
+		return "provider URL refused: " + err.Error()
+	case errors.Is(err, security.ErrProviderRequest):
+		return "could not reach the provider; check the base URL and network"
+	default:
+		return "sync failed"
+	}
+}
+
 // syncConnectionModels decrypts the stored key, calls the provider's
 // list-models endpoint, and rewrites the connection's _ai_model rows.
 func syncConnectionModels(r *http.Request, id string) ([]db.AIModel, error) {
@@ -191,7 +208,7 @@ func syncConnectionModels(r *http.Request, id string) ([]db.AIModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	models, err := security.NewProviderClient().ListModels(provider.BaseURL, provider.DefaultListModelsPath, plaintext, provider.ProviderMetadata)
+	models, err := security.NewProviderClient().ListModelsContext(r.Context(), provider.BaseURL, provider.DefaultListModelsPath, plaintext, provider.ProviderMetadata)
 	if err != nil {
 		return nil, err
 	}
@@ -211,7 +228,7 @@ func syncConnectionModels(r *http.Request, id string) ([]db.AIModel, error) {
 func handleSyncAIConnectionModels(w http.ResponseWriter, r *http.Request) {
 	synced, err := syncConnectionModels(r, r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "Sync failed: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "Sync failed: "+syncFailureMessage(err), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"models": synced})
