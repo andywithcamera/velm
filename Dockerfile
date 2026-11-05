@@ -3,17 +3,27 @@
 FROM golang:1.26-bookworm AS build
 WORKDIR /src
 
-# Build identity for GET /version. Railway and CI pass these as build args;
-# unstamped images report the platform commit instead (see handleVersion.go).
-ARG GIT_COMMIT=unknown
-ARG BUILD_TIME=unknown
+# Build identity for GET /version.
+#
+# RAILWAY_GIT_COMMIT_SHA is declared with the exact name Railway uses so the
+# platform injects it at build time; Railway only passes provided variables
+# whose name is declared as an ARG. Deploys that are not triggered from GitHub
+# (e.g. `railway up`) leave it empty, and builds elsewhere pass GIT_COMMIT.
+# Unstamped builds report "unknown" rather than a plausible-looking lie.
+ARG RAILWAY_GIT_COMMIT_SHA=""
+ARG GIT_COMMIT=""
+ARG BUILD_TIME=""
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
 RUN mkdir -p /out \
-	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.buildCommit=${GIT_COMMIT} -X main.buildTime=${BUILD_TIME}" -o /out/velm ./cmd/server \
+	&& COMMIT="${GIT_COMMIT:-${RAILWAY_GIT_COMMIT_SHA}}" \
+	&& COMMIT="${COMMIT:-unknown}" \
+	&& STAMPED_AT="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" \
+	&& echo "Building velm commit=${COMMIT} built=${STAMPED_AT}" \
+	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.buildCommit=${COMMIT} -X main.buildTime=${STAMPED_AT}" -o /out/velm ./cmd/server \
 	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bootstrap-user ./cmd/bootstrap-user \
 	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/bootstrap-admin ./cmd/bootstrap-admin
 
