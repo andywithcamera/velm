@@ -1042,3 +1042,10 @@ If you need guaranteed execution, prefer:
 - calling dependency private methods
 - using unsupported client script events
 - depending on `data_policies` or `schedules` as if they are already full runtime features
+
+## Releases and versions
+
+- `main` is tagged for every deploy. A deploy that is not itself a tag is included in the next one; do not leave a production commit unreachable from any tag.
+- Semver, pre-1.0: breaking changes bump the minor (`v0.2.0`), fixes bump the patch. `v1.0.0` waits for a stable app-definition format (see #159).
+- `GET /version` reports `commit`, `release`, `built`. `release` is the truth about what shipped; the commit tells you exactly which code.
+- Migration files (`internal/db/migrations/*.sql`) are **append-only** once merged. Never edit an applied migration — add a new one. Editing one diverges existing databases from fresh ones with no error anywhere.

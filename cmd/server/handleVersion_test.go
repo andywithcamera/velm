@@ -17,6 +17,13 @@ func setBuildMetadata(t *testing.T, commit, built string) {
 	})
 }
 
+func setBuildRelease(t *testing.T, release string) {
+	t.Helper()
+	previous := buildRelease
+	buildRelease = release
+	t.Cleanup(func() { buildRelease = previous })
+}
+
 func TestHandleVersionReportsStampedBuild(t *testing.T) {
 	setBuildMetadata(t, "1295514e7e6ef660cb22c065634845ca5900da30", "2026-11-04T22:18:52Z")
 	t.Setenv("RAILWAY_GIT_COMMIT_SHA", "")
@@ -39,6 +46,9 @@ func TestHandleVersionReportsStampedBuild(t *testing.T) {
 	}
 	if got.Commit != "1295514e7e6ef660cb22c065634845ca5900da30" {
 		t.Fatalf("commit = %q", got.Commit)
+	}
+	if got.Release != unknownBuildValue {
+		t.Fatalf("release = %q, want %q when unstamped", got.Release, unknownBuildValue)
 	}
 	if got.Built != "2026-11-04T22:18:52Z" {
 		t.Fatalf("built = %q", got.Built)
@@ -113,5 +123,48 @@ func TestHandleVersionRejectsNonGet(t *testing.T) {
 
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandleVersionReportsReleaseTag(t *testing.T) {
+	setBuildMetadata(t, "5497507", "2026-11-05T07:05:00Z")
+	setBuildRelease(t, "v0.1.0")
+	t.Setenv("BUILD_RELEASE", "")
+
+	got := currentVersionInfo()
+
+	if got.Release != "v0.1.0" {
+		t.Fatalf("release = %q, want v0.1.0", got.Release)
+	}
+	if got.Commit != "5497507" {
+		t.Fatalf("commit = %q, want the linked stamp", got.Commit)
+	}
+}
+
+func TestHandleVersionReleaseIsIndependentOfCommit(t *testing.T) {
+	// A build between tags is a real, reportable state: commit known,
+	// release name derived by git describe as v0.1.0-N-gSHA. It must not
+	// collapse to unknown just because the commit is not a tag tip.
+	setBuildMetadata(t, "abc1234", "2026-11-05T07:05:00Z")
+	setBuildRelease(t, "v0.1.0-3-gabc1234")
+	t.Setenv("BUILD_RELEASE", "")
+
+	got := currentVersionInfo()
+
+	if got.Release != "v0.1.0-3-gabc1234" {
+		t.Fatalf("release = %q, want the describe output", got.Release)
+	}
+	if got.Commit != "abc1234" {
+		t.Fatalf("commit = %q", got.Commit)
+	}
+}
+
+func TestHandleVersionReleaseFallsBackToEnv(t *testing.T) {
+	setBuildMetadata(t, "", "")
+	setBuildRelease(t, "")
+	t.Setenv("BUILD_RELEASE", "v0.1.0")
+
+	if got := currentVersionInfo().Release; got != "v0.1.0" {
+		t.Fatalf("release = %q, want the env fallback", got)
 	}
 }
