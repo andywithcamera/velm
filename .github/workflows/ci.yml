@@ -30,50 +30,20 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify gofmt on changed Go files
+      # Repo-wide, not changed-files-only: 14 files had drifted out of
+      # gofmt (import ordering) on main while the changed-files check stayed
+      # green, because nothing touched them.
+      - name: Verify gofmt
         run: |
-          base=""
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            base="origin/${{ github.base_ref }}"
-            # Fetch the base branch in full. A depth-limited fetch grafts the base
-            # tip with its parents cut, so `base...HEAD` fails with "no merge base"
-            # as soon as the base branch moves past the branch point — which every
-            # PR that sits for review eventually hits. The checkout already pulls
-            # full history for HEAD, so this shares nearly all objects.
-            git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
-          elif [ -n "${{ github.event.before }}" ] && [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
-            # A force-push can name a commit this runner has never seen.
-            if git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
-              base="${{ github.event.before }}"
-            else
-              echo "Commit ${{ github.event.before }} is not present locally; checking every Go file."
-            fi
-          fi
-
-          if [ -z "$base" ]; then
-            files="$(git ls-files '*.go')"
-          elif ! files="$(git diff --name-only --diff-filter=ACMRT "$base...HEAD" -- '*.go' 2>/dev/null)"; then
-            # No merge base. A two-dot diff yields the same file set for the
-            # purpose of a format check, so fall back rather than fail with a
-            # message that says nothing about formatting.
-            echo "No merge base with $base; falling back to a two-dot diff."
-            files="$(git diff --name-only --diff-filter=ACMRT "$base..HEAD" -- '*.go')"
-          fi
-
-          if [ -z "$files" ]; then
-            echo "No Go files changed."
-            exit 0
-          fi
-
-          unformatted="$(printf '%s\n' "$files" | xargs gofmt -l)"
+          unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
             echo "These files need gofmt:"
             echo "$unformatted"
             exit 1
           fi
 
-  test:
-    name: test
+  vet:
+    name: vet
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -85,5 +55,98 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Run go vet
+        run: go vet ./...
+
+  staticcheck:
+    name: staticcheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pinned: a staticcheck upgrade can surface new findings on unchanged
+      # code, so the version is part of the gate, not a floating latest.
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+
+      - name: Run staticcheck
+        run: staticcheck ./...
+
+  gosec:
+    name: gosec
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pinned for the same reason as staticcheck. -quiet keeps the log to
+      # findings only; a non-zero exit fails the job. Suppressions are inline
+      # `#nosec <rule> -- reason` comments, so they are reviewed with the code.
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@v2.22.4
+
+      - name: Run gosec
+        run: gosec -quiet ./...
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    # The unit suite runs standalone. The integration tests (gated on
+    # TEST_DATABASE_URL) need a real Postgres, which is why this job carries a
+    # service: without it they silently skipped, and a broken migration or a
+    # wrong column name shipped green.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: velm
+          POSTGRES_PASSWORD: velm
+          POSTGRES_DB: velm_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U velm -d velm_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      TEST_DATABASE_URL: postgres://velm:velm@localhost:5432/velm_test?sslmode=disable
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Run tests
-        run: go test ./...
+        run: go test ./... -count=1
+
+      # Fail loudly if the integration test skipped: a green run that never
+      # touched Postgres is the failure mode this job exists to prevent.
+      - name: Verify the integration test actually ran
+        run: go test ./internal/db/ -run TestAgentTokenLifecycle -count=1 -v | tee /tmp/integration.log
+
+      - name: Assert the integration test did not skip
+        run: |
+          if grep -q "SKIP\|skipping real-Postgres" /tmp/integration.log; then
+            echo "Integration test skipped despite TEST_DATABASE_URL being set."
+            exit 1
+          fi

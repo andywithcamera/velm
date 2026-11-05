@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"strings"
+	"unicode"
 
 	"velm/internal/auth"
 	"velm/internal/security"
@@ -48,7 +49,7 @@ func buildBreadcrumbs(uri, pageTitle string) []Breadcrumb {
 	for i, part := range parts {
 		current += "/" + part
 		label := strings.ReplaceAll(part, "_", " ")
-		label = strings.Title(label)
+		label = titleizeBreadcrumbLabel(label)
 		if i == len(parts)-1 && pageTitle != "" {
 			label = pageTitle
 		}
@@ -58,4 +59,24 @@ func buildBreadcrumbs(uri, pageTitle string) []Breadcrumb {
 		})
 	}
 	return breadcrumbs
+}
+
+// titleizeBreadcrumbLabel upper-cases the first letter of each word, leaving
+// the rest of every word untouched.
+//
+// This replaces strings.Title, which is deprecated because it treats any
+// non-letter as a word boundary: "what's_new" became "What'S New". A breadcrumb
+// is a human-facing label built from a URL slug, so only the first rune of each
+// space-separated word should change.
+func titleizeBreadcrumbLabel(label string) string {
+	words := strings.Fields(label)
+	for i, word := range words {
+		runes := []rune(word)
+		if len(runes) == 0 {
+			continue
+		}
+		runes[0] = unicode.ToUpper(runes[0])
+		words[i] = string(runes)
+	}
+	return strings.Join(words, " ")
 }

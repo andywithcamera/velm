@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"velm/internal/auth"
 	"velm/internal/db"
-	"strings"
 )
 
 const listViewPreferenceNamespace = "list_view"

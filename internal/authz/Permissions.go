@@ -17,6 +17,13 @@ const (
 	PermissionAdmin Permission = "admin"
 )
 
+// PermissionResolver answers whether a user holds a permission in an app scope.
+//
+// Production points at db.UserHasPermission. It is a variable so tests can
+// substitute a resolver and exercise the middleware without a database; nothing
+// else should reassign it, and production code never does.
+var PermissionResolver = db.UserHasPermission
+
 func RequirePermission(permission Permission, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID := auth.UserIDFromRequest(r)
@@ -26,7 +33,7 @@ func RequirePermission(permission Permission, next http.Handler) http.Handler {
 			return
 		}
 
-		allowed, err := db.UserHasPermission(r.Context(), userID, string(permission), appID)
+		allowed, err := PermissionResolver(r.Context(), userID, string(permission), appID)
 		if err != nil {
 			log.Printf("authorization lookup failed for user %s app=%s permission %s: %v", userID, appID, permission, err)
 			redirectForbidden(w, r, permission, appID)

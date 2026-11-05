@@ -997,10 +997,6 @@ func ResolveDefinitionColumns(ctx context.Context, app RegisteredApp, table AppD
 	return resolveDefinitionColumnsWithApps(apps, app, table, map[string]bool{})
 }
 
-func resolveDefinitionColumnsBestEffort(app RegisteredApp, table AppDefinitionTable) []AppDefinitionColumn {
-	return resolveDefinitionColumnsBestEffortWithContext(context.Background(), app, table)
-}
-
 func resolveDefinitionColumnsBestEffortWithContext(ctx context.Context, app RegisteredApp, table AppDefinitionTable) []AppDefinitionColumn {
 	if strings.TrimSpace(table.Extends) == "" {
 		return append([]AppDefinitionColumn(nil), table.Columns...)

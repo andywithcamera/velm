@@ -92,7 +92,13 @@ func renderMarkdownToSafeHTMLResolved(raw string, resolver func(string) string) 
 		}
 	}
 	flushList()
-	return template.HTML(strings.Join(out, "\n"))
+	// Safe by construction: every line is fully escaped with
+	// template.HTMLEscapeString *before* any markup is applied, all later
+	// substitutions only add a fixed tag around already-escaped text, and every
+	// href goes through sanitizeURLForHTML (scheme allowlist) plus
+	// HTMLEscapeString. Escaping first is what makes the injected tags safe;
+	// applying them to raw input would not be.
+	return template.HTML(strings.Join(out, "\n")) // #nosec G203 -- escaped before markup, see comment above
 }
 
 func sanitizeURLForHTML(raw string) (string, bool) {

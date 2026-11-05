@@ -4,15 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"velm/internal/auth"
 	"velm/internal/db"
 	"velm/internal/security"
 )
-
-var aiKeyFingerprintRe = regexp.MustCompile(`^(.{0,6})`)
 
 // handleAIConnections is the admin CRUD + model-sync API for AI connections.
 // Admin-only (PermissionAdmin) for P1 per the 2026-09-11 decision; the UI
