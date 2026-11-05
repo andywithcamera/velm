@@ -118,3 +118,54 @@ func TestSanitizePageHTMLIsIdempotent(t *testing.T) {
 		t.Errorf("not idempotent:\n once: %q\ntwice: %q", once, twice)
 	}
 }
+
+// Issue 8: bluemonday's UGCPolicy registers an unanchored `id` rule and
+// AllowAttrs appends rather than replaces, so a narrower rule in the policy is
+// never consulted. These are the cases that were passing a hostile id through.
+func TestSanitizePageHTMLDropsDisallowedElementIDs(t *testing.T) {
+	cases := []struct{ name, in, bad string }{
+		{"attribute-shaped value", `<div id="a onclick=alert(1)">z</div>`, "onclick"},
+		{"leading space", `<div id=" has space ">z</div>`, "id="},
+		{"leading digit", `<div id="1abc">z</div>`, "id="},
+		{"quote in value", `<div id='a"b'>z</div>`, "id="},
+		{"empty value", `<div id="">z</div>`, "id="},
+		{"over-long value", `<div id="` + strings.Repeat("a", 80) + `">z</div>`, "id="},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := sanitizePageHTML(tc.in)
+			if strings.Contains(out, tc.bad) {
+				t.Fatalf("sanitizePageHTML(%q) = %q: %q survived", tc.in, out, tc.bad)
+			}
+		})
+	}
+}
+
+func TestSanitizePageHTMLKeepsConformingElementIDs(t *testing.T) {
+	for _, id := range []string{"panel-1", "p1", "section_2", "a.b:c"} {
+		in := `<div id="` + id + `">x</div>`
+		if out := sanitizePageHTML(in); !strings.Contains(out, `id="`+id+`"`) {
+			t.Errorf("sanitizePageHTML(%q) = %q, want the id kept", in, out)
+		}
+	}
+}
+
+// The post-pass re-renders through x/net/html. It must not disturb content it
+// is not there to change, and it must be stable on a second run.
+func TestStripDisallowedElementIDsLeavesBenignMarkupAlone(t *testing.T) {
+	for _, in := range []string{
+		`<p>5 &lt; 6 &amp; 7</p>`,
+		`<section><h1>Welcome</h1><p>Body <code>code</code></p></section>`,
+		`<img src="x.png">`,
+		`<a href="https://example.com">link</a>`,
+		`<div class="ui-cards grid" id="panel-1">x</div>`,
+	} {
+		// Compared against the policy output, not the input: bluemonday itself
+		// adds rel="nofollow". The invariant under test is that the id post-pass
+		// changes nothing when every id is already acceptable.
+		want := pageHTMLPolicy.Sanitize(in)
+		if got := sanitizePageHTML(in); got != want {
+			t.Errorf("sanitizePageHTML(%q) = %q, want the policy output %q", in, got, want)
+		}
+	}
+}
