@@ -95,8 +95,9 @@ For a first production-style deploy behind a reverse proxy or platform edge, set
 - `BOOTSTRAP_USER_EMAIL`
 - `BOOTSTRAP_USER_PASSWORD` or `BOOTSTRAP_USER_PASSWORD_FILE`
 - `SESSION_AUTH_KEY` and `SESSION_ENCRYPTION_KEY` as base64-encoded 32-byte values
+- `SECURITY_HSTS=true`
 
-The container exposes a health endpoint at `/health` and `/healthz`.
+The container exposes health endpoints at `/health` and `/healthz`, plus `GET /version` — unauthenticated, returns the commit and build time the running binary was stamped with, so a deploy can be verified from outside with one request. `make build` stamps it; the `Dockerfile` accepts `GIT_COMMIT` and `BUILD_TIME` build args and otherwise falls back to the platform commit.
 
 ---
 
@@ -129,7 +130,7 @@ This repository now includes [railway.json](railway.json) with a Dockerfile buil
 - add a PostgreSQL service and wire its `DATABASE_URL` into the app service;
 - require `BOOTSTRAP_USER_EMAIL` from the deploying user;
 - generate `BOOTSTRAP_USER_PASSWORD`, `SESSION_AUTH_KEY`, and `SESSION_ENCRYPTION_KEY` as template variables or secrets;
-- set `APP_ENV=production`; and
+- set `APP_ENV=production` and `SECURITY_HSTS=true`; and
 - use `/health` as the healthcheck path if you override the checked-in config.
 
 Or simply use the prebuilt template at https://railway.com/deploy/velmdev.

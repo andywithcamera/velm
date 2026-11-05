@@ -80,3 +80,15 @@ bootstrap-user:
 	fi
 	@echo "👤 Bootstrapping user $(EMAIL)..."
 	printf '%s\n' "$(PASSWORD)" | go run ./cmd/bootstrap-user -email "$(EMAIL)" -name "$(NAME)" -password-stdin -admin=$(if $(ADMIN),$(ADMIN),true)
+
+# Build metadata stamped into the binary and reported by GET /version.
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+GIT_COMMIT_SHORT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_LDFLAGS := -X main.buildCommit=$(GIT_COMMIT) -X main.buildTime=$(BUILD_TIME)
+
+.PHONY: build
+build:
+	@echo "🔨 Building velm $(GIT_COMMIT_SHORT) ($(BUILD_TIME))..."
+	go build -ldflags "$(VERSION_LDFLAGS)" -o velm ./cmd/server
+	@echo "✅ velm built; check the stamp with ./velm and GET /version"

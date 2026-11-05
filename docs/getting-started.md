@@ -37,10 +37,28 @@ When deploying behind a reverse proxy or platform edge, set at minimum:
 - `BOOTSTRAP_USER_EMAIL`
 - `BOOTSTRAP_USER_PASSWORD` or `BOOTSTRAP_USER_PASSWORD_FILE`
 - `SESSION_AUTH_KEY` and `SESSION_ENCRYPTION_KEY` as base64-encoded 32-byte values
+- `SECURITY_HSTS=true`
 
-> `APP_ENV=production` matters: it switches the session cookie to `Secure` (HTTPS-only). Behind TLS-terminating edges (Railway, Cloudflare, nginx), set it explicitly so sessions are never sent in the clear.
+> `APP_ENV=production` matters: it switches the session cookie to `Secure` (HTTPS-only). Behind TLS-terminating edges (Railway, Cloudflare, nginx), set it explicitly so sessions are never sent in the clear. `SECURITY_HSTS=true` adds the `Strict-Transport-Security` header (it is also emitted whenever `SESSION_COOKIE_SECURE=true`), so send both once you are serving HTTPS.
 
-The container exposes health endpoints at `/health` and `/healthz`.
+The container exposes health endpoints at `/health` and `/healthz`, and a build identity endpoint at `/version`.
+
+### Verifying a deploy
+
+`GET /version` returns the commit the running binary was built from, with no authentication:
+
+```bash
+curl -s https://your-host/version
+# {"commit":"1295514e7e6ef660cb22c065634845ca5900da30","built":"2026-11-04T22:18:52Z","go":"go1.26.0"}
+```
+
+Stamp the values at build time — `make build` does this automatically, and the `Dockerfile` accepts `GIT_COMMIT` and `BUILD_TIME` build args:
+
+```bash
+docker build --build-arg GIT_COMMIT=$(git rev-parse HEAD) --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
+```
+
+An unstamped image falls back to the platform commit (`RAILWAY_GIT_COMMIT_SHA` on Railway) and reports `"unknown"` if neither is available, so a missing stamp is never mistaken for a real one.
 
 ## Where to go next
 

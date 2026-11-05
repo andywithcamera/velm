@@ -57,6 +57,7 @@ func registerRoutes() {
 	http.Handle("/", security.RequestLog(http.HandlerFunc(handleRootRoute)))
 	http.Handle("/health", security.RequestLog(http.HandlerFunc(handleHealth)))
 	http.Handle("/healthz", security.RequestLog(http.HandlerFunc(handleHealth)))
+	http.Handle("/version", security.RequestLog(http.HandlerFunc(handleVersion)))
 	http.Handle("/p/", withAuth(authz.PermissionView, http.HandlerFunc(handlePage)))
 	http.Handle("/static/", security.RequestLog(http.StripPrefix("/static/", fs)))
 	http.Handle("/api/monitor/client", security.RequestLog(auth.RequireCSRF(http.HandlerFunc(handleClientMonitoringBeacon), store)))
