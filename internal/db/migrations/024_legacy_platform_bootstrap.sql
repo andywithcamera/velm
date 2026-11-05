@@ -86,7 +86,14 @@ CREATE TABLE IF NOT EXISTS _app (
 	_updated_by UUID,
 	_deleted_by UUID,
 	name TEXT NOT NULL UNIQUE,
-	namespace TEXT NOT NULL UNIQUE,
+	-- NOT unique: namespace is a table-name prefix shared by several apps.
+	-- 'base' carries both the base app (047) and the task_definition app (076).
+	-- A UNIQUE here made every schema from migration 076 onward fail on a fresh
+	-- database ("duplicate key value violates unique constraint
+	-- _app_namespace_key"). Installations created before this file existed kept
+	-- their older _app table because of IF NOT EXISTS, which is why only fresh
+	-- installs broke. 081 drops the constraint on databases that still have it.
+	namespace TEXT NOT NULL,
 	label TEXT NOT NULL,
 	description TEXT NOT NULL DEFAULT '',
 	status TEXT NOT NULL DEFAULT 'active',
