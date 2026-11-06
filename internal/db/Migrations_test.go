@@ -1,6 +1,8 @@
 package db
 
 import (
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -120,5 +122,90 @@ func TestVerifyAppliedMigrationChecksumsIgnoresUnappliedFiles(t *testing.T) {
 	}
 	if len(backfill) != 0 {
 		t.Fatalf("backfill = %v, want none", backfill)
+	}
+}
+
+// historicalDuplicateMigrationNumbers lists the number prefixes allowed to repeat.
+//
+// Both pairs predate the rule: the files are applied in production, and #175's
+// checksum guard makes renaming an applied file fatal at boot, so they cannot be
+// fixed in place. The list is pinned by filename rather than merely by number, so
+// a third file cannot hide under an existing prefix. TestMigrationNumbersAreUnique
+// also fails when an entry stops being duplicated, so the allowlist cannot rot.
+var historicalDuplicateMigrationNumbers = map[string][]string{
+	"046": {"046_record_version_update_count.sql", "046_request_metrics.sql"},
+	"081": {"081_ai_connection_pinned_url.sql", "081_drop_app_namespace_unique.sql"},
+}
+
+// migrationNumber returns the numeric prefix of a migration filename, or "" when
+// the name does not start with digits.
+func migrationNumber(name string) string {
+	end := 0
+	for end < len(name) && name[end] >= '0' && name[end] <= '9' {
+		end++
+	}
+	return name[:end]
+}
+
+func TestMigrationNumbersAreUnique(t *testing.T) {
+	files, err := loadMigrationFiles()
+	if err != nil {
+		t.Fatalf("loadMigrationFiles: %v", err)
+	}
+
+	byNumber := map[string][]string{}
+	for name := range files {
+		number := migrationNumber(name)
+		if number == "" {
+			t.Errorf("migration %q does not start with a number; ordering depends on it", name)
+			continue
+		}
+		byNumber[number] = append(byNumber[number], name)
+	}
+
+	for number, names := range byNumber {
+		if len(names) < 2 {
+			continue
+		}
+		allowed, known := historicalDuplicateMigrationNumbers[number]
+		if !known {
+			t.Errorf("migrations %v share the number %s; take the next free number, because order is decided by the full filename and a repeated number makes it a coincidence", names, number)
+			continue
+		}
+		got := append([]string(nil), names...)
+		want := append([]string(nil), allowed...)
+		sort.Strings(got)
+		sort.Strings(want)
+		if !slices.Equal(got, want) {
+			t.Errorf("number %s is shared by %v, but only %v is accounted for; a new migration must not reuse an existing number", number, got, want)
+		}
+	}
+
+	for number, allowed := range historicalDuplicateMigrationNumbers {
+		if len(byNumber[number]) < 2 {
+			t.Errorf("number %s is no longer duplicated, so it is safe again; remove %v from historicalDuplicateMigrationNumbers", number, allowed)
+		}
+	}
+}
+
+func TestMigrationOrderIsFilenameOrderWhenNumbersCollide(t *testing.T) {
+	// The pair that exists today, plus a pair whose descriptions sort the other
+	// way: order must follow the name, not an assumed numeric tiebreak.
+	files := map[string][]byte{
+		"081_ai_connection_pinned_url.sql":    nil,
+		"081_drop_app_namespace_unique.sql":   nil,
+		"046_record_version_update_count.sql": nil,
+		"046_request_metrics.sql":             nil,
+	}
+
+	got := orderMigrationFiles(files)
+	want := []string{
+		"046_record_version_update_count.sql",
+		"046_request_metrics.sql",
+		"081_ai_connection_pinned_url.sql",
+		"081_drop_app_namespace_unique.sql",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
 	}
 }
