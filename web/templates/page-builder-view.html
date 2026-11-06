@@ -911,6 +911,11 @@
     const emptyState = document.getElementById("editorEmptyState");
     const contentHost = document.getElementById("editorContent");
     const selectedAppName = "{{js $selectedApp.Name}}";
+    // The route this page was served from, not the address bar. Editor links are
+    // built from here because window.location is not trustworthy as a base: a URL
+    // rewritten after load used to make every tab link resolve against "/" (see
+    // issue #30), and this page is served from /admin/app-editor and /builder/pages.
+    const editorBaseURL = new URL("{{js .Uri}}", window.location.origin);
     const recordForm = document.getElementById("recordForm");
     const appSelector = document.getElementById("app-selector");
     const publishForm = document.querySelector("[data-app-editor-publish-form='true']");
@@ -1031,8 +1036,19 @@
       });
     }
 
+    function editorURL() {
+      const nextURL = new URL(editorBaseURL.toString());
+      // Carry over the current query so a tab keeps context the page needs, such
+      // as the table a new object belongs to, minus the two we set ourselves.
+      new URLSearchParams(window.location.search).forEach((value, key) => {
+        if (key === "app" || key === "active") return;
+        nextURL.searchParams.set(key, value);
+      });
+      return nextURL;
+    }
+
     function buildEditorURL(nextActiveID) {
-      const nextURL = new URL(window.location.href);
+      const nextURL = editorURL();
       nextURL.searchParams.set("app", selectedAppName);
       if (nextActiveID) {
         nextURL.searchParams.set("active", nextActiveID);
@@ -1095,7 +1111,7 @@
         const tab = document.createElement("a");
         tab.className = `ui-code-tab ${id === activeTab ? "is-active" : ""}`;
         tab.setAttribute("data-tab-id", id);
-        const tabURL = new URL(window.location.href);
+        const tabURL = editorURL();
         tabURL.searchParams.set("app", selectedAppName);
         tabURL.searchParams.set("active", id);
         tab.href = tabURL.toString();
