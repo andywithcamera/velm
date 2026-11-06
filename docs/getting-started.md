@@ -69,7 +69,7 @@ docker build \
   --build-arg BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
 ```
 
-Railway cannot derive the tag itself (`.git` is excluded from the Docker context), so `release` reads `unknown` there until a pipeline passes `BUILD_RELEASE`.
+`BUILD_RELEASE` is optional: the Dockerfile derives it with `scripts/describe-release.sh` from the `.git` directory in the build context, which is why `.dockerignore` does not exclude it. Passing it explicitly is only necessary when the build context has no repository, such as a source archive.
 
 On Railway, no build args are needed: the Dockerfile declares `ARG RAILWAY_GIT_COMMIT_SHA`, so Railway injects the deployed commit for GitHub-triggered builds. Railway only passes variables whose name is declared as an `ARG` — that declaration is the whole contract. Deploys that do not come from GitHub (`railway up`, image deploys) have no commit to report and show `"unknown"`.
 

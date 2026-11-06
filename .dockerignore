@@ -1,4 +1,7 @@
-.git
+# .git stays in the build context: the build derives the release from
+# `git describe`, and excluding the repository made /version report
+# `release: unknown` in production (#178). It is never copied into the final
+# image — only /out is — so this costs build context, not image size.
 .github
 .env
 .session-keys.json
