@@ -1,0 +1,37 @@
+name: Changelog
+
+# Runs only when a release tag is pushed, which is when the discipline in
+# AGENTS.md says an entry must exist. A changelog that lags its tags is worse
+# than no changelog: it claims a practice nobody follows, and a reader cannot
+# tell an empty entry from an uneventful release.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  entry:
+    name: entry exists for this tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Verify CHANGELOG.md names this release
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          if ! grep -q "^## \[${tag}\]" CHANGELOG.md; then
+            echo "CHANGELOG.md has no section for ${GITHUB_REF_NAME}."
+            echo
+            echo "Expected a heading: ## [${tag}] - $(date -u +%Y-%m-%d)"
+            echo "Move the [Unreleased] entries under it and open with an empty [Unreleased]."
+            echo
+            echo "Sections present:"
+            grep -n '^## \[' CHANGELOG.md || echo "  (none)"
+            exit 1
+          fi
+          echo "CHANGELOG.md names ${tag}."
