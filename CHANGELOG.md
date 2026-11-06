@@ -16,6 +16,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - `MFASecretCipher` generalised to `security.SecretCipher`: the AES-256-GCM string cipher was named for its first consumer, and the AI connection keys (#93), webhooks (#91) and OAuth (#88) would have inherited that name for non-MFA secrets. (#102, #174)
 - CI runs `staticcheck` and `gosec`, a route × role matrix, and integration tests against a real Postgres instead of skipping them. (#141, #172)
 
+### Removed
+
+- The GitHub Pages workflow (`.github/workflows/static.yml`). It was the stock starter template, unmodified: it archived the entire repository root and published it at `andywithcamera.github.io/velm` — which has no `index.html`, so it served a 404. It has never published anything anyone reads. It now also fails intermittently in `actions/deploy-pages` (`Found 0 artifact(s)` immediately after a successful upload), and the two commits whose Pages check failed are the two commits Railway did not deploy. Removing the workflow removes a check that can fail for reasons unrelated to Velm. (#182)
+
 ### Fixed
 
 - `TestAgentTokenLifecycle` is re-runnable against a database it has already used. It created a fixed token hash, so the second run died on `_agent_api_token_token_hash_key`; the seeded `_user` row was also never removed. Each run now derives its own token and email and deletes both in `t.Cleanup`, and the run asserts the identity it seeded rather than the one from a previous run. (#177)
