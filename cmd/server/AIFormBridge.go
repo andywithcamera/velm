@@ -13,7 +13,7 @@ import (
 func init() {
 	db.SetSecretCipherBridge(&db.SecretCipherBridge{
 		EncryptFingerprint: func(plaintext string) (string, string, error) {
-			cipher, err := security.NewMFASecretCipherFromEnv()
+			cipher, err := security.NewSecretCipherFromEnv()
 			if err != nil {
 				return "", "", err
 			}
@@ -24,7 +24,7 @@ func init() {
 			return enc, fingerprintKey(plaintext), nil
 		},
 		Decrypt: func(enc string) (string, error) {
-			cipher, err := security.NewMFASecretCipherFromEnv()
+			cipher, err := security.NewSecretCipherFromEnv()
 			if err != nil {
 				return "", err
 			}
