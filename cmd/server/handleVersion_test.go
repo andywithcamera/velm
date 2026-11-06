@@ -6,7 +6,20 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"testing"
+	"time"
+
+	"velm/internal/db"
 )
+
+// resetSchemaVersionCache clears the short-lived cache so a test observes a
+// fresh lookup rather than whatever an earlier test cached.
+func resetSchemaVersionCache(t *testing.T) {
+	t.Helper()
+	schemaVersionCache.mu.Lock()
+	defer schemaVersionCache.mu.Unlock()
+	schemaVersionCache.cachedAt = time.Time{}
+	schemaVersionCache.value = ""
+}
 
 func setBuildMetadata(t *testing.T, commit, built string) {
 	t.Helper()
@@ -25,6 +38,10 @@ func setBuildRelease(t *testing.T, release string) {
 }
 
 func TestHandleVersionReportsStampedBuild(t *testing.T) {
+	resetSchemaVersionCache(t)
+	if db.Pool != nil {
+		t.Skip("a database is connected; the no-database schema assertion does not apply")
+	}
 	setBuildMetadata(t, "1295514e7e6ef660cb22c065634845ca5900da30", "2026-11-04T22:18:52Z")
 	t.Setenv("RAILWAY_GIT_COMMIT_SHA", "")
 
@@ -55,6 +72,9 @@ func TestHandleVersionReportsStampedBuild(t *testing.T) {
 	}
 	if got.Go != runtime.Version() {
 		t.Fatalf("go = %q, want %q", got.Go, runtime.Version())
+	}
+	if got.Schema != unknownBuildValue {
+		t.Fatalf("schema = %q, want %q without a database", got.Schema, unknownBuildValue)
 	}
 }
 
