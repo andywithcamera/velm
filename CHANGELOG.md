@@ -9,7 +9,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Added
 
 - `GET /version` reports `schema`, the highest applied migration. A deploy that half-migrated, or a database restored from an older backup, is now visible from outside instead of discovered at request time. (#161, #175)
-- `GET /version` reports `release`, the tag `git describe` resolves. Production now stamps it: the image build derives it with `scripts/describe-release.sh`, so a Railway deploy names its release instead of reporting `unknown`. (#160, #164, #178)
+- `GET /version` reports `release`, the tag `git describe` resolves. Production now stamps it: `scripts/describe-release.sh` resolves the tag from the repository when the build context has one, and from the GitHub API when it does not — Railway's builder strips `.git`, so a production deploy names its release (`v0.1.0-13-gabc1234`) instead of reporting `unknown`. (#160, #164, #178)
 
 ### Changed
 
