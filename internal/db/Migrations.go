@@ -45,11 +45,7 @@ func RunMigrations(ctx context.Context) error {
 		return err
 	}
 
-	versions := make([]string, 0, len(files))
-	for version := range files {
-		versions = append(versions, version)
-	}
-	sort.Strings(versions)
+	versions := orderMigrationFiles(files)
 
 	// Refuse to run against a schema whose applied history no longer matches
 	// the code. A mismatch means someone edited a migration in place: this
@@ -121,6 +117,24 @@ type appliedMigration struct {
 
 // loadMigrationFiles reads every embedded migration, keyed by filename. The
 // contents are returned so callers checksum exactly the bytes that would run.
+// orderMigrationFiles returns the migration filenames in the order they apply:
+// lexicographic by filename, which is not the same thing as numeric order.
+//
+// The leading number is a hint about when a migration was written, not the key
+// that sequences it. Two files can carry the same number — 046 and 081 both do,
+// and neither can be renumbered now that they are applied somewhere, because an
+// applied file that changes name is a checksum failure at boot. So when numbers
+// collide, the rest of the filename decides, and no code may assume otherwise.
+// TestMigrationNumbersAreUnique keeps new collisions out.
+func orderMigrationFiles(files map[string][]byte) []string {
+	versions := make([]string, 0, len(files))
+	for version := range files {
+		versions = append(versions, version)
+	}
+	sort.Strings(versions)
+	return versions
+}
+
 func loadMigrationFiles() (map[string][]byte, error) {
 	entries, err := fs.ReadDir(migrationsFS, "migrations")
 	if err != nil {
