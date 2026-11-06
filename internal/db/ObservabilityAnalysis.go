@@ -3,11 +3,9 @@ package db
 import (
 	"context"
 	"fmt"
-	"log"
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -30,9 +28,6 @@ var (
 	observabilityAnalysisUUIDPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	observabilityAnalysisIntPattern  = regexp.MustCompile(`^\d+$`)
 
-	observabilityFailMu             sync.Mutex
-	observabilityLastFailLog        time.Time
-	observabilityFailCount          int
 	observabilityAnalysisHexPattern = regexp.MustCompile(`(?i)^[0-9a-f]{16,}$`)
 
 	sensitiveDataChangeSeverity = map[string]int{
@@ -66,35 +61,11 @@ func emitDerivedDataChangeObservability(userID, tableName, recordID, operation s
 	emitDerivedObservabilityBestEffort("data change", buildDerivedObservabilityFromDataChange(userID, tableName, recordID, operation, oldValues, newValues))
 }
 
+// emitDerivedObservabilityBestEffort hands the emit to the background worker.
+// It returns immediately: the emit runs a goja service that is far too
+// expensive to sit on a request path.
 func emitDerivedObservabilityBestEffort(label string, events []derivedObservabilityEvent) {
-	if len(events) == 0 {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), derivedObservabilityTimeout)
-	defer cancel()
-
-	if err := emitDerivedObservability(ctx, events); err != nil {
-		observabilityFailMu.Lock()
-		observabilityFailCount++
-		now := time.Now()
-		shouldLog := now.Sub(observabilityLastFailLog) >= 30*time.Second
-		var count int
-		if shouldLog {
-			observabilityLastFailLog = now
-			count = observabilityFailCount
-			observabilityFailCount = 0
-		}
-		observabilityFailMu.Unlock()
-
-		if shouldLog {
-			if count > 1 {
-				log.Printf("derived observability emit failed: source=%s err=%v (x%d in last 30s)", label, err, count)
-			} else {
-				log.Printf("derived observability emit failed: source=%s err=%v", label, err)
-			}
-		}
-	}
+	enqueueDerivedObservability(label, events)
 }
 
 func emitDerivedObservability(ctx context.Context, events []derivedObservabilityEvent) error {
@@ -110,6 +81,9 @@ func emitDerivedObservability(ctx context.Context, events []derivedObservability
 		return nil
 	}
 
+	// Keep going after a failure so one event the script chokes on cannot
+	// starve the rest of the batch; report the first error.
+	var firstErr error
 	for _, event := range events {
 		if len(event.Payload) == 0 {
 			continue
@@ -121,11 +95,16 @@ func emitDerivedObservability(ctx context.Context, events []derivedObservability
 			RequestID: strings.TrimSpace(event.RequestID),
 			Payload:   event.Payload,
 		}); err != nil {
-			return fmt.Errorf("call %s: %w", derivedObservabilityServiceCall, err)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("call %s: %w", derivedObservabilityServiceCall, err)
+			}
+			if ctx.Err() != nil {
+				break
+			}
 		}
 	}
 
-	return nil
+	return firstErr
 }
 
 func buildDerivedObservabilityFromRequestMetric(metric RequestMetricRecord) []derivedObservabilityEvent {

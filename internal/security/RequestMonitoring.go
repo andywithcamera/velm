@@ -76,8 +76,21 @@ func requestMetricUser(store *sessions.CookieStore, r *http.Request) (string, st
 	return strings.TrimSpace(userID), strings.TrimSpace(userEmail), strings.TrimSpace(userRole)
 }
 
+// probeRequestPaths are hit by health checks, uptime monitors and crawlers.
+// They are the highest-frequency callers of the server and the least
+// interesting telemetry, so they are not recorded at all.
+var probeRequestPaths = map[string]struct{}{
+	"/health":     {},
+	"/healthz":    {},
+	"/version":    {},
+	"/robots.txt": {},
+}
+
 func shouldSkipRequestMetrics(r *http.Request) bool {
 	path := requestPath(r)
+	if _, probe := probeRequestPaths[path]; probe {
+		return true
+	}
 	switch {
 	case strings.HasPrefix(path, "/static/"):
 		return true

@@ -78,6 +78,25 @@ func TestShouldSkipRequestMetrics(t *testing.T) {
 	}
 }
 
+// Probes are high frequency and low signal; recording them costs a goja emit
+// per check on whatever uptime monitor is watching the deployment.
+func TestShouldSkipRequestMetricsProbes(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/health", "/healthz", "/version", "/robots.txt"} {
+		if !shouldSkipRequestMetrics(httptest.NewRequest(http.MethodGet, path, nil)) {
+			t.Fatalf("probe %s should be skipped", path)
+		}
+	}
+
+	// Near misses must still be recorded.
+	for _, path := range []string{"/healthcheck", "/versioned", "/healthz/x"} {
+		if shouldSkipRequestMetrics(httptest.NewRequest(http.MethodGet, path, nil)) {
+			t.Fatalf("path %s should not be skipped", path)
+		}
+	}
+}
+
 func TestRequestClientIP(t *testing.T) {
 	t.Parallel()
 

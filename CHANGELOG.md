@@ -13,6 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Changed
 
+- Derived observability no longer runs on the request path. `emitDerivedObservabilityBestEffort` called the base app's `observability.ingest_event` service inline, so every recorded request waited for a goja run — measured at 1.8s locally, of which 78ms resolved the base app and 2s was the script timing out. Emits are now queued to one background worker that coalesces up to 32 jobs per pass, drops rather than blocks when the queue is full, and carries one metadata cache per batch. A failed event no longer aborts the rest of its batch. Health checks, `/version` and `/robots.txt` are no longer recorded at all. (#189)
+- Script model operations keep the request metadata cache. `scriptViewForTable`, `ParseRecordIDValue` and `buildScriptWhereClause` resolved table views through `context.Background()`, so the cache the request had already built was invisible to them: one request issued 61 identical `FROM _app` queries, each pulling 2×239KB of YAML. Measured 61 → 1. (#189)
 - `MFASecretCipher` generalised to `security.SecretCipher`: the AES-256-GCM string cipher was named for its first consumer, and the AI connection keys (#93), webhooks (#91) and OAuth (#88) would have inherited that name for non-MFA secrets. (#102, #174)
 - CI runs `staticcheck` and `gosec`, a route × role matrix, and integration tests against a real Postgres instead of skipping them. (#141, #172)
 

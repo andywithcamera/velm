@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,12 +18,19 @@ func IsValidRecordID(tableName, id string) bool {
 }
 
 func ParseRecordIDValue(tableName, id string) (any, error) {
+	return ParseRecordIDValueContext(context.Background(), tableName, id)
+}
+
+// ParseRecordIDValueContext keeps the request metadata cache in play. Record id
+// kind is derived from the table view, so resolving it context-free reloads
+// every app definition on each call.
+func ParseRecordIDValueContext(ctx context.Context, tableName, id string) (any, error) {
 	trimmed := strings.TrimSpace(id)
 	if trimmed == "" {
 		return nil, fmt.Errorf("record id is required")
 	}
 
-	switch recordIDKind(tableName) {
+	switch recordIDKindContext(ctx, tableName) {
 	case "int":
 		value, err := strconv.ParseInt(trimmed, 10, 64)
 		if err != nil || value <= 0 {
@@ -37,12 +45,12 @@ func ParseRecordIDValue(tableName, id string) (any, error) {
 	}
 }
 
-func recordIDKind(tableName string) string {
+func recordIDKindContext(ctx context.Context, tableName string) string {
 	if Pool == nil {
 		return "uuid"
 	}
 
-	view := GetView(tableName)
+	view := GetViewContext(ctx, tableName)
 	for _, col := range view.Columns {
 		if col.NAME != "_id" {
 			continue
