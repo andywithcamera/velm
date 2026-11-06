@@ -45,10 +45,6 @@ func ParseRecordIDValueContext(ctx context.Context, tableName, id string) (any, 
 	}
 }
 
-func recordIDKind(tableName string) string {
-	return recordIDKindContext(context.Background(), tableName)
-}
-
 func recordIDKindContext(ctx context.Context, tableName string) string {
 	if Pool == nil {
 		return "uuid"
