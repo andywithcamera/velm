@@ -18,6 +18,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Fixed
 
+- `TestAgentTokenLifecycle` is re-runnable against a database it has already used. It created a fixed token hash, so the second run died on `_agent_api_token_token_hash_key`; the seeded `_user` row was also never removed. Each run now derives its own token and email and deletes both in `t.Cleanup`, and the run asserts the identity it seeded rather than the one from a previous run. (#177)
 - Applying a migration is verified against its checksum. `_schema_migration` now records each file's sha256 and boot fails, naming the file, when an applied migration was edited in place — previously an existing database and a fresh one diverged while both claimed the same version, with no error anywhere. A migration recorded as applied but no longer shipping is fatal too; rows predating checksums are backfilled on first boot. (#161, #175)
 - The `id` attribute pattern in `pageHTMLPolicy` actually runs: bluemonday applies `AllowAttrs` rules in declaration order, so the rule was overwritten before it could match. Enforced in a post-pass. (#166, #168)
 - An AI connection's key is pinned to the host it was entered for. Constraining *where* a key may be sent (#140) did not constrain *which* host, and the destination came from a provider row shared by every connection on it — one edit moved every connection's key at once. (#167, #169)
