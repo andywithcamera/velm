@@ -433,7 +433,7 @@ func (runtimeCtx *scriptRuntimeContext) resolveTableName(raw string) (string, er
 	if !IsSafeIdentifier(name) {
 		return "", fmt.Errorf("invalid table name")
 	}
-	if view := GetView(name); view.Table == nil || view.Table.ID == "" {
+	if view := GetViewContext(runtimeCtx.ctx, name); view.Table == nil || view.Table.ID == "" {
 		return "", fmt.Errorf("table %q not found", name)
 	}
 	return name, nil

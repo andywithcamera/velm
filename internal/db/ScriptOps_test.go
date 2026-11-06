@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"reflect"
 	"testing"
 )
@@ -24,7 +25,7 @@ func TestBuildScriptWhereClauseAddsSafeFilters(t *testing.T) {
 		},
 	}
 
-	gotClause, gotArgs, err := buildScriptWhereClause(view, query, 1)
+	gotClause, gotArgs, err := buildScriptWhereClause(context.Background(), view, query, 1)
 	if err != nil {
 		t.Fatalf("buildScriptWhereClause() error = %v", err)
 	}
@@ -62,7 +63,7 @@ func TestBuildScriptWhereClauseSupportsAdvancedFilters(t *testing.T) {
 		},
 	}
 
-	gotClause, gotArgs, err := buildScriptWhereClause(view, query, 1)
+	gotClause, gotArgs, err := buildScriptWhereClause(context.Background(), view, query, 1)
 	if err != nil {
 		t.Fatalf("buildScriptWhereClause() error = %v", err)
 	}
@@ -131,7 +132,7 @@ func TestBuildScriptWhereClauseSupportsGroupedOrFilters(t *testing.T) {
 		},
 	}
 
-	gotClause, gotArgs, err := buildScriptWhereClause(view, query, 1)
+	gotClause, gotArgs, err := buildScriptWhereClause(context.Background(), view, query, 1)
 	if err != nil {
 		t.Fatalf("buildScriptWhereClause() error = %v", err)
 	}

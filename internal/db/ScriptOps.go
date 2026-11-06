@@ -97,12 +97,12 @@ func ListScriptRecords(ctx context.Context, tableName string, query ScriptRecord
 }
 
 func listScriptRecordsWithQuerier(ctx context.Context, querier scriptQuerier, access *scriptAccess, tableName string, query ScriptRecordQuery, operation string, maxLimit int) ([]map[string]any, error) {
-	view, err := scriptViewForTable(tableName)
+	view, err := scriptViewForTable(ctx, tableName)
 	if err != nil {
 		return nil, err
 	}
 
-	whereClause, args, err := buildScriptWhereClause(view, query, 1)
+	whereClause, args, err := buildScriptWhereClause(ctx, view, query, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func CreateScriptRecord(ctx context.Context, tableName string, values map[string
 }
 
 func createScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, tableName string, values map[string]any, userID string) (map[string]any, error) {
-	view, err := scriptViewForTable(tableName)
+	view, err := scriptViewForTable(ctx, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +272,7 @@ func UpdateScriptRecord(ctx context.Context, tableName, id string, patch map[str
 }
 
 func updateScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, access *scriptAccess, tableName, id string, patch map[string]any, userID string) (map[string]any, error) {
-	view, err := scriptViewForTable(tableName)
+	view, err := scriptViewForTable(ctx, tableName)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +347,7 @@ func updateScriptRecordWithQuerier(ctx context.Context, querier scriptQuerier, a
 		return oldSnapshot, nil
 	}
 
-	recordIDValue, err := ParseRecordIDValue(tableName, id)
+	recordIDValue, err := ParseRecordIDValueContext(ctx, tableName, id)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +437,7 @@ func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuer
 		return ScriptMutationResult{}, fmt.Errorf("script delete requires ids or filters")
 	}
 
-	view, err := scriptViewForTable(tableName)
+	view, err := scriptViewForTable(ctx, tableName)
 	if err != nil {
 		return ScriptMutationResult{}, err
 	}
@@ -445,7 +445,7 @@ func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuer
 		return ScriptMutationResult{}, fmt.Errorf("table %q does not support soft delete", tableName)
 	}
 
-	whereClause, whereArgs, err := buildScriptWhereClause(view, query, 1)
+	whereClause, whereArgs, err := buildScriptWhereClause(ctx, view, query, 1)
 	if err != nil {
 		return ScriptMutationResult{}, err
 	}
@@ -555,7 +555,7 @@ func deleteScriptRecordsWhereWithQuerier(ctx context.Context, querier scriptQuer
 	}, nil
 }
 
-func buildScriptWhereClause(view View, query ScriptRecordQuery, startAt int) (string, []any, error) {
+func buildScriptWhereClause(ctx context.Context, view View, query ScriptRecordQuery, startAt int) (string, []any, error) {
 	if view.Table == nil || view.Table.NAME == "" {
 		return "", nil, fmt.Errorf("table is required")
 	}
@@ -572,7 +572,7 @@ func buildScriptWhereClause(view View, query ScriptRecordQuery, startAt int) (st
 	if len(query.IDs) > 0 {
 		idClauses := make([]string, 0, len(query.IDs))
 		for _, rawID := range query.IDs {
-			recordIDValue, err := ParseRecordIDValue(view.Table.NAME, rawID)
+			recordIDValue, err := ParseRecordIDValueContext(ctx, view.Table.NAME, rawID)
 			if err != nil {
 				return "", nil, err
 			}
@@ -795,13 +795,16 @@ func buildScriptWriteData(view View, values map[string]any, userID, timestamp st
 	return formData, nullColumns, nil
 }
 
-func scriptViewForTable(tableName string) (View, error) {
+// scriptViewForTable resolves a table view. It takes the caller's context so
+// the request metadata cache is honoured: without it every script model
+// operation reloads and re-parses every app definition.
+func scriptViewForTable(ctx context.Context, tableName string) (View, error) {
 	tableName = strings.TrimSpace(strings.ToLower(tableName))
 	if !IsSafeIdentifier(tableName) {
 		return View{}, fmt.Errorf("invalid table name")
 	}
 
-	view := GetView(tableName)
+	view := GetViewContext(ctx, tableName)
 	if view.Table == nil || view.Table.ID == "" {
 		return View{}, fmt.Errorf("table %q not found", tableName)
 	}

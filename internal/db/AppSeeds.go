@@ -96,7 +96,7 @@ func buildAppSeedState(app RegisteredApp, definition *AppDefinition) (appSeedSta
 }
 
 func upsertDefinitionSeedRowTx(ctx context.Context, tx pgx.Tx, state appSeedState, tableName string, rowIndex int, rawRow map[string]any) error {
-	view, err := scriptViewForTable(tableName)
+	view, err := scriptViewForTable(ctx, tableName)
 	if err != nil {
 		return err
 	}
