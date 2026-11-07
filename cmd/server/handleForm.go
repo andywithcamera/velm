@@ -200,6 +200,7 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 	formColumns := orderedFormColumns(selectedForm, xData.View.Columns)
 	formFieldConfigs := buildFormFieldConfigs(ctx, tableName, formColumns)
 	formFieldValues := buildFormFieldValues(xData.Data, formFieldConfigs)
+	dropHiddenFormValues(formColumns, formFieldValues)
 	formSecurityPreviewURL := ""
 	hiddenFields := []formHiddenField{}
 	if selectedFormFound {
@@ -270,6 +271,14 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 		}
 	}
 
+	// Injected after security filtering: "password" is not a column, so field
+	// rules cannot see it, and the value is never read back from the record.
+	if strings.EqualFold(tableName, db.UserTableName) {
+		formColumns = injectUserPasswordFormColumn(tableName, formColumns)
+		passwordConfigs := buildFormFieldConfigs(ctx, tableName, []db.Column{db.UserPasswordFormColumn()})
+		formFieldConfigs[db.UserPasswordField] = passwordConfigs[db.UserPasswordField]
+	}
+
 	viewData := newViewData(w, r, uri, title, section)
 	viewData["FormTable"] = tableName
 	viewData["FormID"] = id
@@ -287,6 +296,8 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 	}
 	viewData["FormReadOnly"] = formReadOnly
 	viewData["FormIsDeleted"] = formFieldValues["_deleted_at"] != ""
+	viewData["FormPasswordFieldName"] = db.UserPasswordField
+	viewData["FormPasswordState"] = loadFormPasswordState(ctx, tableName, id)
 	viewData["FormTimelineCanComment"] = id != "" && id != "new" && !formReadOnly
 	viewData["FormTimelineItems"] = []formTimelineItem{}
 	viewData["FormRelatedSections"] = []formRelatedSection{}
@@ -365,7 +376,12 @@ func parseFormSecurityPreviewValues(ctx context.Context, columns []db.Column, ta
 		if key == "_id" || key == "table_name" || key == "record_id" || isFormSecurityPreviewTransportField(key) || strings.HasPrefix(key, "_") {
 			continue
 		}
-		if !db.IsSafeIdentifier(key) || !editableColumns[key] {
+		if db.IsUserPasswordField(key) {
+			// The synthetic password field has no column; its value is
+			// hashed on save, so a preview only needs its presence.
+			continue
+		}
+		if !db.IsSafeIdentifier(key) || !editableColumns[key] || !db.IsDirectlyWritableColumn(tableName, key) {
 			return nil, nil, fmt.Errorf("invalid field in request")
 		}
 		value := strings.TrimSpace(items[len(items)-1])
@@ -628,6 +644,9 @@ func buildFormFieldConfigs(ctx context.Context, currentTable string, columns []d
 			cfg.InputType = "textarea"
 		case "email":
 			cfg.InputType = "email"
+		case "password":
+			cfg.InputType = "password"
+			cfg.Placeholder = col.LABEL
 		case "url":
 			cfg.InputType = "url"
 		case "phone":

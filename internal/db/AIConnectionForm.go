@@ -30,6 +30,17 @@ func SetSecretCipherBridge(bridge *SecretCipherBridge) {
 // write set and the encrypted form is added in its place.
 func applyBuiltinRecordTransforms(tableName string, formData map[string]string, nullColumns map[string]bool) {
 	switch strings.ToLower(strings.TrimSpace(tableName)) {
+	case "_user":
+		// HandleSaveServerRequest hashes "password" into password_hash before
+		// this point, so a value still sitting here was never hashed. Drop it
+		// rather than write plaintext (or a stray value) into the record.
+		if plaintext, ok := formData[UserPasswordField]; ok {
+			delete(formData, UserPasswordField)
+			delete(nullColumns, UserPasswordField)
+			if strings.TrimSpace(plaintext) != "" {
+				log.Printf("user save: dropped unhashed password value before write")
+			}
+		}
 	case "_ai_connection":
 		plaintext := strings.TrimSpace(formData["api_key"])
 		delete(formData, "api_key")

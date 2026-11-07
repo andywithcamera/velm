@@ -54,6 +54,7 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 	allowedColumns := map[string]bool{}
 	editableColumns := map[string]bool{}
 	columnMeta := map[string]Column{}
+	submittedPassword := ""
 	for _, col := range view.Columns {
 		allowedColumns[col.NAME] = true
 		columnMeta[col.NAME] = col
@@ -85,7 +86,16 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(k, "_") {
 			continue
 		}
-		if !IsSafeIdentifier(k) || !editableColumns[k] {
+		if IsUserPasswordField(k) {
+			// Synthetic field: hashed below into password_hash. It is never
+			// put in formData, so triggers and change capture never see the
+			// plaintext, and it is never stored as submitted.
+			if typed := strings.TrimSpace(v[len(v)-1]); typed != "" {
+				submittedPassword = typed
+			}
+			continue
+		}
+		if !IsSafeIdentifier(k) || !editableColumns[k] || !IsDirectlyWritableColumn(tableName, k) {
 			http.Error(w, "Invalid field in request", http.StatusBadRequest)
 			return
 		}
@@ -108,6 +118,17 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 	if id != "" && id != "new" && !IsValidRecordID(tableName, id) {
 		http.Error(w, "Invalid record ID", http.StatusBadRequest)
 		return
+	}
+	passwordChanged := false
+	if strings.EqualFold(tableName, UserTableName) && submittedPassword != "" {
+		hash, err := HashUserPassword(submittedPassword)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		formData[UserPasswordColumn] = hash
+		delete(nullColumns, UserPasswordColumn)
+		passwordChanged = true
 	}
 	oldSnapshot := map[string]any{}
 	if id != "new" && id != "" {
@@ -200,6 +221,18 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 	if taskTypeValue := TaskTypeValueForTable(r.Context(), tableName); taskTypeValue != "" && allowedColumns["work_type"] {
 		formData["work_type"] = taskTypeValue
 		delete(nullColumns, "work_type")
+	}
+	// Checked after triggers and column filtering, so a before-write trigger
+	// cannot leave a non-hash in the column either.
+	if stored, ok := formData[UserPasswordColumn]; ok {
+		// Defence in depth: the column is not client-writable and the only
+		// producer is HashUserPassword, so a value that is not a bcrypt hash
+		// means something bypassed both. Fail at write time rather than at
+		// the next login (issue #194).
+		if strings.TrimSpace(stored) != "" && !IsBcryptHash(stored) {
+			http.Error(w, "password_hash must be a bcrypt hash of a password; set a password instead", http.StatusBadRequest)
+			return
+		}
 	}
 	validationRecordID := id
 	if isCreate {
@@ -332,6 +365,13 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyAuthzSaveSideEffects(context.Background(), tableName, oldSnapshot, newSnapshot)
+	if passwordChanged {
+		// A new password invalidates every other session for that user, so
+		// a password reset also evicts whoever was already signed in.
+		if err := BumpUserSessionVersion(context.Background(), id); err != nil {
+			log.Printf("failed to bump session version after password change user=%s err=%v", id, err)
+		}
+	}
 	if tableName == "_ai_connection" {
 		if err := syncConnectionAfterSave(r.Context(), id); err != nil {
 			log.Printf("failed to sync AI models after save table=%s id=%s err=%v", tableName, id, err)

@@ -80,7 +80,13 @@ func handleBulkUpdate(w http.ResponseWriter, r *http.Request) {
 	nullColumns := map[string]bool{}
 	for fieldName, raw := range payload.Fields {
 		fieldName = strings.TrimSpace(fieldName)
-		if !db.IsSafeIdentifier(fieldName) || !editableColumns[fieldName] {
+		if db.IsUserPasswordField(fieldName) {
+			// Users have no "password" column: bulk edits cannot set a
+			// password, and must never write one as plaintext.
+			http.Error(w, "Password cannot be set from a bulk edit", http.StatusBadRequest)
+			return
+		}
+		if !db.IsSafeIdentifier(fieldName) || !editableColumns[fieldName] || !db.IsDirectlyWritableColumn(tableName, fieldName) {
 			http.Error(w, "Invalid field in request", http.StatusBadRequest)
 			return
 		}
