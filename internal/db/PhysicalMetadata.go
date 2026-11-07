@@ -188,6 +188,11 @@ var builtinTableMetadata = map[string]builtinTableMeta{
 // and forms. api_key_enc holds ciphertext; it must never render in generic
 // views — key changes go through the dedicated admin API (PR #103).
 var builtinColumnOverrides = map[string]map[string]bool{
+	// password_hash is a credential: hidden from every generic list and form.
+	// Password changes go through the write-only "password" virtual column.
+	"_user": {
+		"password_hash": true,
+	},
 	"_ai_connection": {
 		"api_key_enc":         true,
 		"api_key_fingerprint": false, // display only, safe

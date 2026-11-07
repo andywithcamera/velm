@@ -35,8 +35,10 @@ func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var storedPassword string
+	// COALESCE keeps a NULL password_hash from surfacing as a scan error: no
+	// password set is a failed login, not a broken query.
 	err = db.Pool.QueryRow(context.Background(), `
-        SELECT password_hash FROM _user WHERE email = $1
+        SELECT COALESCE(password_hash, '') FROM _user WHERE email = $1
     `, email).Scan(&storedPassword)
 
 	if err != nil {
@@ -47,6 +49,12 @@ func loginPostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = bcrypt.CompareHashAndPassword([]byte(storedPassword), []byte(password))
+	if err == bcrypt.ErrHashTooShort || (err == bcrypt.ErrMismatchedHashAndPassword && !db.IsBcryptHash(storedPassword)) {
+		// A value is stored but it is not a hash, so no password can ever
+		// match it. Say so in the log: otherwise this looks like a normal
+		// wrong-password and the account is effectively a dead end.
+		log.Printf("Login failed for %s: stored password_hash is not a bcrypt hash; set a password for this user in the app", email)
+	}
 	if err == nil {
 		if next == "/" {
 			next = defaultAuthenticatedRoute(r.Context())

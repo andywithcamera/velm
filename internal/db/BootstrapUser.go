@@ -95,9 +95,9 @@ func BootstrapFirstUser(ctx context.Context, input BootstrapUserInput) (Bootstra
 		return BootstrapUserResult{}, false, err
 	}
 
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
+	passwordHash, err := HashUserPassword(input.Password)
 	if err != nil {
-		return BootstrapUserResult{}, false, fmt.Errorf("hash password: %w", err)
+		return BootstrapUserResult{}, false, err
 	}
 
 	tx, err := Pool.Begin(ctx)

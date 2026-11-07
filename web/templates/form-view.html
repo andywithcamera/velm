@@ -87,6 +87,9 @@
 	        <input type="hidden" name="_id" value="{{.FormID}}">
 	      {{end}}
 	      <div class="ui-alert ui-alert-danger ui-form-error-banner hidden" data-form-error-banner="true" role="alert"></div>
+	      {{if .FormPasswordState}}
+	      <div class="ui-alert ui-alert-warning" role="status" data-form-password-state="true">{{.FormPasswordState}}</div>
+	      {{end}}
 	      <div class="ui-alert hidden ui-form-live-banner" data-form-live-banner="true">
 	        <div class="ui-form-live-banner-copy" data-form-live-message="true">Updates are available for this record.</div>
 	        <button type="button" class="ui-btn ui-btn-secondary" data-form-live-reload="true">Reload latest</button>
@@ -381,10 +384,14 @@
                 {{if $readonly}}readonly{{end}}
                 {{if not $x.IS_NULLABLE}}required{{end}}
                 name="{{$x.NAME}}"
+                {{if and $.FormPasswordFieldName (eq $x.NAME $.FormPasswordFieldName)}}autocomplete="new-password" spellcheck="false"{{end}}
                 value="{{$val}}"
                 placeholder="{{$cfg.Placeholder}}"
                 class="ui-input"
               />
+	              {{end}}
+	              {{if and $.FormPasswordFieldName (eq $x.NAME $.FormPasswordFieldName)}}
+	              <p class="ui-field-help">Leave blank to keep the current password. Minimum 10 characters. Saving signs that user out of every other session.</p>
 	              {{end}}
 	              <p class="ui-field-error hidden" data-field-error-for="{{$x.NAME}}"></p>
 	            </div>
