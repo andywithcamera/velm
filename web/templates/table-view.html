@@ -602,12 +602,30 @@
     </div>
     {{end}}
 
+    {{$initialLane := ""}}
+    {{range .TaskBoardLanes}}{{if and (eq $initialLane "") (gt .Count 0)}}{{$initialLane = .Value}}{{end}}{{end}}
+    {{if and (eq $initialLane "") .TaskBoardLanes}}{{$initialLane = (index .TaskBoardLanes 0).Value}}{{end}}
+
+    <nav class="ui-task-board-switcher" data-lane-switcher aria-label="Board lanes">
+      {{range .TaskBoardLanes}}
+      <button
+        type="button"
+        class="ui-task-board-switcher-btn{{if eq .Value $initialLane}} is-active{{end}}"
+        data-lane-target="{{.Value}}"
+        aria-pressed="{{if eq .Value $initialLane}}true{{else}}false{{end}}"
+      >
+        <span class="ui-task-board-switcher-label">{{.Label}}</span>
+        <span class="ui-task-board-switcher-count" data-lane-count-chip>{{.Count}}</span>
+      </button>
+      {{end}}
+    </nav>
+
     <div class="ui-task-board-scroll">
-      <div class="ui-task-board-grid" style="grid-template-columns: repeat({{len .TaskBoardLanes}}, minmax(18rem, 1fr));">
+      <div class="ui-task-board-grid" style="--lane-count: {{len .TaskBoardLanes}}">
         {{range .TaskBoardLanes}}
         {{$lane := .}}
         <section
-          class="ui-card ui-task-board-lane{{if $lane.CanDrop}} is-droppable{{end}}"
+          class="ui-card ui-task-board-lane{{if $lane.CanDrop}} is-droppable{{end}}{{if eq $lane.Value $initialLane}} is-mobile-active{{end}}"
           data-state="{{$lane.Value}}"
           data-droppable="{{if $lane.CanDrop}}true{{else}}false{{end}}"
         >
@@ -673,6 +691,16 @@
                 <p class="ui-task-board-card-meta">{{.DueAtLabel}}</p>
                 {{end}}
               </div>
+              {{if and $.TaskBoardCanUpdate .CanDrag}}
+              <div class="ui-task-board-card-move">
+                <label class="ui-sr-only" for="taskBoardMove-{{.ID}}">Move task to another lane</label>
+                <select id="taskBoardMove-{{.ID}}" class="ui-input ui-task-board-move-select" data-move-select title="Move to another lane">
+                  {{range $.TaskBoardLanes}}{{if .CanDrop}}
+                  <option value="{{.Value}}"{{if eq .Value $lane.Value}} selected{{end}}>{{if eq .Value $lane.Value}}{{.Label}}{{else}}Move to {{.Label}}{{end}}</option>
+                  {{end}}{{end}}
+                </select>
+              </div>
+              {{end}}
             </article>
             {{end}}
             <div class="ui-task-board-empty" data-lane-empty{{if gt $lane.Count 0}} hidden{{end}}>No tasks</div>
@@ -912,6 +940,12 @@
     if (!board) return;
 
     const lanes = Array.from(board.querySelectorAll('.ui-task-board-lane'));
+    const switcherButtons = new Map();
+    board.querySelectorAll('.ui-task-board-switcher-btn').forEach((button) => {
+      switcherButtons.set(button.dataset.laneTarget || '', button);
+    });
+    const mobileLaneQuery = window.matchMedia('(max-width: 720px)');
+
     function updateLaneUI(lane) {
       const body = lane?.querySelector('[data-lane-body]');
       if (!body) return;
@@ -924,8 +958,32 @@
       if (empty) {
         empty.hidden = count > 0;
       }
+      const chip = switcherButtons.get(lane?.dataset?.state || '')?.querySelector('[data-lane-count-chip]');
+      if (chip) {
+        chip.textContent = String(count);
+      }
     }
     lanes.forEach(updateLaneUI);
+
+    function activateLane(value, options = {}) {
+      const target = String(value || '');
+      const matched = lanes.some((lane) => (lane.dataset.state || '') === target);
+      lanes.forEach((lane) => {
+        lane.classList.toggle('is-mobile-active', matched && (lane.dataset.state || '') === target);
+      });
+      switcherButtons.forEach((button, key) => {
+        const isActive = matched && key === target;
+        button.classList.toggle('is-active', isActive);
+        button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        if (isActive && options.reveal !== false && mobileLaneQuery.matches) {
+          button.scrollIntoView({ block: 'nearest', inline: 'center' });
+        }
+      });
+    }
+
+    switcherButtons.forEach((button, key) => {
+      button.addEventListener('click', () => activateLane(key));
+    });
 
     const realtimeTables = [
       {{range $index, $tableName := .TaskBoardSourceTables}}{{if $index}},{{end}}{{printf "%q" $tableName}}{{end}}
@@ -1055,6 +1113,18 @@
       });
     }
 
+    function laneForState(state) {
+      const wanted = String(state || '');
+      return lanes.find((lane) => (lane.dataset.state || '') === wanted && lane.dataset.droppable === 'true') || null;
+    }
+
+    function syncMoveSelect(card, state) {
+      const select = card?.querySelector?.('[data-move-select]');
+      if (select && state !== undefined && state !== null) {
+        select.value = String(state);
+      }
+    }
+
     function clearCardDragState(card) {
       if (card) {
         card.classList.remove('is-dragging');
@@ -1180,8 +1250,57 @@
         } finally {
           pendingUpdate = false;
           activeCard.classList.remove('is-saving');
+          syncMoveSelect(activeCard, activeCard.dataset.state || '');
           clearCardDragState(activeCard);
           cleanupDragState();
+        }
+      });
+    });
+
+    // Touch, keyboard and screen-reader path to the same state change the drop
+    // handler performs: a phone never fires dragstart, so the select is the only
+    // way to move a card there.
+    board.querySelectorAll('[data-move-select]').forEach((select) => {
+      select.addEventListener('change', async () => {
+        const card = select.closest('.ui-task-board-card');
+        const nextState = (select.value || '').trim();
+        const currentState = card?.dataset.state || '';
+        const targetLane = laneForState(nextState);
+        if (!card || pendingUpdate || !nextState || nextState === currentState || !targetLane) {
+          syncMoveSelect(card, currentState);
+          return;
+        }
+
+        const taskID = card.dataset.taskId || '';
+        const updateURL = card.dataset.updateUrl || defaultUpdateURL;
+        const previousLane = card.closest('.ui-task-board-lane');
+        if (!taskID || !previousLane) {
+          syncMoveSelect(card, currentState);
+          return;
+        }
+
+        pendingUpdate = true;
+        card.classList.add('is-saving');
+        select.disabled = true;
+        moveCardToLane(card, targetLane);
+        card.dataset.state = nextState;
+        updateLaneUI(previousLane);
+        updateLaneUI(targetLane);
+
+        try {
+          await persistTaskUpdate(updateURL, taskID, { state: nextState });
+          syncMoveSelect(card, nextState);
+        } catch (error) {
+          moveCardToLane(card, previousLane);
+          card.dataset.state = currentState;
+          syncMoveSelect(card, currentState);
+          updateLaneUI(previousLane);
+          updateLaneUI(targetLane);
+          showBoardError(error instanceof Error ? error.message : 'Failed to update task state');
+        } finally {
+          pendingUpdate = false;
+          card.classList.remove('is-saving');
+          select.disabled = false;
         }
       });
     });
