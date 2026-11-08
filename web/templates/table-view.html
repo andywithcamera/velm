@@ -520,21 +520,32 @@
   data-can-update="{{if .TaskBoardCanUpdate}}true{{else}}false{{end}}"
 >
   <div class="ui-panel ui-domain-table-wrap">
-    <div class="ui-simple-table-head">
-      <div>
-        <h1 class="ui-simple-table-title">{{if .TableLabel}}{{.TableLabel}}{{else}}{{.TableName}}{{end}}</h1>
-        <p class="ui-simple-table-subtitle">{{.TaskBoardSummary}}{{if .TableDescription}} | {{.TableDescription}}{{end}}</p>
+    <header class="ui-action-bar">
+      <div class="ui-action-bar-copy">
+        <h1 class="ui-action-bar-title">{{if .TableLabel}}{{.TableLabel}}{{else}}{{.TableName}}{{end}}</h1>
+        <p class="ui-action-bar-subtitle">
+          <span>{{.TaskBoardSummary}}</span>
+          {{if .TableDescription}}<span class="ui-action-bar-subtitle-extra">{{.TableDescription}}</span>{{end}}
+        </p>
       </div>
-      <div class="ui-toolbar-group">
+      <div class="ui-action-bar-actions">
         {{if .TableCanCreate}}
-        <a href="{{.TableCreateURL}}" class="ui-btn ui-btn-primary">New</a>
+        <a href="{{.TableCreateURL}}" class="ui-icon-btn ui-icon-btn-primary" aria-label="New" title="New">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </a>
         {{end}}
-        <a href="{{.TaskBoardListURL}}" class="ui-btn ui-btn-secondary">List</a>
-        <span class="ui-badge ui-badge-neutral">{{.TaskBoardTotalTasks}} tasks</span>
+        <a href="{{.TaskBoardListURL}}" class="ui-icon-btn" aria-label="List view" title="List view">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+        </a>
+        <button type="button" class="ui-icon-btn" data-filter-toggle="true" data-filter-panel="taskBoardFiltersForm" aria-controls="taskBoardFiltersForm" aria-expanded="false" aria-label="Filters" title="Filters">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+          <span class="ui-icon-btn-badge" data-filter-active-badge hidden></span>
+        </button>
+        <span class="ui-action-bar-count">{{.TaskBoardTotalTasks}} tasks</span>
       </div>
-    </div>
+    </header>
 
-    <form id="taskBoardFiltersForm" method="GET" action="{{.TaskBoardPath}}" class="ui-toolbar ui-task-board-toolbar">
+    <form id="taskBoardFiltersForm" method="GET" action="{{.TaskBoardPath}}" class="ui-toolbar ui-task-board-toolbar ui-filter-panel" hidden>
       <div class="ui-task-board-toolbar-row">
         <div class="ui-toolbar-group ui-task-board-filters">
           <label class="ui-task-board-filter">
@@ -578,20 +589,18 @@
             </select>
           </label>
         </div>
-        <div class="ui-toolbar-group ui-task-board-toolbar-actions">
-          {{if .TaskBoardHasActiveFilters}}
-          <a href="{{.TaskBoardResetURL}}" class="ui-btn ui-btn-secondary">Reset</a>
-          {{end}}
-        </div>
       </div>
       <div class="ui-task-board-query-row">
         <div class="ui-toolbar-group ui-query-bar ui-task-board-query-bar" data-grow="true">
-          <input id="serverFilterInput" class="ui-input ui-toolbar-search" type="text" name="q" placeholder="Filter tasks" value="{{.ServerQuery}}" autocomplete="off" />
+          <input id="serverFilterInput" class="ui-input ui-toolbar-search" type="text" name="q" placeholder="Filter tasks" value="{{.ServerQuery}}" autocomplete="off" enterkeyhint="search" />
           <div id="querySuggestions" class="ui-query-suggestions hidden"></div>
         </div>
-        <div class="ui-toolbar-group">
-          <button type="submit" class="ui-btn ui-btn-secondary">Filter</button>
-        </div>
+      </div>
+      <div class="ui-filter-panel-foot">
+        <button type="submit" class="ui-btn ui-btn-primary">Apply filters</button>
+        {{if .TaskBoardHasActiveFilters}}
+        <a href="{{.TaskBoardResetURL}}" class="ui-btn ui-btn-secondary">Reset</a>
+        {{end}}
       </div>
     </form>
     {{if .TaskBoardInsights}}
@@ -736,6 +745,61 @@
     const querySuggestions = document.getElementById('querySuggestions');
     let suggestionItems = [];
     let activeSuggestionIndex = -1;
+
+    // Compact action bar: the filter panel stays collapsed until the funnel is tapped.
+    const filterToggle = document.querySelector('[data-filter-toggle][data-filter-panel="taskBoardFiltersForm"]');
+    const filterBadge = document.querySelector('[data-filter-active-badge]');
+
+    function countActiveFilters() {
+      let count = 0;
+      const selectDefaults = {
+        taskBoardScope: 'mine',
+        taskBoardGroup: '',
+        taskBoardPriority: '',
+        taskBoardType: '',
+        taskBoardAssignedTo: '',
+      };
+      Object.keys(selectDefaults).forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el || el.disabled) return;
+        if ((el.value || '') !== selectDefaults[id]) count += 1;
+      });
+      if (serverFilterInput && (serverFilterInput.value || '').trim()) count += 1;
+      return count;
+    }
+
+    function syncFilterBadge() {
+      if (!filterBadge) return;
+      const total = countActiveFilters();
+      filterBadge.hidden = total === 0;
+      filterBadge.textContent = String(total);
+      if (filterToggle) {
+        filterToggle.setAttribute('aria-label', total === 0 ? 'Filters' : `Filters (${total} active)`);
+      }
+    }
+
+    if (filterToggle && form) {
+      const filterStorageKey = 'task-board-filters-open';
+      const setFilterOpen = (open, persist) => {
+        form.hidden = !open;
+        filterToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        filterToggle.classList.toggle('is-active', open);
+        if (persist === false) return;
+        try {
+          window.localStorage.setItem(filterStorageKey, open ? '1' : '0');
+        } catch (_) {}
+      };
+      let startOpen = false;
+      try {
+        startOpen = window.localStorage.getItem(filterStorageKey) === '1';
+      } catch (_) {}
+      setFilterOpen(startOpen, false);
+      filterToggle.addEventListener('click', () => setFilterOpen(form.hidden));
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !form.hidden) setFilterOpen(false);
+      });
+      syncFilterBadge();
+    }
 
     const submitFilters = () => {
       if (!form) return;

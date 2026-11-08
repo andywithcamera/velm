@@ -560,3 +560,244 @@
     min-width: 16rem;
   }
 }
+
+/* ─── Compact action bar (board + record headers) ────────────── */
+
+.ui-action-bar {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  justify-content: space-between;
+  padding: 0.55rem 0.75rem;
+}
+
+.ui-action-bar-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ui-action-bar-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.ui-action-bar-subtitle {
+  color: var(--text-ghost);
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-action-bar-subtitle-extra::before {
+  content: " | ";
+}
+
+.ui-action-bar-actions {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.4rem;
+}
+
+.ui-action-bar-count {
+  color: var(--text-ghost);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Reuse the existing .ui-icon-btn from 10-core; only these containers adjust it. */
+.ui-action-bar .ui-icon-btn,
+.ui-menu-wrap .ui-icon-btn {
+  flex: 0 0 auto;
+  position: relative;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.ui-action-bar .ui-icon-btn svg,
+.ui-menu-wrap .ui-icon-btn svg {
+  height: 1.05rem;
+  width: 1.05rem;
+}
+
+.ui-icon-btn-primary {
+  background: var(--text-primary) !important;
+  border-color: var(--text-primary) !important;
+  color: var(--bg-base) !important;
+}
+
+.ui-icon-btn.is-active {
+  background: var(--text-primary) !important;
+  border-color: var(--text-primary) !important;
+  color: var(--bg-base) !important;
+}
+
+.ui-icon-btn-badge {
+  background: var(--text-primary);
+  border-radius: 999px;
+  color: var(--bg-base);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 1rem;
+  padding: 0.15rem 0.25rem;
+  position: absolute;
+  right: -0.3rem;
+  text-align: center;
+  top: -0.3rem;
+}
+
+.ui-icon-btn.is-active .ui-icon-btn-badge,
+.ui-icon-btn-primary .ui-icon-btn-badge {
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+.ui-filter-panel[hidden],
+.ui-action-menu.hidden {
+  display: none !important;
+}
+
+.ui-filter-panel {
+  background: var(--surface-soft, rgba(0, 0, 0, 0.03));
+  border-bottom: 1px solid var(--border);
+  padding: 0.7rem 0.75rem 0.8rem;
+}
+
+.ui-filter-panel-foot {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+/* Overflow menu for record actions */
+.ui-menu-wrap {
+  position: relative;
+}
+
+.ui-action-menu {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-mid);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
+  display: grid;
+  gap: 1px;
+  min-width: 12rem;
+  padding: 0.3rem;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 60;
+}
+
+.ui-action-menu-item {
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 0.5rem 0.65rem;
+  text-align: left;
+  width: 100%;
+}
+
+.ui-action-menu-item:hover,
+.ui-action-menu-item:focus-visible {
+  background: var(--surface-soft, rgba(0, 0, 0, 0.06));
+}
+
+.ui-action-menu-item-danger {
+  color: var(--status-error);
+}
+
+.ui-action-menu-sep {
+  background: var(--border);
+  height: 1px;
+  margin: 0.25rem 0.3rem;
+}
+
+.ui-form-timeline-toggle.ui-action-menu-item {
+  min-width: 0;
+}
+
+/* Give form fields their full width back on small screens. */
+@media (max-width: 720px) {
+  .ui-action-bar {
+    gap: 0.4rem 0.5rem;
+    padding: 0.5rem 0.55rem;
+  }
+
+  .ui-action-bar-title {
+    font-size: 1rem;
+  }
+
+  .ui-action-bar-subtitle {
+    max-width: 15rem;
+  }
+
+  .ui-action-bar-subtitle-extra {
+    display: none;
+  }
+
+  .ui-form-wrap > *,
+  .ui-form-layout {
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .ui-form-frame-head {
+    gap: 0.5rem;
+    padding: 0.6rem 0.55rem;
+  }
+
+  .ui-form-frame-actions {
+    gap: 0.4rem;
+    width: 100%;
+  }
+
+  .ui-form-frame-actions .ui-btn {
+    flex: 1 1 auto;
+    width: auto;
+  }
+
+  .ui-form-section {
+    padding: 0.55rem;
+  }
+
+  .ui-field-card {
+    padding: 0.7rem;
+  }
+
+  .ui-form-grid {
+    gap: 0.5rem;
+  }
+
+  .ui-domain-form .ui-input,
+  .ui-domain-form .ui-select,
+  .ui-domain-form .ui-textarea {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .ui-filter-panel {
+    padding: 0.6rem 0.55rem 0.65rem;
+  }
+
+  .ui-filter-panel-foot .ui-btn {
+    flex: 1 1 0;
+    width: auto;
+  }
+}
