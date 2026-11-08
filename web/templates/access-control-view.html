@@ -240,24 +240,6 @@
                 </div>
               {{end}}
             </div>
-            {{if .UserRoleAssignments}}
-            <div class="ui-panel ui-panel-muted" style="margin-top: 1rem;">
-              <h4 class="ui-section-title">Direct role grants (deprecated)</h4>
-              <p class="ui-section-copy">
-                {{.DirectGrantCount}} grant{{if ne .DirectGrantCount 1}}s{{end}} still assigned user-to-role directly.
-                These still apply, but groups are the only supported path now, so they are read-only here.
-                Add the user to a group carrying the same role, then remove the direct grant.
-              </p>
-              <div class="ui-stack">
-                {{range .UserRoleAssignments}}
-                <div>
-                  <strong>{{.UserName}}</strong> ({{.Email}})
-                  <span class="ui-section-copy">Role: {{.RoleName}}{{if .AppID}} | app: {{.AppID}}{{else}} | global{{end}}</span>
-                </div>
-                {{end}}
-              </div>
-            </div>
-            {{end}}
           </div>
 
           <div class="ui-panel">
