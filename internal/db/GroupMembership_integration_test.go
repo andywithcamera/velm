@@ -82,17 +82,12 @@ func TestGroupMembershipGrantsAndRevokesRoles(t *testing.T) {
 
 	alice := newUser("membership-alice")
 
-	// 1. Membership alone confers the role: nothing is written to _user_role.
+	// 1. Membership alone confers the role: there is no other grant path.
 	if err := AddGroupMembership(ctx, alice, adminGroupID); err != nil {
 		t.Fatalf("AddGroupMembership: %v", err)
 	}
 	if !hasGlobalPermission(t, ctx, alice, "admin") {
 		t.Fatal("a member of the Administrators group does not have global admin")
-	}
-	if n, err := CountDirectUserRoleGrants(ctx); err != nil {
-		t.Fatalf("CountDirectUserRoleGrants: %v", err)
-	} else if n != 0 {
-		t.Fatalf("adding a group membership wrote %d direct _user_role grants, want 0", n)
 	}
 
 	// 2. Re-adding is a no-op, not an error: a double-submitted form must not
@@ -201,13 +196,12 @@ func hasGlobalPermission(t *testing.T, ctx context.Context, userID, action strin
 	return ok
 }
 
-// TestBootstrapAdminWritesNoDirectGrant pins the bug found in the live smoke
-// test for #199 R3: while bootstrap dual-wrote _user_role, the last-admin guard
+// TestBootstrapAdminGrantsAdminByMembership pins the bug found in the live smoke
+// test for #199: when bootstrap also wrote a direct grant, the last-admin guard
 // was blind, because removing the group membership still left an admin behind
-// via the direct grant. The guard could not fire at all. After R3 bootstrap
-// grants admin by membership only, so the guard sees the removal and refuses
-// it when it would empty the instance.
-func TestBootstrapAdminWritesNoDirectGrant(t *testing.T) {
+// via the direct grant. Now membership is the only grant path, so the guard sees
+// the removal and refuses it when it would empty the instance.
+func TestBootstrapAdminGrantsAdminByMembership(t *testing.T) {
 	baseURL := os.Getenv("TEST_DATABASE_URL")
 	if baseURL == "" {
 		t.Skip("TEST_DATABASE_URL not set; skipping real-Postgres integration test")
@@ -265,12 +259,6 @@ func TestBootstrapAdminWritesNoDirectGrant(t *testing.T) {
 	if !hasGlobalPermission(t, ctx, userID, "admin") {
 		t.Fatal("bootstrapped user is not a global admin")
 	}
-	if n, err := CountDirectUserRoleGrants(ctx); err != nil {
-		t.Fatalf("CountDirectUserRoleGrants: %v", err)
-	} else if n != 0 {
-		t.Fatalf("bootstrap wrote %d direct _user_role grants, want 0: a direct grant makes the last-admin guard blind", n)
-	}
-
 	var groupID string
 	if err := Pool.QueryRow(ctx, `SELECT _id::text FROM _group WHERE name = $1`, AdministratorsGroupName).Scan(&groupID); err != nil {
 		t.Fatalf("look up Administrators group: %v", err)

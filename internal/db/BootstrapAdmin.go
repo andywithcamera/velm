@@ -91,11 +91,9 @@ func grantGlobalAdminByUserIDTx(ctx context.Context, tx pgx.Tx, userID, email st
 		return err
 	}
 
-	// No direct _user_role write (#199 R3). While the guard in
-	// 082_last_admin_guard counts effective admins, a dual write makes it blind:
-	// removing the last group membership still left an admin behind via
-	// _user_role, so the guard could never fire (observed live before this
-	// change). Existing legacy grants keep being read; nothing new writes them.
+	// Group membership is the only grant path (#199 R4). A dual write into the
+	// old direct table made the last-admin guard blind: removing the last group
+	// membership still left an admin behind, so the guard could never fire.
 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO _bootstrap_admin (user_id, email)

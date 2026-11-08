@@ -46,16 +46,7 @@ func EnsureAuthzSchema() error {
 			_created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (role_id, permission_id)
 		)`,
-		`CREATE TABLE IF NOT EXISTS _user_role (
-			user_id TEXT NOT NULL,
-			role_id UUID NOT NULL REFERENCES _role(_id) ON DELETE CASCADE,
-			app_id TEXT NOT NULL DEFAULT '',
-			_created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (user_id, role_id, app_id)
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_user_role_user_id ON _user_role(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_permission_lookup ON _permission(resource, action, scope)`,
-		`UPDATE _user_role SET app_id = '' WHERE app_id IS NULL`,
 	}
 
 	for _, stmt := range statements {
@@ -148,22 +139,5 @@ func seedAuthzData(ctx context.Context, tx pgx.Tx) error {
 		}
 	}
 
-	_, err := tx.Exec(ctx, `
-		DO $$
-		BEGIN
-			IF to_regclass('_user') IS NOT NULL THEN
-				INSERT INTO _user_role (user_id, role_id, app_id)
-				SELECT u._id::text, r._id, ''
-				FROM _user u
-				JOIN _role r ON r.name = 'admin'
-				WHERE NOT EXISTS (
-					SELECT 1
-					FROM _user_role ur
-					WHERE ur.user_id = u._id::text
-				);
-			END IF;
-		END
-		$$
-	`)
-	return err
+	return nil
 }

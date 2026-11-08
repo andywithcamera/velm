@@ -30,15 +30,6 @@ type AuthzUser struct {
 	Email string
 }
 
-type UserRoleAssignment struct {
-	UserID   string
-	UserName string
-	Email    string
-	RoleID   string
-	RoleName string
-	AppID    string
-}
-
 type RolePermissionAssignment struct {
 	RoleID       string
 	RoleName     string
@@ -120,43 +111,6 @@ func ListPermissions(ctx context.Context) ([]AuthzPermission, error) {
 	return permissions, rows.Err()
 }
 
-func ListUserRoleAssignments(ctx context.Context) ([]UserRoleAssignment, error) {
-	rows, err := Pool.Query(ctx, `
-		SELECT
-			ur.user_id,
-			COALESCE(u.name, ''),
-			COALESCE(u.email, ''),
-			ur.role_id::text,
-			r.name,
-			COALESCE(ur.app_id, '')
-		FROM _user_role ur
-		JOIN _role r ON r._id = ur.role_id
-		LEFT JOIN _user u ON u._id::text = ur.user_id
-		ORDER BY u.name ASC, r.priority ASC
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var assignments []UserRoleAssignment
-	for rows.Next() {
-		var assignment UserRoleAssignment
-		if err := rows.Scan(
-			&assignment.UserID,
-			&assignment.UserName,
-			&assignment.Email,
-			&assignment.RoleID,
-			&assignment.RoleName,
-			&assignment.AppID,
-		); err != nil {
-			return nil, err
-		}
-		assignments = append(assignments, assignment)
-	}
-	return assignments, rows.Err()
-}
-
 func ListRolePermissionAssignments(ctx context.Context) ([]RolePermissionAssignment, error) {
 	rows, err := Pool.Query(ctx, `
 		SELECT
@@ -231,68 +185,6 @@ func CreatePermission(ctx context.Context, resource, action, scope, description 
 		InvalidateAuthzCache()
 	}
 	return err
-}
-
-func GrantUserRole(ctx context.Context, userID, roleID, appID string) error {
-	userID = strings.TrimSpace(userID)
-	roleID = strings.TrimSpace(roleID)
-	appID = strings.TrimSpace(appID)
-
-	if roleID == "" {
-		return errors.New("role id is required")
-	}
-	if appID == "" {
-		appID = ""
-	}
-
-	_, err := Pool.Exec(ctx, `
-		INSERT INTO _user_role (user_id, role_id, app_id)
-		VALUES ($1, $2, $3)
-		ON CONFLICT DO NOTHING
-	`, userID, roleID, appID)
-	if err == nil {
-		InvalidateAuthzCacheForUser(userID)
-	}
-	return err
-}
-
-func RevokeUserRole(ctx context.Context, userID, roleID, appID string) error {
-	userID = strings.TrimSpace(userID)
-	roleID = strings.TrimSpace(roleID)
-	appID = strings.TrimSpace(appID)
-
-	if appID == "" {
-		hasAdminPerm, err := roleHasGlobalAdminPermission(ctx, roleID)
-		if err != nil {
-			return err
-		}
-		if hasAdminPerm {
-			exists, err := userRoleAssignmentExists(ctx, userID, roleID, appID)
-			if err != nil {
-				return err
-			}
-			if exists {
-				adminCountAfter, err := countGlobalAdminsAfterUserRoleRevocation(ctx, userID, roleID, appID)
-				if err != nil {
-					return err
-				}
-				if adminCountAfter == 0 {
-					return ErrLastGlobalAdminRemoval
-				}
-			}
-		}
-	}
-
-	_, err := Pool.Exec(ctx, `
-		DELETE FROM _user_role
-		WHERE user_id = $1
-		  AND role_id = $2
-		  AND app_id = $3
-	`, userID, roleID, appID)
-	if err == nil {
-		InvalidateAuthzCacheForUser(userID)
-	}
-	return NormalizeLastGlobalAdminError(err)
 }
 
 func GrantRolePermission(ctx context.Context, roleID, permissionID string) error {
@@ -377,20 +269,6 @@ func permissionIsGlobalAdmin(ctx context.Context, permissionID string) (bool, er
 	return ok, err
 }
 
-func userRoleAssignmentExists(ctx context.Context, userID, roleID, appID string) (bool, error) {
-	var ok bool
-	err := Pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1
-			FROM _user_role
-			WHERE user_id = $1
-			  AND role_id = $2
-			  AND app_id = $3
-		)
-	`, userID, roleID, appID).Scan(&ok)
-	return ok, err
-}
-
 func rolePermissionAssignmentExists(ctx context.Context, roleID, permissionID string) (bool, error) {
 	var ok bool
 	err := Pool.QueryRow(ctx, `
@@ -402,39 +280,6 @@ func rolePermissionAssignmentExists(ctx context.Context, roleID, permissionID st
 		)
 	`, roleID, permissionID).Scan(&ok)
 	return ok, err
-}
-
-func countGlobalAdminsAfterUserRoleRevocation(ctx context.Context, userID, roleID, appID string) (int, error) {
-	var count int
-	err := Pool.QueryRow(ctx, `
-		WITH RECURSIVE seed_roles AS (
-			SELECT ur.user_id, ur.role_id
-			FROM _user_role ur
-			WHERE ur.app_id = ''
-			  AND NOT (ur.user_id = $1 AND ur.role_id = $2 AND ur.app_id = $3)
-			UNION
-			SELECT gm.user_id, gr.role_id
-			FROM _group_membership gm
-			JOIN _group_role gr ON gr.group_id = gm.group_id
-			WHERE gr.app_id = ''
-		),
-		effective_roles AS (
-			SELECT sr.user_id, sr.role_id
-			FROM seed_roles sr
-			UNION
-			SELECT er.user_id, ri.inherits_role_id
-			FROM effective_roles er
-			JOIN _role_inheritance ri ON ri.role_id = er.role_id
-		)
-		SELECT COUNT(DISTINCT er.user_id)
-		FROM effective_roles er
-		JOIN _role_permission rp ON rp.role_id = er.role_id
-		JOIN _permission p ON p._id = rp.permission_id
-		WHERE p.resource = 'platform'
-		  AND p.action = 'admin'
-		  AND p.scope = 'global'
-	`, userID, roleID, appID).Scan(&count)
-	return count, err
 }
 
 func countGlobalAdminsAfterRolePermissionRevocation(ctx context.Context, roleID, permissionID string) (int, error) {

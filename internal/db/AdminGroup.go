@@ -9,8 +9,8 @@ import (
 )
 
 // AdministratorsGroupName is the out-of-the-box group that carries the global
-// admin role. Admin authority is granted by membership in this group; direct
-// _user_role grants are on their way out (issue #199).
+// admin role. Admin authority is granted by membership in this group alone
+// (issue #199 R4).
 const AdministratorsGroupName = "Administrators"
 
 // administratorsGroupDescription deliberately differs from

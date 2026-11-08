@@ -3,8 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-
-	"github.com/jackc/pgx/v5"
 )
 
 // Group membership is the supported way to give a user a role (issue #199).
@@ -118,18 +116,4 @@ func RemoveGroupMembership(ctx context.Context, userID, groupID string) error {
 	}
 	InvalidateAuthzCache()
 	return nil
-}
-
-// CountDirectUserRoleGrants reports how many _user_role rows remain. R4 drops
-// the table and the UI stops offering direct grants; until then this is the
-// number that has to reach zero for the migration to be a no-op in practice.
-func CountDirectUserRoleGrants(ctx context.Context) (int, error) {
-	var n int
-	if err := Pool.QueryRow(ctx, `SELECT COUNT(*) FROM _user_role`).Scan(&n); err != nil {
-		if err == pgx.ErrNoRows {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("count direct role grants: %w", err)
-	}
-	return n, nil
 }

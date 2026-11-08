@@ -167,11 +167,6 @@ func UserHasAnyRole(ctx context.Context, userID, appID string, roleNames []strin
 
 	const query = `
 WITH RECURSIVE seed_roles AS (
-	SELECT ur.user_id, ur.role_id
-	FROM _user_role ur
-	WHERE ur.user_id = $1
-	  AND (($2 = '' AND ur.app_id = '') OR ($2 <> '' AND (ur.app_id = '' OR ur.app_id = $2)))
-	UNION
 	SELECT gm.user_id, gr.role_id
 	FROM _group_membership gm
 	JOIN _group_role gr ON gr.group_id = gm.group_id

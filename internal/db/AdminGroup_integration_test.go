@@ -9,9 +9,9 @@ import (
 )
 
 // TestAdministratorsGroupIsTheAdminGrant proves the property #199 R1 depends on:
-// membership in the Administrators group alone confers global admin authority,
-// with no row in _user_role. It also proves the group is idempotent, and that
-// app seed cleanup cannot delete it.
+// membership in the Administrators group alone confers global admin authority.
+// It also proves the group is idempotent, and that app seed cleanup cannot
+// delete it.
 //
 // Gated on TEST_DATABASE_URL like the other real-Postgres tests.
 func TestAdministratorsGroupIsTheAdminGrant(t *testing.T) {
@@ -48,9 +48,6 @@ func TestAdministratorsGroupIsTheAdminGrant(t *testing.T) {
 		bg := context.Background()
 		if _, err := Pool.Exec(bg, `DELETE FROM _group_membership WHERE user_id = $1`, userID); err != nil {
 			t.Logf("cleanup: delete membership for %s: %v", userID, err)
-		}
-		if _, err := Pool.Exec(bg, `DELETE FROM _user_role WHERE user_id = $1`, userID); err != nil {
-			t.Logf("cleanup: delete user roles for %s: %v", userID, err)
 		}
 		if _, err := Pool.Exec(bg, `DELETE FROM _user WHERE _id = $1`, userID); err != nil {
 			t.Logf("cleanup: delete user %s: %v", userID, err)
@@ -110,14 +107,6 @@ func TestAdministratorsGroupIsTheAdminGrant(t *testing.T) {
 	}
 	if membershipCount != 1 {
 		t.Fatalf("membership count for %s = %d, want 1", userID, membershipCount)
-	}
-
-	var directGrantCount int
-	if err := Pool.QueryRow(ctx, `SELECT COUNT(*) FROM _user_role WHERE user_id = $1`, userID).Scan(&directGrantCount); err != nil {
-		t.Fatalf("count direct grants: %v", err)
-	}
-	if directGrantCount != 0 {
-		t.Fatalf("direct _user_role grants for %s = %d, want 0 — the test would prove nothing about group-only authority", userID, directGrantCount)
 	}
 
 	roles, err := ListEffectiveRoleNames(ctx, userID, "")

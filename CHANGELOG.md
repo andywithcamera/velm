@@ -20,6 +20,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Removed
 
+- Direct user-role grants. `_user_role` let one user hold a role without being in any group; it was the second grant path, and the two disagreed: the admin count, the last-admin guard and eleven query sites treated it differently. Roles now come from group membership only, so there is one path and one place to look when a user has the wrong access. Migration 083 folds every existing direct grant into a group named after it (`Administrators (<role>)`, idempotent by name) and then drops the table, and the system app sync no longer recreates it from the definition 042 seeded. The `/admin/access-control/user-roles` endpoints and the page section that listed them are gone. (#199)
 - The GitHub Pages workflow (`.github/workflows/static.yml`). It was the stock starter template, unmodified: it archived the entire repository root and published it at `andywithcamera.github.io/velm` — which has no `index.html`, so it served a 404. It has never published anything anyone reads. It now also fails intermittently in `actions/deploy-pages` (`Found 0 artifact(s)` immediately after a successful upload), and the two commits whose Pages check failed are the two commits Railway did not deploy. Removing the workflow removes a check that can fail for reasons unrelated to Velm. (#182)
 
 ### Fixed

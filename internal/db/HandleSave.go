@@ -450,7 +450,7 @@ func applyAuthzSaveSideEffects(ctx context.Context, tableName string, oldSnapsho
 		InvalidateAuthzCache()
 	case "_permission":
 		InvalidateAuthzCache()
-	case "_group_membership", "_user_role":
+	case "_group_membership":
 		InvalidateAuthzCache()
 		for _, userID := range []string{
 			snapshotStringValue(oldSnapshot, "user_id"),

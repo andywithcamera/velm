@@ -37,7 +37,6 @@ var (
 		"_role":                   2,
 		"_role_inheritance":       3,
 		"_role_permission":        3,
-		"_user_role":              3,
 		"base_obs_action":         2,
 		"base_obs_default_action": 2,
 	}

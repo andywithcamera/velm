@@ -131,8 +131,6 @@ var routeAccess = map[string]accessClass{
 	"/api/authz/permissions/create":        accessAdmin,
 	"/api/authz/group-memberships/grant":   accessAdmin,
 	"/api/authz/group-memberships/revoke":  accessAdmin,
-	"/api/authz/user-roles/grant":          accessAdmin,
-	"/api/authz/user-roles/revoke":         accessAdmin,
 	"/api/authz/role-permissions/grant":    accessAdmin,
 	"/api/authz/role-permissions/revoke":   accessAdmin,
 }

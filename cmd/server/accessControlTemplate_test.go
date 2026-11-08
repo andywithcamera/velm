@@ -8,9 +8,9 @@ import (
 	"velm/internal/db"
 )
 
-// TestAccessControlPageOffersGroupsNotDirectGrants pins the #199 R3 change: the
-// page must offer membership, and the only remaining mention of a direct
-// user-role grant is the read-only deprecation notice.
+// TestAccessControlPageOffersGroupsNotDirectGrants pins the #199 R4 change: the
+// page offers membership and nothing else. No direct user-role grant path
+// exists, in the template or in the routes behind it.
 func TestAccessControlPageOffersGroupsNotDirectGrants(t *testing.T) {
 	t.Chdir("../..")
 	tpl := parseTemplates(t)
@@ -27,11 +27,6 @@ func TestAccessControlPageOffersGroupsNotDirectGrants(t *testing.T) {
 			UserID: "11111111-1111-1111-1111-111111111111", UserName: "billybot", Email: "billybot@example.test",
 			GroupID: "33333333-3333-3333-3333-333333333333", GroupName: "Administrators", Roles: "admin",
 		}},
-		"UserRoleAssignments": []db.UserRoleAssignment{{
-			UserID: "11111111-1111-1111-1111-111111111111", UserName: "billybot", Email: "billybot@example.test",
-			RoleID: "22222222-2222-2222-2222-222222222222", RoleName: "admin", AppID: "",
-		}},
-		"DirectGrantCount": 1,
 	}
 
 	var buf bytes.Buffer
@@ -45,50 +40,21 @@ func TestAccessControlPageOffersGroupsNotDirectGrants(t *testing.T) {
 		`name="group_id"`,
 		`Administrators — admin`,
 		`Group Memberships`,
-		`Direct role grants (deprecated)`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("rendered page is missing %q", want)
 		}
 	}
 
-	// No write path to a direct grant may be rendered. The grant endpoint must
-	// not appear at all; the revoke endpoint must not appear as a form action.
+	// Nothing about direct grants may survive the template.
 	for _, unwanted := range []string{
 		`/api/authz/user-roles/grant`,
 		`action="/api/authz/user-roles/revoke"`,
+		`Direct role grants`,
 	} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("rendered page still offers a direct role-grant write path: %q", unwanted)
 		}
-	}
-}
-
-// TestAccessControlPageWithoutDirectGrantsOmitsTheNotice keeps the deprecation
-// block from becoming permanent furniture once the grants are gone.
-func TestAccessControlPageWithoutDirectGrantsOmitsTheNotice(t *testing.T) {
-	t.Chdir("../..")
-	tpl := parseTemplates(t)
-
-	data := map[string]any{
-		"CSRFToken":             "csrf-token",
-		"Breadcrumbs":           []Breadcrumb{},
-		"AuthzUsers":            []db.AuthzUser{},
-		"AuthzRoles":            []db.AuthzRole{},
-		"AuthzPermissions":      []db.AuthzPermission{},
-		"RolePermissionAssigns": []db.RolePermissionAssignment{},
-		"AuthzGroups":           []db.AuthzGroup{},
-		"GroupMemberships":      []db.AuthzGroupMembership{},
-		"UserRoleAssignments":   []db.UserRoleAssignment{},
-		"DirectGrantCount":      0,
-	}
-
-	var buf bytes.Buffer
-	if err := tpl.ExecuteTemplate(&buf, "access-control-view", data); err != nil {
-		t.Fatalf("render access-control-view: %v", err)
-	}
-	if strings.Contains(buf.String(), "Direct role grants (deprecated)") {
-		t.Error("deprecation notice rendered with zero direct grants")
 	}
 }
 

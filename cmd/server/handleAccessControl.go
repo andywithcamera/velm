@@ -39,16 +39,6 @@ func handleAccessControlPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to load group memberships", http.StatusInternalServerError)
 		return
 	}
-	userRoleAssignments, err := db.ListUserRoleAssignments(ctx)
-	if err != nil {
-		http.Error(w, "Failed to load user role assignments", http.StatusInternalServerError)
-		return
-	}
-	directGrantCount, err := db.CountDirectUserRoleGrants(ctx)
-	if err != nil {
-		http.Error(w, "Failed to count direct role grants", http.StatusInternalServerError)
-		return
-	}
 	rolePermissionAssignments, err := db.ListRolePermissionAssignments(ctx)
 	if err != nil {
 		http.Error(w, "Failed to load role permission assignments", http.StatusInternalServerError)
@@ -62,8 +52,6 @@ func handleAccessControlPage(w http.ResponseWriter, r *http.Request) {
 	data["AuthzPermissions"] = permissions
 	data["AuthzGroups"] = groups
 	data["GroupMemberships"] = groupMemberships
-	data["DirectGrantCount"] = directGrantCount
-	data["UserRoleAssignments"] = userRoleAssignments
 	data["RolePermissionAssigns"] = rolePermissionAssignments
 	statusText, statusDanger := accessControlStatus(r.URL.Query().Get("status"))
 	data["AccessControlStatusText"] = statusText
@@ -150,9 +138,8 @@ func handleCreatePermission(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/access?status=permission_saved", http.StatusSeeOther)
 }
 
-// Group membership is the supported way to assign a role (issue #199). The
-// access-control page offers this and no longer offers a direct grant; the
-// direct-grant endpoints below stay reachable until R4 drops _user_role.
+// Group membership is the only way to assign a role (issue #199 R4). The
+// direct user-role table and its endpoints are gone.
 func handleGrantGroupMembership(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
@@ -225,87 +212,6 @@ func handleRevokeGroupMembership(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/admin/access?status=group_membership_removed", http.StatusSeeOther)
-}
-
-func handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form", http.StatusBadRequest)
-		return
-	}
-
-	userID := strings.TrimSpace(r.FormValue("user_id"))
-	roleID := strings.TrimSpace(r.FormValue("role_id"))
-	if !utils.IsValidUUID(roleID) {
-		http.Error(w, "Invalid role", http.StatusBadRequest)
-		return
-	}
-	if !utils.IsValidUUID(userID) {
-		http.Error(w, "Invalid user id", http.StatusBadRequest)
-		return
-	}
-
-	appID := strings.TrimSpace(r.FormValue("app_id"))
-	if appID != "" && !db.IsSafeIdentifier(appID) {
-		http.Error(w, "Invalid app id", http.StatusBadRequest)
-		return
-	}
-
-	if err := db.GrantUserRole(context.Background(), userID, roleID, appID); err != nil {
-		http.Error(w, "Failed to assign role", http.StatusInternalServerError)
-		return
-	}
-	if err := db.BumpUserSessionVersion(context.Background(), userID); err != nil {
-		http.Error(w, "Failed to rotate user session", http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, "/admin/access?status=user_role_granted", http.StatusSeeOther)
-}
-
-func handleRevokeUserRole(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Invalid form", http.StatusBadRequest)
-		return
-	}
-
-	userID := strings.TrimSpace(r.FormValue("user_id"))
-	if !utils.IsValidUUID(userID) {
-		http.Error(w, "Invalid user id", http.StatusBadRequest)
-		return
-	}
-	roleID := strings.TrimSpace(r.FormValue("role_id"))
-	if !utils.IsValidUUID(roleID) {
-		http.Error(w, "Invalid role id", http.StatusBadRequest)
-		return
-	}
-	appID := strings.TrimSpace(r.FormValue("app_id"))
-	if appID != "" && !db.IsSafeIdentifier(appID) {
-		http.Error(w, "Invalid app id", http.StatusBadRequest)
-		return
-	}
-
-	if err := db.RevokeUserRole(context.Background(), userID, roleID, appID); err != nil {
-		if errors.Is(err, db.ErrLastGlobalAdminRemoval) {
-			http.Redirect(w, r, "/admin/access?status=last_admin_guard_blocked", http.StatusSeeOther)
-			return
-		}
-		http.Error(w, "Failed to revoke role", http.StatusInternalServerError)
-		return
-	}
-	if err := db.BumpUserSessionVersion(context.Background(), userID); err != nil {
-		http.Error(w, "Failed to rotate user session", http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, "/admin/access?status=user_role_revoked", http.StatusSeeOther)
 }
 
 func handleGrantRolePermission(w http.ResponseWriter, r *http.Request) {
@@ -396,10 +302,6 @@ func accessControlStatus(slug string) (string, bool) {
 		return "Role created.", false
 	case "permission_saved":
 		return "Permission created.", false
-	case "user_role_granted":
-		return "Direct role grant added (deprecated path).", false
-	case "user_role_revoked":
-		return "Direct role grant revoked.", false
 	default:
 		return "", false
 	}
