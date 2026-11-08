@@ -48,6 +48,11 @@ type ScriptMutationResult struct {
 	Affected int
 }
 
+// ScriptQuerier is the exported view of scriptQuerier: the query surface the
+// task engine and script ops need from Pool or an open transaction. Exported
+// for HTTP-facing callers of the task engine (issue #224).
+type ScriptQuerier = scriptQuerier
+
 type scriptQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row

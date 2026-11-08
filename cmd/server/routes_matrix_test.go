@@ -59,6 +59,11 @@ var routeAccess = map[string]accessClass{
 	"/api/app-runtime/call": accessAgent,
 	"/api/":                 accessAgent,
 
+	// Agent-or-session with a write gate: task instance spawn (issue #224).
+	// Accepts an agent bearer token, but the caller still needs the write
+	// permission in scope, like any /api/save/ client.
+	"/api/task-instances": accessWrite,
+
 	// Read.
 	"/p/":                              accessView,
 	"/map":                             accessView,
@@ -264,6 +269,10 @@ func classifyHandler(t *testing.T, fset *token.FileSet, handler ast.Expr) access
 		}
 	case "withAuthOrAgentOnly":
 		return accessAgent
+	case "withAuthOrAgentWrite":
+		// Agent-or-session chain plus the write permission gate; same authz
+		// surface as withAuth(write) (issue #224).
+		return accessWrite
 	}
 	return accessPublic
 }
