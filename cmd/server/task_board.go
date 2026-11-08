@@ -51,6 +51,7 @@ type taskBoardCard struct {
 	AssignedUserID  string
 	AssigneeLabel   string
 	AskLabel        string
+	IssueTitle      string
 	DueAtLabel      string
 	AttentionLabel  string
 	AttentionClass  string
@@ -872,6 +873,7 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 	}
 
 	applyTaskBoardAskLabels(ctx, items)
+	applyTaskBoardIssueTitles(ctx, items)
 	return items, nil
 }
 
@@ -911,6 +913,69 @@ func applyTaskBoardAskLabels(ctx context.Context, items []taskBoardItem) {
 	for i := range items {
 		items[i].Card.AskLabel = labels[items[i].Card.AskDefinitionID]
 	}
+}
+
+// applyTaskBoardIssueTitles retitles pipeline children after their root task
+// (the tracked issue). A spawned stage's own title is the definition name
+// ("Stage: Release"), which is unreadable on a board of many issues; the card
+// title shows the root issue's title instead and the ask-type badge keeps the
+// stage name. Best-effort: a failed lookup leaves titles untouched.
+func applyTaskBoardIssueTitles(ctx context.Context, items []taskBoardItem) {
+	ids := make([]string, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		id := item.Card.ID
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows, err := db.Pool.Query(ctx,
+		`WITH RECURSIVE up AS (
+			SELECT _id::text AS id, _id::text AS root_id, parent_task_id::text AS parent_id
+			FROM base_task WHERE _id::text = ANY($1) AND _deleted_at IS NULL
+			UNION ALL
+			SELECT up.id, p._id::text, p.parent_task_id::text
+			FROM up
+			JOIN base_task p ON p._id::text = up.parent_id AND p._deleted_at IS NULL
+		)
+		SELECT up.id, rt.title
+		FROM up
+		JOIN base_task rt ON rt._id::text = up.root_id
+		WHERE up.parent_id IS NULL
+		  AND (rt.parent_task_id IS NULL OR BTRIM(rt.parent_task_id::text) = '')`, ids)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	titles := map[string]string{}
+	for rows.Next() {
+		var id, title string
+		if err := rows.Scan(&id, &title); err == nil {
+			titles[id] = title
+		}
+	}
+	if len(titles) == 0 {
+		return
+	}
+	for i := range items {
+		card := &items[i].Card
+		root := titles[card.ID]
+		if root == "" || trimEqual(root, card.Title) {
+			continue
+		}
+		card.IssueTitle = root
+		card.Title = root
+	}
+}
+
+// BTRIMEQ compares two strings the way the board SQL BTRIMs titles.
+func trimEqual(a, b string) bool {
+	return strings.TrimSpace(a) == strings.TrimSpace(b)
 }
 
 func taskBoardBulkUpdateURL(tableName string) string {

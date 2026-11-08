@@ -671,7 +671,7 @@
                     {{end}}
                   </div>
                 </div>
-                <strong class="ui-task-board-card-title">{{.Title}}</strong>
+                <strong class="ui-task-board-card-title"{{if .AskLabel}} title="{{.AskLabel}}"{{end}}>{{.Title}}</strong>
               </a>
               <div class="ui-task-board-card-meta-stack">
                 {{if and $.TaskBoardCanUpdate .GroupID (eq .AssignedUserID "") (gt (len $members) 0)}}
