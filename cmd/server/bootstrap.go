@@ -53,6 +53,9 @@ func initDatabase() error {
 	if err := db.RunMigrations(context.Background()); err != nil {
 		return fmt.Errorf("error running migrations: %w", err)
 	}
+	if err := db.EnsureAdministratorsGroup(context.Background()); err != nil {
+		return fmt.Errorf("error ensuring %s group: %w", db.AdministratorsGroupName, err)
+	}
 	if err := bootstrapInitialUserIfConfigured(context.Background()); err != nil {
 		return fmt.Errorf("error bootstrapping initial user: %w", err)
 	}
