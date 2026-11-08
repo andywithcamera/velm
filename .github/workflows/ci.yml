@@ -141,8 +141,8 @@ jobs:
 
       # Fail loudly if the integration test skipped: a green run that never
       # touched Postgres is the failure mode this job exists to prevent.
-      - name: Verify the integration test actually ran
-        run: go test ./internal/db/ -run TestAgentTokenLifecycle -count=1 -v | tee /tmp/integration.log
+      - name: Verify the integration tests actually ran
+        run: go test ./internal/db/ -run 'TestAgentTokenLifecycle|TestLastGlobalAdminGuard' -count=1 -v | tee /tmp/integration.log
 
       - name: Assert the integration test did not skip
         run: |
