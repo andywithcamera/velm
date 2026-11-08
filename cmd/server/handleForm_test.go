@@ -290,4 +290,3 @@ func TestBuildFormFieldConfigsLocksSetDefinitionID(t *testing.T) {
 		t.Fatal("definition_id should stay editable while unset")
 	}
 }
-
