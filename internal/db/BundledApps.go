@@ -515,6 +515,7 @@ func deleteProvisionedSeedGroupsTx(ctx context.Context, tx pgx.Tx, definition *A
 			DELETE FROM _group
 			WHERE LOWER(name) = LOWER($1)
 			  AND COALESCE(description, '') = $2
+			  AND is_system = FALSE
 		`, groupName, provisionedSeedGroupDescription); err != nil {
 			return err
 		}

@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"crypto/sha1" // #nosec G505 -- see deterministicSeedUUID: stable row identifiers, not a security primitive
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -162,6 +163,12 @@ func resolveDefinitionSeedValueTx(ctx context.Context, tx pgx.Tx, state appSeedS
 				return nil, fmt.Errorf("unknown seed alias %q", alias)
 			}
 			return recordID, nil
+		case strings.HasPrefix(trimmed, "@role:"):
+			roleName := strings.TrimSpace(strings.TrimPrefix(trimmed, "@role:"))
+			if roleName == "" {
+				return nil, fmt.Errorf("role name is required")
+			}
+			return ensureSeedRoleIDTx(ctx, tx, roleName)
 		case strings.HasPrefix(trimmed, "@group:"):
 			groupName := strings.TrimSpace(strings.TrimPrefix(trimmed, "@group:"))
 			if groupName == "" {
@@ -194,6 +201,28 @@ func resolveDefinitionSeedValueTx(ctx context.Context, tx pgx.Tx, state appSeedS
 	default:
 		return rawValue, nil
 	}
+}
+
+func ensureSeedRoleIDTx(ctx context.Context, tx pgx.Tx, roleName string) (string, error) {
+	roleName = strings.TrimSpace(roleName)
+	if roleName == "" {
+		return "", fmt.Errorf("role name is required")
+	}
+
+	var roleID string
+	err := tx.QueryRow(ctx, `
+		SELECT _id::text
+		FROM _role
+		WHERE LOWER(name) = LOWER($1)
+		LIMIT 1
+	`, roleName).Scan(&roleID)
+	if err == nil && strings.TrimSpace(roleID) != "" {
+		return roleID, nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", err
+	}
+	return "", fmt.Errorf("unknown seed role %q: roles must exist before a seed references them", roleName)
 }
 
 func ensureSeedGroupIDTx(ctx context.Context, tx pgx.Tx, groupName string) (string, error) {

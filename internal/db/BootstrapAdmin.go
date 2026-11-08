@@ -86,6 +86,14 @@ func adminRoleIDTx(ctx context.Context, tx pgx.Tx) (string, error) {
 }
 
 func grantGlobalAdminByUserIDTx(ctx context.Context, tx pgx.Tx, userID, email string) error {
+	// Global admin is granted by membership in the Administrators group (#199).
+	if err := AddUserToAdministratorsGroupTx(ctx, tx, userID); err != nil {
+		return err
+	}
+
+	// Dual write: while _user_role still exists, keep the direct grant too so
+	// anything that reads it keeps working. #199 R4 removes this branch along
+	// with the table.
 	adminRoleID, err := adminRoleIDTx(ctx, tx)
 	if err != nil {
 		return err
