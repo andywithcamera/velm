@@ -129,6 +129,8 @@ var routeAccess = map[string]accessClass{
 	"/api/scripts/run-adhoc":               accessAdmin,
 	"/api/authz/roles/create":              accessAdmin,
 	"/api/authz/permissions/create":        accessAdmin,
+	"/api/authz/group-memberships/grant":   accessAdmin,
+	"/api/authz/group-memberships/revoke":  accessAdmin,
 	"/api/authz/user-roles/grant":          accessAdmin,
 	"/api/authz/user-roles/revoke":         accessAdmin,
 	"/api/authz/role-permissions/grant":    accessAdmin,
