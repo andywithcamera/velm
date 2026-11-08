@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -37,22 +38,23 @@ type taskBoardUserOption struct {
 }
 
 type taskBoardCard struct {
-	ID             string
-	Href           string
-	UpdateURL      string
-	Number         string
-	Title          string
-	PriorityLabel  string
-	PriorityClass  string
-	GroupID        string
-	GroupLabel     string
-	AssignedUserID string
-	AssigneeLabel  string
-	AskLabel       string
-	DueAtLabel     string
-	AttentionLabel string
-	AttentionClass string
-	CanDrag        bool
+	ID              string
+	AskDefinitionID string
+	Href            string
+	UpdateURL       string
+	Number          string
+	Title           string
+	PriorityLabel   string
+	PriorityClass   string
+	GroupID         string
+	GroupLabel      string
+	AssignedUserID  string
+	AssigneeLabel   string
+	AskLabel        string
+	DueAtLabel      string
+	AttentionLabel  string
+	AttentionClass  string
+	CanDrag         bool
 }
 
 type taskBoardLane struct {
@@ -164,7 +166,8 @@ func handleTaskBoardView(w http.ResponseWriter, r *http.Request, route tableRout
 
 	items, err := loadTaskBoardItems(ctx, userID, filters, metadata.PriorityLabels, queryContext)
 	if err != nil {
-		http.Error(w, "Failed to load task board", http.StatusInternalServerError)
+		log.Printf("task board: loadTaskBoardItems: %v", err)
+		http.Error(w, "Failed to load task board: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -668,14 +671,11 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			COALESCE(NULLIF(BTRIM(g.name), ''), '') AS group_label,
 			COALESCE(t.assigned_user_id::text, '') AS assigned_user_id,
 			COALESCE(NULLIF(BTRIM(u.name), ''), '') AS assignee_label,
-			COALESCE(t.definition_id::text, '') AS definition_id,
-			COALESCE(NULLIF(BTRIM(td.name), ''), '') AS ask_label,
 			t.due_at,
 			t._updated_at
 		FROM (` + queryContext.SourceQuery + `) t
 		LEFT JOIN _group g ON g._id = t.assignment_group_id
 		LEFT JOIN _user u ON u._id = t.assigned_user_id
-		LEFT JOIN base_task_definition td ON td._id = t.definition_id
 		WHERE t._deleted_at IS NULL
 		  AND COALESCE(NULLIF(BTRIM(t.state), ''), 'new') <> 'closed'`
 
@@ -782,11 +782,10 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			assignedUserID string
 			assigneeLabel  string
 			definitionID   string
-			askLabel       string
 			dueAt          sql.NullTime
 			updatedAt      sql.NullTime
 		)
-		if err := rows.Scan(&id, &recordTable, &number, &title, &state, &priority, &groupID, &groupLabel, &assignedUserID, &assigneeLabel, &definitionID, &askLabel, &dueAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &recordTable, &number, &title, &state, &priority, &groupID, &groupLabel, &assignedUserID, &assigneeLabel, &definitionID, &dueAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		recordTable = strings.TrimSpace(recordTable)
@@ -811,7 +810,6 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			"assignment_group_id": strings.TrimSpace(groupID),
 			"assigned_user_id":    strings.TrimSpace(assignedUserID),
 			"definition_id":       strings.TrimSpace(definitionID),
-			"ask_label":           strings.TrimSpace(askLabel),
 			"due_at":              dueAt.Time,
 			"_updated_at":         updatedAt.Time,
 		}
@@ -833,29 +831,28 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 		if filteredRecord["assignment_group_id"] == nil {
 			groupLabelValue = ""
 		}
-		askLabelValue := strings.TrimSpace(askLabel)
 		assigneeLabelValue := strings.TrimSpace(assigneeLabel)
 		if filteredRecord["assigned_user_id"] == nil {
 			assigneeLabelValue = ""
 		}
 
 		card := taskBoardCard{
-			ID:             id,
-			Href:           buildRecordFormURL(recordTable, id),
-			UpdateURL:      taskBoardBulkUpdateURL(recordTable),
-			Number:         numberValue,
-			Title:          titleValue,
-			PriorityLabel:  taskBoardPriorityLabel(priorityValue, priorityLabels),
-			PriorityClass:  taskBoardPriorityClass(priorityValue),
-			GroupID:        groupIDValue,
-			GroupLabel:     groupLabelValue,
-			AssignedUserID: assignedUserIDValue,
-			AssigneeLabel:  assigneeLabelValue,
-			AskLabel:       askLabelValue,
-			DueAtLabel:     formatTaskBoardTimestamp(dueAt, updatedAt),
-			AttentionLabel: taskBoardAttentionLabel(now, dueAt, updatedAt),
-			AttentionClass: taskBoardAttentionClass(now, dueAt, updatedAt),
-			CanDrag:        assignedUserIDValue != "",
+			ID:              id,
+			AskDefinitionID: strings.TrimSpace(definitionID),
+			Href:            buildRecordFormURL(recordTable, id),
+			UpdateURL:       taskBoardBulkUpdateURL(recordTable),
+			Number:          numberValue,
+			Title:           titleValue,
+			PriorityLabel:   taskBoardPriorityLabel(priorityValue, priorityLabels),
+			PriorityClass:   taskBoardPriorityClass(priorityValue),
+			GroupID:         groupIDValue,
+			GroupLabel:      groupLabelValue,
+			AssignedUserID:  assignedUserIDValue,
+			AssigneeLabel:   assigneeLabelValue,
+			DueAtLabel:      formatTaskBoardTimestamp(dueAt, updatedAt),
+			AttentionLabel:  taskBoardAttentionLabel(now, dueAt, updatedAt),
+			AttentionClass:  taskBoardAttentionClass(now, dueAt, updatedAt),
+			CanDrag:         assignedUserIDValue != "",
 		}
 		if card.Number == "" {
 			card.Number = id
@@ -869,8 +866,50 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			Card:  card,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	return items, rows.Err()
+	applyTaskBoardAskLabels(ctx, items)
+	return items, nil
+}
+
+// applyTaskBoardAskLabels fills each card's AskLabel from base_task_definition
+// in one batched lookup. Deliberately not a JOIN on the board source query:
+// the source is a UNION ALL over a table and its descendants, and joining
+// against an inherited column set broke the board query (ask-type work).
+func applyTaskBoardAskLabels(ctx context.Context, items []taskBoardItem) {
+	defIDs := make([]string, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		defID := item.Card.AskDefinitionID
+		if defID == "" || seen[defID] {
+			continue
+		}
+		seen[defID] = true
+		defIDs = append(defIDs, defID)
+	}
+	if len(defIDs) == 0 {
+		return
+	}
+	rows, err := db.Pool.Query(ctx,
+		`SELECT _id::text, COALESCE(NULLIF(BTRIM(display_name), ''), slug)
+		 FROM base_task_definition
+		 WHERE _id::text = ANY($1) AND _deleted_at IS NULL`, defIDs)
+	if err != nil {
+		return // ask type is decorative; a failed lookup must not kill the board
+	}
+	defer rows.Close()
+	labels := map[string]string{}
+	for rows.Next() {
+		var defID, name string
+		if err := rows.Scan(&defID, &name); err == nil {
+			labels[defID] = name
+		}
+	}
+	for i := range items {
+		items[i].Card.AskLabel = labels[items[i].Card.AskDefinitionID]
+	}
 }
 
 func taskBoardBulkUpdateURL(tableName string) string {
