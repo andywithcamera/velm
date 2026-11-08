@@ -1,0 +1,68 @@
+{
+  "goal": "Give authz one explainable grant path and make groups the offered one.",
+  "base": "main",
+  "test_command": "go test",
+  "closed_paths": [
+    "go.mod",
+    "go.sum",
+    ".graph/**",
+    "scripts/graph/**",
+    ".github/**",
+    "internal/db/migrations/**"
+  ],
+  "migration": {
+    "dir": "internal/db/migrations",
+    "ranges": [
+      [
+        100,
+        139
+      ]
+    ]
+  },
+  "units": [
+    {
+      "id": "U0",
+      "kind": "interface",
+      "task": "Extract a shared GrantPath summary so the explain command and the resolver agree on what a grant is.",
+      "files": [
+        "internal/authz/GrantPath.go"
+      ],
+      "reads": [
+        "internal/authz/AuthzEffective.go"
+      ],
+      "needs": []
+    },
+    {
+      "id": "U1",
+      "kind": "work",
+      "task": "Add cmd/authz-explain printing memberships, group roles, inherited roles and effective permissions for a user.",
+      "files": [
+        "cmd/authz-explain/main.go",
+        "internal/authz/GrantPath_test.go"
+      ],
+      "reads": [
+        "internal/authz/GrantPath.go"
+      ],
+      "needs": [
+        "U0"
+      ],
+      "skill": "go"
+    },
+    {
+      "id": "U2",
+      "kind": "work",
+      "task": "Make bootstrap-user grant admin through a named group instead of writing _user_role.",
+      "files": [
+        "cmd/bootstrap-user/BootstrapUser.go",
+        "internal/db/BootstrapUser_test.go"
+      ],
+      "reads": [
+        "internal/authz/GrantPath.go"
+      ],
+      "needs": [
+        "U0"
+      ],
+      "skill": "go"
+    }
+  ]
+}
