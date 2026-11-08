@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -160,10 +161,10 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 		INSERT INTO base_task (number, title, work_type, state, priority, parent_task_id,
 			assignment_group_id, requested_by_user_id, definition_id, variables)
 		VALUES (
-			'T-' || lpad(nextval('base_task_number_seq')::text, 6, '0'),
+			'', -- assigned by the autonumber trigger (051); base_task_number_seq was dropped there
 			$1, 'TASK',
 			$2,
-			'p3', $3, $4, $5, $6, $7::jsonb)
+			'medium', $3, $4, $5, $6, $7::jsonb)
 		RETURNING _id`,
 		def.DisplayName, taskStateReady, nullable(parentTaskID), nullable(def.DefaultGroupID),
 		nullable(requestedBy), def.ID, string(varsJSON)).Scan(&taskID)
@@ -196,7 +197,8 @@ func spawnTaskForDefinitionByID(ctx context.Context, q scriptQuerier, defID, par
 }
 
 // StartTask advances a ready task to in_progress and runs engine hooks:
-// run_if evaluation (false -> skipped), then the definition script. The
+// container input_mapping binding to children (issue #208), run_if
+// evaluation (false -> skipped), then the definition script. The
 // Automation principal is the audit principal for script writes.
 func StartTask(ctx context.Context, taskID, actorUserID string) error {
 	tx, err := Pool.Begin(ctx)
@@ -208,10 +210,93 @@ func StartTask(ctx context.Context, taskID, actorUserID string) error {
 	if err := transitionTaskInTx(ctx, tx, taskID, taskStateInProgress); err != nil {
 		return err
 	}
+	if err := bindChildInputs(ctx, tx, taskID, actorUserID); err != nil {
+		return err
+	}
 	if err := runTaskHooks(ctx, tx, taskID, actorUserID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// bindChildInputs applies each container child's input_mapping against the
+// parent's variable scope and merges the result into the child's
+// variables.inputs. Children spawn with empty inputs (spawnTaskForDefinition);
+// this is where they receive the parent's context. Mapped values overwrite
+// spawn-time inputs for the same key. Unresolvable $refs are skipped, not
+// fatal — the child starts without that input and its run_if decides.
+func bindChildInputs(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID string) error {
+	defID, err := getDefinitionIDByTaskID(ctx, tx, parentTaskID)
+	if err != nil || defID == "" {
+		return err
+	}
+	children, err := getTaskDefinitionChildren(ctx, tx, defID)
+	if err != nil {
+		return err
+	}
+	if len(children) == 0 {
+		return nil
+	}
+	parentVars, err := readTaskVariables(ctx, tx, parentTaskID)
+	if err != nil {
+		return err
+	}
+
+	// Instance children by definition id. One definition may appear twice
+	// in a container only via distinct rows, which the unique constraint
+	// forbids — so the mapping is 1:1 in practice.
+	rows, err := tx.Query(ctx, `
+		SELECT _id::text, definition_id::text, variables
+		FROM base_task
+		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, parentTaskID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	childTasks := map[string]string{} // definition id -> task id
+	childVars := map[string]map[string]any{}
+	for rows.Next() {
+		var id, cid string
+		var vj []byte
+		if err := rows.Scan(&id, &cid, &vj); err != nil {
+			return err
+		}
+		vars := map[string]any{}
+		_ = json.Unmarshal(vj, &vars)
+		childTasks[cid] = id
+		childVars[id] = vars
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, spec := range children {
+		taskID, ok := childTasks[spec.ChildDefinitionID]
+		if !ok {
+			continue
+		}
+		inputs, _ := childVars[taskID]["inputs"].(map[string]any)
+		if inputs == nil {
+			inputs = map[string]any{}
+		}
+		for childInput, source := range spec.InputMapping {
+			val, ok := resolveScopeRef(parentVars, source)
+			if !ok {
+				log.Printf("task engine: input_mapping %q -> %v unresolvable against parent scope, omitted (task %s)", childInput, source, taskID)
+				continue
+			}
+			inputs[childInput] = val
+		}
+		childVars[taskID]["inputs"] = inputs
+		updated, err := json.Marshal(childVars[taskID])
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(updated)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // transitionTaskInTx performs one validated state transition in the
@@ -468,9 +553,10 @@ func getDefinitionIDByTaskID(ctx context.Context, q scriptQuerier, taskID string
 	return *defID, nil
 }
 
-// resolveScopeRef resolves a scope reference "$outputs.x" (or a plain key
-// lookup) against a variables map. Non-$ values are literals and pass
-// through unchanged.
+// resolveScopeRef resolves a scope reference against a variables map:
+// "$inputs.x", "$locals.x", "$outputs.<slug>.x" (any depth of map walking),
+// or a plain key lookup. Non-$ values are literals and pass through
+// unchanged. Unresolvable refs return ok=false.
 func resolveScopeRef(scope map[string]any, ref any) (any, bool) {
 	s, ok := ref.(string)
 	if !ok {
@@ -479,16 +565,22 @@ func resolveScopeRef(scope map[string]any, ref any) (any, bool) {
 	if !strings.HasPrefix(s, "$") {
 		return ref, true
 	}
-	parts := strings.SplitN(strings.TrimPrefix(s, "$"), ".", 2)
-	if len(parts) != 2 {
+	parts := strings.Split(strings.TrimPrefix(s, "$"), ".")
+	if len(parts) < 2 {
 		return nil, false
 	}
-	sectionMap, ok := scope[parts[0]].(map[string]any)
-	if !ok {
-		return nil, false
+	var cur any = scope
+	for _, p := range parts {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = m[p]
+		if !ok {
+			return nil, false
+		}
 	}
-	v, ok := sectionMap[parts[1]]
-	return v, ok
+	return cur, true
 }
 
 // SpawnTaskInstanceBySlug resolves a definition by slug and spawns it.
