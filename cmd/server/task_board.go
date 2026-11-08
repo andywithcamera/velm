@@ -671,6 +671,7 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			COALESCE(NULLIF(BTRIM(g.name), ''), '') AS group_label,
 			COALESCE(t.assigned_user_id::text, '') AS assigned_user_id,
 			COALESCE(NULLIF(BTRIM(u.name), ''), '') AS assignee_label,
+			COALESCE(t.definition_id::text, '') AS definition_id,
 			t.due_at,
 			t._updated_at
 		FROM (` + queryContext.SourceQuery + `) t
