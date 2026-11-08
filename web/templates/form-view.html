@@ -19,53 +19,70 @@
         </div>
         {{end}}
 	    </div>
-		    <div class="ui-form-frame-actions">
-		      {{if and (not .FormReadOnly) (not .FormHidePrimaryActions)}}
-		      <button type="submit" form="recordForm" class="ui-btn ui-btn-primary" data-primary-submit="true" data-form-save-submit="true">{{if .FormPrimaryActionLabel}}{{.FormPrimaryActionLabel}}{{else}}Save Changes{{end}}</button>
-		      {{if .FormPublishAction}}
-		      <button type="submit" form="recordForm" class="ui-btn ui-btn-secondary" data-form-save-submit="true" formaction="{{.FormPublishAction}}" formmethod="post">{{if .FormPublishLabel}}{{.FormPublishLabel}}{{else}}Publish{{end}}</button>
-		      {{end}}
-		      {{end}}
-		      {{if not .FormHideSecondaryActions}}
-		      <button type="button" class="ui-btn ui-btn-secondary">Export</button>
-		      <button type="button" class="ui-btn ui-btn-secondary">Copy</button>
-		      {{end}}
-		      {{if and (not $isNew) (not .FormReadOnly) (not .FormHideDeleteActions)}}
-		        {{if .FormIsDeleted}}
-		          <button
-		            type="submit"
+	    <div class="ui-form-frame-actions">
+	      {{if and (not .FormReadOnly) (not .FormHidePrimaryActions)}}
+	      <button type="submit" form="recordForm" class="ui-btn ui-btn-primary" data-primary-submit="true" data-form-save-submit="true">{{if .FormPrimaryActionLabel}}{{.FormPrimaryActionLabel}}{{else}}Save Changes{{end}}</button>
+	      {{if .FormPublishAction}}
+	      <button type="submit" form="recordForm" class="ui-btn ui-btn-secondary" data-form-save-submit="true" formaction="{{.FormPublishAction}}" formmethod="post">{{if .FormPublishLabel}}{{.FormPublishLabel}}{{else}}Publish{{end}}</button>
+	      {{end}}
+	      {{end}}
+	      <div class="ui-menu-wrap" data-record-menu="true">
+	        <button
+	          type="button"
+	          class="ui-icon-btn"
+	          data-record-menu-toggle="true"
+	          aria-expanded="false"
+	          aria-haspopup="true"
+	          aria-label="More actions"
+	          title="More actions"
+	        >
+	          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>
+	        </button>
+	        <div class="ui-action-menu hidden" data-record-menu-panel="true">
+	          {{if not .FormHideSecondaryActions}}
+	          <button type="button" class="ui-action-menu-item" data-record-menu-close>Export</button>
+	          <button type="button" class="ui-action-menu-item" data-record-menu-close>Copy</button>
+	          {{end}}
+	          {{if not .FormHideTimeline}}
+	          <button
+	            type="button"
+	            class="ui-action-menu-item ui-form-timeline-toggle"
+	            data-form-timeline-toggle="true"
+	            aria-expanded="true"
+	            aria-controls="recordTimelineAside"
+	            data-record-menu-close
+	          >
+	            Collapse Updates
+	          </button>
+	          {{end}}
+	          {{if and (not $isNew) (not .FormReadOnly) (not .FormHideDeleteActions)}}
+	          <div class="ui-action-menu-sep"></div>
+	          {{if .FormIsDeleted}}
+	          <button
+	            type="submit"
 	            form="recordForm"
-	            class="ui-btn ui-btn-secondary"
+	            class="ui-action-menu-item"
 	            formaction="/api/restore/{{.FormTable}}"
 	            formmethod="post"
 	          >
 	            Restore
 	          </button>
-	        {{else}}
+	          {{else}}
 	          <button
 	            type="submit"
 	            form="recordForm"
-	            class="ui-btn ui-btn-danger"
+	            class="ui-action-menu-item ui-action-menu-item-danger"
 	            formaction="{{if .FormDeleteAction}}{{.FormDeleteAction}}{{else}}/api/delete/{{.FormTable}}{{end}}"
 	            formmethod="post"
 	            data-confirm="{{if .FormDeleteConfirm}}{{.FormDeleteConfirm}}{{else}}Soft-delete this record?{{end}}"
 	          >
 	            {{if .FormDeleteLabel}}{{.FormDeleteLabel}}{{else}}Delete{{end}}
-		          </button>
-		        {{end}}
-		      {{end}}
-      {{if not .FormHideTimeline}}
-      <button
-        type="button"
-        class="ui-btn ui-btn-secondary ui-form-timeline-toggle"
-        data-form-timeline-toggle="true"
-        aria-expanded="true"
-        aria-controls="recordTimelineAside"
-      >
-        Collapse Updates
-      </button>
-      {{end}}
-    </div>
+	          </button>
+	          {{end}}
+	          {{end}}
+	        </div>
+	      </div>
+	    </div>
   </div>
   <div class="ui-form-layout{{if .FormHideTimeline}} is-timeline-collapsed{{end}}" data-form-layout-shell="true">
     <div class="ui-form-main ui-form-main-stack">
@@ -2469,6 +2486,42 @@
 	      refreshAppScope();
 	    });
 	  })();
+
+		  (function () {
+		    // Compact record header: secondary actions live behind a single overflow menu.
+		    const wrap = document.querySelector('[data-record-menu="true"]');
+		    const toggle = document.querySelector('[data-record-menu-toggle="true"]');
+		    const panel = document.querySelector('[data-record-menu-panel="true"]');
+		    if (!wrap || !toggle || !panel) return;
+
+		    function setMenuOpen(open) {
+		      panel.classList.toggle('hidden', !open);
+		      wrap.classList.toggle('is-open', open);
+		      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+		    }
+
+		    setMenuOpen(false);
+
+		    toggle.addEventListener('click', function (event) {
+		      event.stopPropagation();
+		      setMenuOpen(panel.classList.contains('hidden'));
+		    });
+
+		    panel.addEventListener('click', function (event) {
+		      if (event.target.closest('[data-record-menu-close]')) setMenuOpen(false);
+		    });
+
+		    document.addEventListener('click', function (event) {
+		      if (wrap.contains(event.target)) return;
+		      setMenuOpen(false);
+		    });
+
+		    document.addEventListener('keydown', function (event) {
+		      if (event.key !== 'Escape' || panel.classList.contains('hidden')) return;
+		      setMenuOpen(false);
+		      toggle.focus();
+		    });
+		  })();
 
 		  (function () {
 		    const layout = document.querySelector('[data-form-layout-shell="true"]');
