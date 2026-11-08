@@ -136,6 +136,8 @@ func registerRoutes() {
 	))
 	http.Handle("/api/authz/roles/create", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleCreateRole)))
 	http.Handle("/api/authz/permissions/create", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleCreatePermission)))
+	http.Handle("/api/authz/group-memberships/grant", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleGrantGroupMembership)))
+	http.Handle("/api/authz/group-memberships/revoke", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleRevokeGroupMembership)))
 	http.Handle("/api/authz/user-roles/grant", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleGrantUserRole)))
 	http.Handle("/api/authz/user-roles/revoke", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleRevokeUserRole)))
 	http.Handle("/api/authz/role-permissions/grant", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleGrantRolePermission)))

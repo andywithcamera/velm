@@ -29,9 +29,24 @@ func handleAccessControlPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to load permissions", http.StatusInternalServerError)
 		return
 	}
+	groups, err := db.ListAuthzGroups(ctx)
+	if err != nil {
+		http.Error(w, "Failed to load groups", http.StatusInternalServerError)
+		return
+	}
+	groupMemberships, err := db.ListAuthzGroupMemberships(ctx)
+	if err != nil {
+		http.Error(w, "Failed to load group memberships", http.StatusInternalServerError)
+		return
+	}
 	userRoleAssignments, err := db.ListUserRoleAssignments(ctx)
 	if err != nil {
 		http.Error(w, "Failed to load user role assignments", http.StatusInternalServerError)
+		return
+	}
+	directGrantCount, err := db.CountDirectUserRoleGrants(ctx)
+	if err != nil {
+		http.Error(w, "Failed to count direct role grants", http.StatusInternalServerError)
 		return
 	}
 	rolePermissionAssignments, err := db.ListRolePermissionAssignments(ctx)
@@ -45,9 +60,14 @@ func handleAccessControlPage(w http.ResponseWriter, r *http.Request) {
 	data["AuthzUsers"] = users
 	data["AuthzRoles"] = roles
 	data["AuthzPermissions"] = permissions
+	data["AuthzGroups"] = groups
+	data["GroupMemberships"] = groupMemberships
+	data["DirectGrantCount"] = directGrantCount
 	data["UserRoleAssignments"] = userRoleAssignments
 	data["RolePermissionAssigns"] = rolePermissionAssignments
-	data["AccessControlStatusText"] = r.URL.Query().Get("status")
+	statusText, statusDanger := accessControlStatus(r.URL.Query().Get("status"))
+	data["AccessControlStatusText"] = statusText
+	data["AccessControlStatusDanger"] = statusDanger
 	data["PermissionPrefillResource"] = strings.TrimSpace(strings.ToLower(r.URL.Query().Get("resource")))
 	data["PermissionPrefillAction"] = strings.TrimSpace(strings.ToLower(r.URL.Query().Get("action")))
 	data["PermissionPrefillScope"] = strings.TrimSpace(strings.ToLower(r.URL.Query().Get("scope")))
@@ -128,6 +148,83 @@ func handleCreatePermission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/admin/access?status=permission_saved", http.StatusSeeOther)
+}
+
+// Group membership is the supported way to assign a role (issue #199). The
+// access-control page offers this and no longer offers a direct grant; the
+// direct-grant endpoints below stay reachable until R4 drops _user_role.
+func handleGrantGroupMembership(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if !utils.IsValidUUID(userID) {
+		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		return
+	}
+	groupID := strings.TrimSpace(r.FormValue("group_id"))
+	if !utils.IsValidUUID(groupID) {
+		http.Error(w, "Invalid group", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.AddGroupMembership(context.Background(), userID, groupID); err != nil {
+		if errors.Is(err, db.ErrLastGlobalAdminRemoval) {
+			http.Redirect(w, r, "/admin/access?status=last_admin_guard_blocked", http.StatusSeeOther)
+			return
+		}
+		http.Error(w, "Failed to add group membership", http.StatusInternalServerError)
+		return
+	}
+	if err := db.BumpUserSessionVersion(context.Background(), userID); err != nil {
+		http.Error(w, "Failed to rotate user session", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/access?status=group_membership_added", http.StatusSeeOther)
+}
+
+func handleRevokeGroupMembership(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if !utils.IsValidUUID(userID) {
+		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		return
+	}
+	groupID := strings.TrimSpace(r.FormValue("group_id"))
+	if !utils.IsValidUUID(groupID) {
+		http.Error(w, "Invalid group", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.RemoveGroupMembership(context.Background(), userID, groupID); err != nil {
+		if errors.Is(err, db.ErrLastGlobalAdminRemoval) {
+			http.Redirect(w, r, "/admin/access?status=last_admin_guard_blocked", http.StatusSeeOther)
+			return
+		}
+		http.Error(w, "Failed to remove group membership", http.StatusInternalServerError)
+		return
+	}
+	if err := db.BumpUserSessionVersion(context.Background(), userID); err != nil {
+		http.Error(w, "Failed to rotate user session", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/access?status=group_membership_removed", http.StatusSeeOther)
 }
 
 func handleGrantUserRole(w http.ResponseWriter, r *http.Request) {
@@ -279,4 +376,31 @@ func handleRevokeRolePermission(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/admin/access?status=role_permission_revoked", http.StatusSeeOther)
+}
+
+// accessControlStatus turns a redirect status slug into a sentence. Unknown or
+// missing slugs render nothing rather than leaking a query value into the page.
+func accessControlStatus(slug string) (string, bool) {
+	switch slug {
+	case "group_membership_added":
+		return "Added to group. Roles from that group apply immediately.", false
+	case "group_membership_removed":
+		return "Removed from group. Remaining roles still apply.", false
+	case "last_admin_guard_blocked":
+		return "Blocked: that would leave this instance with no global admin. Add another admin first.", true
+	case "role_permission_granted":
+		return "Permission attached to role.", false
+	case "role_permission_revoked":
+		return "Permission detached from role.", false
+	case "role_saved":
+		return "Role created.", false
+	case "permission_saved":
+		return "Permission created.", false
+	case "user_role_granted":
+		return "Direct role grant added (deprecated path).", false
+	case "user_role_revoked":
+		return "Direct role grant revoked.", false
+	default:
+		return "", false
+	}
 }

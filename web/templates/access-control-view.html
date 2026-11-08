@@ -8,8 +8,8 @@
         <p class="ui-section-copy">Manage roles, permissions, and assignments stored in DB records without jumping between disconnected admin forms.</p>
       </div>
       {{if .AccessControlStatusText}}
-        <span class="ui-badge {{if eq .AccessControlStatusText "last_admin_guard_blocked"}}ui-badge-danger{{end}}">
-          Status: {{.AccessControlStatusText}}
+        <span class="ui-badge {{if .AccessControlStatusDanger}}ui-badge-danger{{end}}">
+          {{.AccessControlStatusText}}
         </span>
       {{end}}
     </div>
@@ -143,14 +143,15 @@
         <div class="ui-section-header">
           <div>
             <h2 class="ui-section-title">Assignments</h2>
-            <p class="ui-section-copy">Grant roles to users and permissions to roles with app scoping when needed.</p>
+            <p class="ui-section-copy">Roles reach users through groups. Permissions attach to roles, and a role can carry app scope.</p>
           </div>
         </div>
 
         <div class="ui-grid-2">
-          <form method="POST" action="/api/authz/user-roles/grant" class="ui-panel ui-stack">
+          <form method="POST" action="/api/authz/group-memberships/grant" class="ui-panel ui-stack">
             <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-            <h3 class="ui-section-title">Assign Role to User</h3>
+            <h3 class="ui-section-title">Add User to Group</h3>
+            <p class="ui-section-copy">Roles come from groups. Membership grants every role the group carries.</p>
             <div class="ui-field">
               <label class="ui-field-label" for="assign-user">User</label>
               <select id="assign-user" name="user_id" class="ui-select" required>
@@ -161,20 +162,16 @@
               </select>
             </div>
             <div class="ui-field">
-              <label class="ui-field-label" for="assign-role">Role</label>
-              <select id="assign-role" name="role_id" class="ui-select" required>
-                <option value="">Select role</option>
-                {{range .AuthzRoles}}
-                  <option value="{{.ID}}">{{.Name}}</option>
+              <label class="ui-field-label" for="assign-group">Group</label>
+              <select id="assign-group" name="group_id" class="ui-select" required>
+                <option value="">Select group</option>
+                {{range .AuthzGroups}}
+                  <option value="{{.ID}}">{{.Name}}{{if .Roles}} — {{.Roles}}{{end}}</option>
                 {{end}}
               </select>
             </div>
-            <div class="ui-field">
-              <label class="ui-field-label" for="assign-app">App scope</label>
-              <input id="assign-app" name="app_id" placeholder="optional app_id for scoped role" class="ui-input" />
-            </div>
             <div class="ui-form-actions">
-              <button type="submit" class="ui-btn ui-btn-primary">Assign Role</button>
+              <button type="submit" class="ui-btn ui-btn-primary">Add to Group</button>
             </div>
           </form>
 
@@ -210,39 +207,57 @@
         <div class="ui-section-header">
           <div>
             <h2 class="ui-section-title">Current Assignments</h2>
-            <p class="ui-section-copy">Review active user-role and role-permission mappings and revoke them in place.</p>
+            <p class="ui-section-copy">Review group memberships and role-permission mappings, and revoke them in place.</p>
           </div>
         </div>
 
         <div class="ui-grid-2">
           <div class="ui-panel">
-            <h3 class="ui-section-title">User Role Assignments</h3>
+            <h3 class="ui-section-title">Group Memberships</h3>
+            <p class="ui-section-copy">Where each user's roles actually come from.</p>
             <div class="ui-stack" style="margin-top: 0.9rem;">
-              {{if .UserRoleAssignments}}
-                {{range .UserRoleAssignments}}
+              {{if .GroupMemberships}}
+                {{range .GroupMemberships}}
                 <div class="ui-panel ui-panel-muted">
                   <div class="ui-section-header" style="margin-bottom: 0;">
                     <div>
                       <strong>{{.UserName}}</strong> ({{.Email}})
-                      <p class="ui-section-copy">Role: {{.RoleName}}{{if .AppID}} | app: {{.AppID}}{{else}} | global{{end}}</p>
+                      <p class="ui-section-copy">Group: {{.GroupName}}{{if .Roles}} — {{.Roles}}{{end}}</p>
                     </div>
-                    <form method="POST" action="/api/authz/user-roles/revoke">
+                    <form method="POST" action="/api/authz/group-memberships/revoke">
                       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                       <input type="hidden" name="user_id" value="{{.UserID}}">
-                      <input type="hidden" name="role_id" value="{{.RoleID}}">
-                      <input type="hidden" name="app_id" value="{{.AppID}}">
-                      <button type="submit" class="ui-btn ui-btn-danger">Revoke</button>
+                      <input type="hidden" name="group_id" value="{{.GroupID}}">
+                      <button type="submit" class="ui-btn ui-btn-danger">Remove</button>
                     </form>
                   </div>
                 </div>
                 {{end}}
               {{else}}
                 <div class="ui-empty-state">
-                  <strong>No user-role assignments yet</strong>
-                  <span>Grant a role to a user to make permissions effective.</span>
+                  <strong>No group memberships yet</strong>
+                  <span>Add a user to a group to make its roles effective.</span>
                 </div>
               {{end}}
             </div>
+            {{if .UserRoleAssignments}}
+            <div class="ui-panel ui-panel-muted" style="margin-top: 1rem;">
+              <h4 class="ui-section-title">Direct role grants (deprecated)</h4>
+              <p class="ui-section-copy">
+                {{.DirectGrantCount}} grant{{if ne .DirectGrantCount 1}}s{{end}} still assigned user-to-role directly.
+                These still apply, but groups are the only supported path now, so they are read-only here.
+                Add the user to a group carrying the same role, then remove the direct grant.
+              </p>
+              <div class="ui-stack">
+                {{range .UserRoleAssignments}}
+                <div>
+                  <strong>{{.UserName}}</strong> ({{.Email}})
+                  <span class="ui-section-copy">Role: {{.RoleName}}{{if .AppID}} | app: {{.AppID}}{{else}} | global{{end}}</span>
+                </div>
+                {{end}}
+              </div>
+            </div>
+            {{end}}
           </div>
 
           <div class="ui-panel">

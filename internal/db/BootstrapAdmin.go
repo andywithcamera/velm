@@ -91,21 +91,11 @@ func grantGlobalAdminByUserIDTx(ctx context.Context, tx pgx.Tx, userID, email st
 		return err
 	}
 
-	// Dual write: while _user_role still exists, keep the direct grant too so
-	// anything that reads it keeps working. #199 R4 removes this branch along
-	// with the table.
-	adminRoleID, err := adminRoleIDTx(ctx, tx)
-	if err != nil {
-		return err
-	}
-
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO _user_role (user_id, role_id, app_id)
-		VALUES ($1, $2, '')
-		ON CONFLICT DO NOTHING
-	`, userID, adminRoleID); err != nil {
-		return err
-	}
+	// No direct _user_role write (#199 R3). While the guard in
+	// 082_last_admin_guard counts effective admins, a dual write makes it blind:
+	// removing the last group membership still left an admin behind via
+	// _user_role, so the guard could never fire (observed live before this
+	// change). Existing legacy grants keep being read; nothing new writes them.
 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO _bootstrap_admin (user_id, email)
