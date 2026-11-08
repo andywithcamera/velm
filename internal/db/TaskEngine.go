@@ -226,16 +226,47 @@ func StartTask(ctx context.Context, taskID, actorUserID string) error {
 	if err := transitionTaskInTx(ctx, tx, taskID, taskStateInProgress); err != nil {
 		return err
 	}
+	if err := runStartHooksInTx(ctx, tx, taskID, actorUserID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// RunEngineHooksAfterStart runs the engine hooks for a task that has already
+// entered in_progress through a write path that does not go through StartTask
+// (issue #233: the record form sets the state column directly). It binds
+// container child inputs, promotes/spawns children, and runs run_if and the
+// definition script — everything StartTask does after the transition.
+// No-op for tasks without a definition.
+func RunEngineHooksAfterStart(ctx context.Context, taskID, actorUserID string) error {
+	var defID *string
+	if err := Pool.QueryRow(ctx, `SELECT definition_id::text FROM base_task WHERE _id = $1`, taskID).Scan(&defID); err != nil {
+		return err
+	}
+	if defID == nil || *defID == "" {
+		return nil // not an engine task; nothing to run
+	}
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := runStartHooksInTx(ctx, tx, taskID, actorUserID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// runStartHooksInTx is the post-transition half of StartTask, shared with
+// RunEngineHooksAfterStart.
+func runStartHooksInTx(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) error {
 	if err := bindChildInputs(ctx, tx, taskID, actorUserID); err != nil {
 		return err
 	}
 	if err := promoteChildren(ctx, tx, taskID, actorUserID); err != nil {
 		return err
 	}
-	if err := runTaskHooks(ctx, tx, taskID, actorUserID); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return runTaskHooks(ctx, tx, taskID, actorUserID)
 }
 
 // bindChildInputs applies each container child's input_mapping against the

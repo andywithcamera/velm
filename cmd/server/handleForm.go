@@ -198,7 +198,7 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 	}
 	formReadOnly := db.IsImmutableTableName(tableName)
 	formColumns := orderedFormColumns(selectedForm, xData.View.Columns)
-	formFieldConfigs := buildFormFieldConfigs(ctx, tableName, formColumns)
+	formFieldConfigs := buildFormFieldConfigs(ctx, tableName, formColumns, xData.Data)
 	formFieldValues := buildFormFieldValues(xData.Data, formFieldConfigs)
 	dropHiddenFormValues(formColumns, formFieldValues)
 	formSecurityPreviewURL := ""
@@ -275,7 +275,7 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 	// rules cannot see it, and the value is never read back from the record.
 	if strings.EqualFold(tableName, db.UserTableName) {
 		formColumns = injectUserPasswordFormColumn(tableName, formColumns)
-		passwordConfigs := buildFormFieldConfigs(ctx, tableName, []db.Column{db.UserPasswordFormColumn()})
+		passwordConfigs := buildFormFieldConfigs(ctx, tableName, []db.Column{db.UserPasswordFormColumn()}, nil)
 		formFieldConfigs[db.UserPasswordField] = passwordConfigs[db.UserPasswordField]
 	}
 
@@ -596,7 +596,7 @@ func orderedFormColumns(form db.AppDefinitionForm, columns []db.Column) []db.Col
 	return ordered
 }
 
-func buildFormFieldConfigs(ctx context.Context, currentTable string, columns []db.Column) map[string]formFieldConfig {
+func buildFormFieldConfigs(ctx context.Context, currentTable string, columns []db.Column, record any) map[string]formFieldConfig {
 	configs := make(map[string]formFieldConfig, len(columns))
 	tableExistsCache := make(map[string]bool, len(columns))
 	referenceOptionsCache := make(map[string][]formReferenceOption, len(columns))
@@ -681,6 +681,15 @@ func buildFormFieldConfigs(ctx context.Context, currentTable string, columns []d
 		}
 		if currentTable == "base_task" && (col.NAME == "state_changed_at" || col.NAME == "started_at" || col.NAME == "closed_at") {
 			cfg.ReadOnly = true
+		}
+		if currentTable == "base_task" && col.NAME == "definition_id" {
+			// The ask type is chosen at spawn time; a spawned task keeps its
+			// definition. Lock it once set so the pipeline can't be swapped.
+			if recordMap, ok := record.(map[string]any); ok && recordMap["definition_id"] != nil {
+				if defID := strings.TrimSpace(fmt.Sprint(recordMap["definition_id"])); defID != "" && defID != "<nil>" {
+					cfg.ReadOnly = true
+				}
+			}
 		}
 		if col.NAME == "work_type" && taskTypeValue != "" {
 			cfg.ReadOnly = true

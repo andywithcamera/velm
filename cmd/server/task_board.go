@@ -48,6 +48,7 @@ type taskBoardCard struct {
 	GroupLabel     string
 	AssignedUserID string
 	AssigneeLabel  string
+	AskLabel       string
 	DueAtLabel     string
 	AttentionLabel string
 	AttentionClass string
@@ -667,11 +668,14 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			COALESCE(NULLIF(BTRIM(g.name), ''), '') AS group_label,
 			COALESCE(t.assigned_user_id::text, '') AS assigned_user_id,
 			COALESCE(NULLIF(BTRIM(u.name), ''), '') AS assignee_label,
+			COALESCE(t.definition_id::text, '') AS definition_id,
+			COALESCE(NULLIF(BTRIM(td.name), ''), '') AS ask_label,
 			t.due_at,
 			t._updated_at
 		FROM (` + queryContext.SourceQuery + `) t
 		LEFT JOIN _group g ON g._id = t.assignment_group_id
 		LEFT JOIN _user u ON u._id = t.assigned_user_id
+		LEFT JOIN base_task_definition td ON td._id = t.definition_id
 		WHERE t._deleted_at IS NULL
 		  AND COALESCE(NULLIF(BTRIM(t.state), ''), 'new') <> 'closed'`
 
@@ -777,10 +781,12 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			groupLabel     string
 			assignedUserID string
 			assigneeLabel  string
+			definitionID   string
+			askLabel       string
 			dueAt          sql.NullTime
 			updatedAt      sql.NullTime
 		)
-		if err := rows.Scan(&id, &recordTable, &number, &title, &state, &priority, &groupID, &groupLabel, &assignedUserID, &assigneeLabel, &dueAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &recordTable, &number, &title, &state, &priority, &groupID, &groupLabel, &assignedUserID, &assigneeLabel, &definitionID, &askLabel, &dueAt, &updatedAt); err != nil {
 			return nil, err
 		}
 		recordTable = strings.TrimSpace(recordTable)
@@ -804,6 +810,8 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			"priority":            strings.TrimSpace(priority),
 			"assignment_group_id": strings.TrimSpace(groupID),
 			"assigned_user_id":    strings.TrimSpace(assignedUserID),
+			"definition_id":       strings.TrimSpace(definitionID),
+			"ask_label":           strings.TrimSpace(askLabel),
 			"due_at":              dueAt.Time,
 			"_updated_at":         updatedAt.Time,
 		}
@@ -825,6 +833,7 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 		if filteredRecord["assignment_group_id"] == nil {
 			groupLabelValue = ""
 		}
+		askLabelValue := strings.TrimSpace(askLabel)
 		assigneeLabelValue := strings.TrimSpace(assigneeLabel)
 		if filteredRecord["assigned_user_id"] == nil {
 			assigneeLabelValue = ""
@@ -842,6 +851,7 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			GroupLabel:     groupLabelValue,
 			AssignedUserID: assignedUserIDValue,
 			AssigneeLabel:  assigneeLabelValue,
+			AskLabel:       askLabelValue,
 			DueAtLabel:     formatTaskBoardTimestamp(dueAt, updatedAt),
 			AttentionLabel: taskBoardAttentionLabel(now, dueAt, updatedAt),
 			AttentionClass: taskBoardAttentionClass(now, dueAt, updatedAt),

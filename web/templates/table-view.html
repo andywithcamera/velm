@@ -666,6 +666,9 @@
                     {{if .PriorityLabel}}
                     <span class="ui-badge {{.PriorityClass}}">{{.PriorityLabel}}</span>
                     {{end}}
+                    {{if .AskLabel}}
+                    <span class="ui-badge ui-badge-neutral" title="Ask type (task definition)">{{.AskLabel}}</span>
+                    {{end}}
                   </div>
                 </div>
                 <strong class="ui-task-board-card-title">{{.Title}}</strong>
