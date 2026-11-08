@@ -183,7 +183,19 @@ func seedActorAndGroup(ctx context.Context, t *testing.T) (string, string) {
 		_, _ = Pool.Exec(bg, `DELETE FROM _group WHERE _id = $1`, groupID)
 		_, _ = Pool.Exec(bg, `DELETE FROM _user WHERE _id = $1`, userID)
 	})
+	testActorID = userID
 	return userID, groupID
+}
+
+// testActorID is set by seedActorAndGroup; helpers reuse it.
+var testActorID string
+
+func actorIDForClose(t *testing.T) string {
+	t.Helper()
+	if testActorID == "" {
+		t.Fatal("actor not seeded")
+	}
+	return testActorID
 }
 
 func childTaskIDs(ctx context.Context, parentID string) ([]string, error) {
@@ -201,4 +213,294 @@ func childTaskIDs(ctx context.Context, parentID string) ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// TestDependencyEdgesFanIn is the #209 acceptance test: a five-child
+// container where review depends on design + implementation + risk (fan-in),
+// implementation and comms run in parallel, and closing tasks in order
+// promotes exactly the children whose every prerequisite is closed.
+func TestDependencyEdgesFanIn(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+
+	slugs := map[string]string{"design": "", "impl": "", "risk": "", "comms": "", "review": ""}
+	for slug := range slugs {
+		slugs[slug] = seedDefinition(ctx, t, "fan-"+slug+"-"+suffix, slug, false, "")
+	}
+	// risk is gated off: its run_if at start (via the close helper) skips it,
+	// proving a skipped predecessor satisfies its dependents.
+	seedRunIf(ctx, t, slugs["risk"], "function run(ctx){ return false; }")
+	containerDef := seedDefinition(ctx, t, "fan-container-"+suffix, "Container", true, "")
+	for i, slug := range []string{"design", "impl", "risk", "comms", "review"} {
+		var deps []string
+		if slug == "review" {
+			deps = []string{slugs["design"], slugs["impl"], slugs["risk"]}
+		}
+		seedChildLinkWithDeps(ctx, t, containerDef, slugs[slug], i, deps, "")
+	}
+
+	parentID, err := SpawnTaskInstance(ctx, Pool, containerDef, "", actorID, map[string]any{})
+	if err != nil {
+		t.Fatalf("spawn container: %v", err)
+	}
+	assignAll(ctx, t, parentID, groupID, actorID)
+
+	// Nothing promoted before start: all five children pending.
+	if got := countState(ctx, t, parentID, "pending"); got != 5 {
+		t.Fatalf("after spawn: %d pending, want 5", got)
+	}
+
+	if err := StartTask(ctx, parentID, actorID); err != nil {
+		t.Fatalf("StartTask: %v", err)
+	}
+	// design/impl/comms promote; risk is run_if:false -> skipped at
+	// promotion; review waits on three deps.
+	if got := countState(ctx, t, parentID, "ready"); got != 3 {
+		t.Fatalf("after start: %d ready, want 3", got)
+	}
+	if got := countState(ctx, t, parentID, "skipped"); got != 1 {
+		t.Fatalf("after start: risk should be skipped, got %d", got)
+	}
+	if got := countState(ctx, t, parentID, "pending"); got != 1 {
+		t.Fatalf("after start: %d pending, want 1 (review)", got)
+	}
+
+	// Close design only: review blocked (fan-in, 1/3 — risk already skipped,
+	// which satisfies it, but design and impl are still open).
+	closeChildBySlug(ctx, t, parentID, slugs["design"], "completed")
+	if got := countState(ctx, t, parentID, "pending"); got != 1 {
+		t.Fatalf("1/3 deps settled: review should still be pending, got %d pending", got)
+	}
+
+	// Close impl: design completed + impl completed + risk skipped = review
+	// promotes. Skipped predecessors satisfy (one run_if:false must not
+	// deadlock the pipeline).
+	closeChildBySlug(ctx, t, parentID, slugs["impl"], "completed")
+	if got := countState(ctx, t, parentID, "pending"); got != 0 {
+		t.Fatalf("all deps settled: review should have promoted, %d still pending", got)
+	}
+	// design/impl/risk are closed or skipped; comms never left ready;
+	// review is newly ready.
+	if got := countState(ctx, t, parentID, "ready"); got != 2 {
+		t.Fatalf("want 2 ready (comms + review), got %d", got)
+	}
+	if got := countState(ctx, t, parentID, "skipped"); got != 1 {
+		t.Fatalf("risk should be skipped, got %d", got)
+	}
+}
+
+// TestDependencyEdgesRejectionLoop covers depends_on_reason: a review that
+// closed 'rejected' does not satisfy an edge expecting completion; the
+// re-spawned implementation (follow-on inside the container) does.
+func TestDependencyEdgesRejectionLoop(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+
+	implDef := seedDefinitionWithSpawnRules(ctx, t, "loop-impl-"+suffix, "impl",
+		`[{"on":"rejected","definition_slug":"loop-impl-`+suffix+`","input_mapping":{},"assign":"same"}]`)
+	reviewDef := seedDefinition(ctx, t, "loop-review-"+suffix, "review", false, "")
+	containerDef := seedDefinition(ctx, t, "loop-container-"+suffix, "Container", true, "")
+	seedChildLinkWithDeps(ctx, t, containerDef, implDef, 0, nil, "")
+	seedChildLinkWithDeps(ctx, t, containerDef, reviewDef, 1, []string{implDef}, "completed")
+
+	parentID, err := SpawnTaskInstance(ctx, Pool, containerDef, "", actorID, map[string]any{})
+	if err != nil {
+		t.Fatalf("spawn container: %v", err)
+	}
+	assignAll(ctx, t, parentID, groupID, actorID)
+	if err := StartTask(ctx, parentID, actorID); err != nil {
+		t.Fatalf("StartTask: %v", err)
+	}
+
+	implID := childByDef(ctx, t, parentID, implDef)
+	// Rejected implementation: review must NOT promote; follow-on spawns
+	// pending inside the container.
+	if err := closeWithReason(ctx, t, implID, "rejected"); err != nil {
+		t.Fatalf("close rejected: %v", err)
+	}
+	if got := countState(ctx, t, parentID, "pending"); got != 2 {
+		t.Fatalf("after rejection: %d pending, want 2 (review + follow-on impl)", got)
+	}
+	followOns := childrenOfDef(ctx, t, parentID, implDef)
+	if len(followOns) != 2 {
+		t.Fatalf("follow-on implementation not spawned inside container: %d impl instances", len(followOns))
+	}
+	// The re-spawned implementation starts pending and, with no deps,
+	// promotes at the next promotion pass triggered by the rejection.
+	// (promoteChildren ran in the same transaction as the close.)
+	newImpl := followOns[1]
+	if got := taskState(ctx, t, newImpl); got != "ready" && got != "pending" {
+		t.Fatalf("follow-on impl state = %s, want ready or pending", got)
+	}
+
+	// The revision completes: now review promotes.
+	if got := taskState(ctx, t, newImpl); got == "pending" {
+		// dependency-free pending children only promote on a promotion pass;
+		// the close of the rejected instance already ran one, and the
+		// follow-on spawned after it. Start the parent again? No — start the
+		// revision directly is not the model. Closing the rejected twin
+		// triggered one pass; this branch documents the ordering.
+		_ = got
+	}
+	if _, err := Pool.Exec(ctx, `UPDATE base_task SET assignment_group_id = $2, assigned_user_id = $3 WHERE _id = $1`,
+		newImpl, groupID, actorID); err != nil {
+		t.Fatal(err)
+	}
+	if err := closeWithReason(ctx, t, newImpl, "completed"); err != nil {
+		t.Fatalf("close revision: %v", err)
+	}
+	if got := taskState(ctx, t, childByDef(ctx, t, parentID, reviewDef)); got != "ready" {
+		t.Fatalf("review state = %s, want ready after revision completed", got)
+	}
+}
+
+// TestDependencyCycleRejectedOnSave proves the 084 trigger rejects a cycle
+// at definition-save time, not at runtime.
+func TestDependencyCycleRejectedOnSave(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	a := seedDefinition(ctx, t, "cyc-a-"+suffix, "a", false, "")
+	b := seedDefinition(ctx, t, "cyc-b-"+suffix, "b", false, "")
+	container := seedDefinition(ctx, t, "cyc-container-"+suffix, "c", true, "")
+	seedChildLinkWithDeps(ctx, t, container, a, 0, nil, "")
+	seedChildLinkWithDeps(ctx, t, container, b, 1, []string{a}, "")
+	if _, err := Pool.Exec(ctx,
+		`UPDATE base_task_definition_child SET depends_on = $2::uuid[]
+		 WHERE container_definition_id = $1 AND child_definition_id = $3`,
+		container, []string{b}, a); err == nil {
+		t.Fatal("a -> b -> a cycle accepted on save; must be rejected")
+	}
+}
+
+// seedDefinitionWithSpawnRules seeds a leaf definition with spawn rules.
+func seedDefinitionWithSpawnRules(ctx context.Context, t *testing.T, slug, display, rules string) string {
+	t.Helper()
+	var id string
+	if err := Pool.QueryRow(ctx, `
+		INSERT INTO base_task_definition (slug, display_name, is_container, spawn_rules)
+		VALUES ($1, $2, FALSE, $3::jsonb)
+		RETURNING _id::text`, slug, display, rules).Scan(&id); err != nil {
+		t.Fatalf("seed definition %s: %v", slug, err)
+	}
+	return id
+}
+
+// seedRunIf sets a run_if script on a definition (false -> skipped).
+func seedRunIf(ctx context.Context, t *testing.T, defID, script string) {
+	t.Helper()
+	if _, err := Pool.Exec(ctx,
+		`UPDATE base_task_definition SET run_if_script = $2 WHERE _id = $1`, defID, script); err != nil {
+		t.Fatalf("seed run_if: %v", err)
+	}
+}
+
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+func seedChildLinkWithDeps(ctx context.Context, t *testing.T, containerDef, childDef string, sortOrder int, deps []string, reason string) {
+	t.Helper()
+	if _, err := Pool.Exec(ctx, `
+		INSERT INTO base_task_definition_child
+			(container_definition_id, child_definition_id, sort_order, input_mapping, depends_on, depends_on_reason)
+		VALUES ($1, $2, $3, '{}'::jsonb, $4::uuid[], $5)`, containerDef, childDef, sortOrder, nonNil(deps), reason); err != nil {
+		t.Fatalf("seed child link with deps: %v", err)
+	}
+}
+
+func assignAll(ctx context.Context, t *testing.T, parentID, groupID, actorID string) {
+	t.Helper()
+	if _, err := Pool.Exec(ctx, `
+		UPDATE base_task SET assignment_group_id = $2, assigned_user_id = $3
+		WHERE parent_task_id = $1 OR _id = $1`, parentID, groupID, actorID); err != nil {
+		t.Fatalf("assign: %v", err)
+	}
+}
+
+func countState(ctx context.Context, t *testing.T, parentID, state string) int {
+	t.Helper()
+	var n int
+	if err := Pool.QueryRow(ctx, `
+		SELECT count(*) FROM base_task WHERE parent_task_id = $1 AND state = $2 AND _deleted_at IS NULL`,
+		parentID, state).Scan(&n); err != nil {
+		t.Fatalf("count state: %v", err)
+	}
+	return n
+}
+
+// closeChildBySlug closes the single instance of a definition under parent.
+func closeChildBySlug(ctx context.Context, t *testing.T, parentID, defID, reason string) {
+	t.Helper()
+	id := childByDef(ctx, t, parentID, defID)
+	if err := closeWithReason(ctx, t, id, reason); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+}
+
+func childByDef(ctx context.Context, t *testing.T, parentID, defID string) string {
+	t.Helper()
+	ids := childrenOfDef(ctx, t, parentID, defID)
+	if len(ids) == 0 {
+		t.Fatalf("no child for definition %s under %s", defID, parentID)
+	}
+	return ids[0]
+}
+
+func childrenOfDef(ctx context.Context, t *testing.T, parentID, defID string) []string {
+	t.Helper()
+	rows, err := Pool.Query(ctx, `
+		SELECT _id::text FROM base_task
+		WHERE parent_task_id = $1 AND definition_id = $2 AND _deleted_at IS NULL
+		ORDER BY number`, parentID, defID)
+	if err != nil {
+		t.Fatalf("childrenOfDef: %v", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// closeWithReason drives an engine task to closed with an explicit reason,
+// through the real transition path (ready -> in_progress -> closed).
+func closeWithReason(ctx context.Context, t *testing.T, taskID, reason string) error {
+	t.Helper()
+	if err := StartTask(ctx, taskID, actorIDForClose(t)); err != nil {
+		return err
+	}
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := transitionTaskInTx(ctx, tx, taskID, taskStateDone); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE base_task SET closure_reason = $2 WHERE _id = $1`, taskID, reason); err != nil {
+		return err
+	}
+	if err := onTaskClosed(ctx, tx, taskID, reason, actorIDForClose(t)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func taskState(ctx context.Context, t *testing.T, taskID string) string {
+	t.Helper()
+	var state string
+	if err := Pool.QueryRow(ctx, `SELECT state FROM base_task WHERE _id = $1`, taskID).Scan(&state); err != nil {
+		t.Fatalf("taskState: %v", err)
+	}
+	return state
 }
