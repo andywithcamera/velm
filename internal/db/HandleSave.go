@@ -361,7 +361,9 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 
 	newSnapshot := loadRecordSnapshotWithQuerier(context.Background(), tx, tableName, id)
 	if err := tx.Commit(context.Background()); err != nil {
-		http.Error(w, "Failed to save record", http.StatusInternalServerError)
+		// Deferred constraint triggers fire here, not at the statement, so a
+		// refusal like the last-admin guard only becomes visible on commit.
+		writeSaveDatabaseError(w, err)
 		return
 	}
 	applyAuthzSaveSideEffects(context.Background(), tableName, oldSnapshot, newSnapshot)
@@ -410,6 +412,11 @@ func classifySaveDatabaseError(err error) (string, int, bool) {
 	switch pgErr.Code {
 	case "P0001", "23502", "23503", "23505", "23514", "22P02":
 		return message, http.StatusBadRequest, true
+	case lastAdminViolationSQLState:
+		// 082_last_admin_guard.sql. The record editor reaches the group
+		// membership and group role tables directly, so this is the only
+		// place that can explain the refusal.
+		return ErrLastGlobalAdminRemoval.Error(), http.StatusBadRequest, true
 	default:
 		return "", 0, false
 	}

@@ -292,7 +292,7 @@ func RevokeUserRole(ctx context.Context, userID, roleID, appID string) error {
 	if err == nil {
 		InvalidateAuthzCacheForUser(userID)
 	}
-	return err
+	return NormalizeLastGlobalAdminError(err)
 }
 
 func GrantRolePermission(ctx context.Context, roleID, permissionID string) error {
