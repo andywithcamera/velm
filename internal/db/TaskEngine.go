@@ -490,3 +490,55 @@ func resolveScopeRef(scope map[string]any, ref any) (any, bool) {
 	v, ok := sectionMap[parts[1]]
 	return v, ok
 }
+
+// SpawnTaskInstanceBySlug resolves a definition by slug and spawns it.
+// HTTP-facing entry point (issue #224): callers address definitions by
+// slug, not opaque id.
+func SpawnTaskInstanceBySlug(ctx context.Context, q scriptQuerier, slug, parentTaskID, requestedBy string, inputs map[string]any) (string, error) {
+	var id string
+	err := q.QueryRow(ctx, `
+		SELECT _id::text FROM base_task_definition
+		WHERE slug = $1 AND _deleted_at IS NULL`, slug).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("resolve task definition by slug %q: %w", slug, err)
+	}
+	return SpawnTaskInstance(ctx, q, id, parentTaskID, requestedBy, inputs)
+}
+
+// TaskInstanceSummary describes a spawned task for API responses.
+type TaskInstanceSummary struct {
+	ID     string `json:"task_id"`
+	Number string `json:"number"`
+	Title  string `json:"title"`
+	State  string `json:"state"`
+}
+
+// DescribeTaskInstance returns the spawned task plus its direct children,
+// so callers can see the whole instance graph that came into existence.
+func DescribeTaskInstance(ctx context.Context, q scriptQuerier, taskID string) (*TaskInstanceSummary, []TaskInstanceSummary, error) {
+	var root TaskInstanceSummary
+	err := q.QueryRow(ctx, `
+		SELECT _id::text, number, title, state FROM base_task
+		WHERE _id = $1 AND _deleted_at IS NULL`, taskID).Scan(
+		&root.ID, &root.Number, &root.Title, &root.State)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load spawned task: %w", err)
+	}
+	rows, err := q.Query(ctx, `
+		SELECT _id::text, number, title, state FROM base_task
+		WHERE parent_task_id = $1 AND _deleted_at IS NULL
+		ORDER BY number`, taskID)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	children := []TaskInstanceSummary{}
+	for rows.Next() {
+		var c TaskInstanceSummary
+		if err := rows.Scan(&c.ID, &c.Number, &c.Title, &c.State); err != nil {
+			return nil, nil, err
+		}
+		children = append(children, c)
+	}
+	return &root, children, rows.Err()
+}

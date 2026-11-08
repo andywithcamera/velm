@@ -39,6 +39,28 @@ func registerRoutes() {
 	// inside the handlers (handleAppRuntimeServiceCall /
 	// handleAppRuntimeEndpoint).
 	agentStore := db.NewAgentTokenStore()
+	// withAuthOrAgentWrite is withAuthOrAgentOnly plus the write-permission
+	// gate withAuth applies, so POST /api/task-instances has the same authz
+	// surface as /api/save/ while still accepting agent bearer tokens.
+	withAuthOrAgentWrite := func(handler http.Handler) http.Handler {
+		return auth.RequireAuthWithAgents(
+			requireFreshSession(
+				security.RequestLog(
+					security.Audit(
+						authz.RequirePermission(
+							authz.PermissionWrite,
+							security.WithAppScope(
+								auth.RequireCSRF(handler, store),
+							),
+						),
+					),
+				),
+			),
+			store,
+			agentStore,
+			agentStore,
+		)
+	}
 	withAuthOrAgentOnly := func(handler http.Handler) http.Handler {
 		return auth.RequireAuthWithAgents(
 			requireFreshSession(
@@ -128,6 +150,13 @@ func registerRoutes() {
 	http.Handle("/api/scripts/scope", withAuth(authz.PermissionView, http.HandlerFunc(handleScriptScope)))
 	http.Handle("/api/scripts/test", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleTestScriptDryRun)))
 	http.Handle("/api/scripts/run-adhoc", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleRunAdhocScript)))
+	// Task instance spawn API (issue #224): authenticated write endpoint for
+	// session or agent bearer callers. Lives beside /api/app-runtime/call on
+	// the agent-aware chain; the write permission is enforced in the chain
+	// below rather than inside the handler, matching withAuth's shape.
+	http.Handle("/api/task-instances", withAuthOrAgentWrite(
+		http.HandlerFunc(handleTaskInstanceCreate),
+	))
 	http.Handle("/api/app-runtime/call", withAuthOrAgentOnly(
 		http.HandlerFunc(handleAppRuntimeServiceCall),
 	))
