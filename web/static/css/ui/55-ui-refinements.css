@@ -151,65 +151,83 @@
   align-items: center;
 }
 
+/* The board scrolls inside its own strip. Without these, a wide lane pushes the
+   whole page sideways and the top bar loses its right-hand margin. */
+#taskBoard,
+#taskBoard .ui-domain-table-wrap {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .ui-task-board-scroll {
   overflow-x: auto;
-  padding-bottom: 0.25rem;
+  padding: 0.15rem 0.85rem 0.85rem;
+  scroll-padding-inline: 0.85rem;
 }
 
 .ui-task-board-grid {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(var(--lane-count, 1), minmax(18rem, 1fr));
+  gap: 0.7rem;
+  /* Lanes are capped so five of them fit a 1280px window instead of one taking half of it. */
+  grid-template-columns: repeat(var(--lane-count, 1), minmax(13.5rem, 19rem));
+  justify-content: start;
   min-width: max-content;
 }
 
 .ui-task-board-lane {
-  background: transparent;
-  border: 0;
-  border-radius: 1.25rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
   box-shadow: none;
   display: flex;
   flex-direction: column;
-  gap: 0.95rem;
-  min-width: 17rem;
-  padding: 1.05rem;
+  gap: 0.6rem;
+  min-width: 0;
+  padding: 0.65rem;
 }
 
 .ui-task-board-lane-head {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   justify-content: space-between;
+  padding: 0 0.15rem;
 }
 
 .ui-task-board-lane-title-wrap {
+  align-items: center;
   display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 .ui-task-board-lane-title {
-  font-size: 1rem;
+  font-size: 0.78rem;
   font-weight: 700;
+  letter-spacing: 0.06em;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .ui-task-board-lane-body {
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  min-height: 8rem;
+  gap: 0.5rem;
+  min-height: 6rem;
 }
 
 .ui-task-board-card {
   background: var(--surface-soft, rgba(0, 0, 0, 0.04));
   border: 1px solid var(--border);
-  border-radius: 1rem;
+  border-radius: 0.6rem;
   color: inherit;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1rem;
+  gap: 0.45rem;
+  padding: 0.6rem 0.65rem;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
@@ -252,10 +270,11 @@
 }
 
 .ui-task-board-card-head {
-  align-items: flex-start;
+  align-items: center;
   display: flex;
-  gap: 0.75rem;
+  gap: 0.4rem;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .ui-task-board-card-badges {
@@ -268,25 +287,29 @@
 .ui-task-board-card-number {
   color: var(--text-ghost);
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.77rem;
-  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .ui-task-board-card-title {
-  font-size: 0.98rem;
-  line-height: 1.45;
+  font-size: 0.86rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .ui-task-board-card-meta-stack {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.15rem;
 }
 
 .ui-task-board-card-meta {
   color: var(--text-dim);
-  font-size: 0.82rem;
+  font-size: 0.74rem;
   margin: 0;
 }
 
@@ -364,9 +387,9 @@
 
 .ui-task-board-empty {
   align-items: center;
-  background: var(--surface-soft, rgba(0, 0, 0, 0.04));
-  border: 0;
-  border-radius: 1rem;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 0.6rem;
   color: var(--text-ghost);
   display: flex;
   justify-content: center;
@@ -511,6 +534,7 @@
   /* One lane at a time: the switcher replaces horizontal scrolling. */
   .ui-task-board-scroll {
     overflow-x: visible;
+    padding: 0 0.55rem 0.6rem;
   }
 
   .ui-task-board-grid {
@@ -555,10 +579,6 @@
   .ui-task-board-query-row .ui-query-bar {
     min-width: 100%;
   }
-
-  .ui-task-board-lane {
-    min-width: 16rem;
-  }
 }
 
 /* ─── Compact action bar (board + record headers) ────────────── */
@@ -568,15 +588,17 @@
   border-bottom: 1px solid var(--border);
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
+  gap: 0.5rem 1rem;
   justify-content: space-between;
-  padding: 0.55rem 0.75rem;
+  padding: 0.7rem 1rem;
 }
 
 .ui-action-bar-copy {
   display: grid;
+  flex: 1 1 14rem;
   gap: 2px;
   min-width: 0;
+  overflow: hidden;
 }
 
 .ui-action-bar-title {
@@ -586,18 +608,40 @@
   margin: 0;
 }
 
+/* The bar is one line of chrome: summary and description truncate separately so a
+   long description cannot force the action buttons onto their own row. */
 .ui-action-bar-subtitle {
   color: var(--text-ghost);
+  display: flex;
   font-size: 12px;
+  gap: 0.5rem;
   line-height: 1.35;
   margin: 0;
+  min-width: 0;
+}
+
+.ui-action-bar-subtitle-main,
+.ui-action-bar-subtitle-extra {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.ui-action-bar-subtitle-main {
+  flex: 0 1 auto;
+}
+
+.ui-action-bar-subtitle-extra {
+  color: var(--text-ghost);
+  flex: 1 1 auto;
+  opacity: 0.85;
+}
+
 .ui-action-bar-subtitle-extra::before {
-  content: " | ";
+  content: "|";
+  margin-right: 0.5rem;
+  opacity: 0.6;
 }
 
 .ui-action-bar-actions {
@@ -614,30 +658,46 @@
   white-space: nowrap;
 }
 
-/* Reuse the existing .ui-icon-btn from 10-core; only these containers adjust it. */
+/* 40-velm-monochrome strips .ui-icon-btn to borderless; inside a bar it needs an edge. */
 .ui-action-bar .ui-icon-btn,
 .ui-menu-wrap .ui-icon-btn {
+  background: var(--bg-base);
+  border-color: var(--border);
+  color: var(--text-dim);
   flex: 0 0 auto;
   position: relative;
   transition: border-color 120ms ease, background 120ms ease;
 }
 
+/* 36px is a page-level control; in a header bar 30px reads as chrome, not a call to action. */
+.ui-action-bar .ui-icon-btn,
+.ui-menu-wrap .ui-icon-btn {
+  height: 1.9rem;
+  width: 1.9rem;
+}
+
 .ui-action-bar .ui-icon-btn svg,
 .ui-menu-wrap .ui-icon-btn svg {
-  height: 1.05rem;
-  width: 1.05rem;
+  height: 1rem;
+  width: 1rem;
+}
+
+.ui-action-bar .ui-icon-btn:hover,
+.ui-action-bar .ui-icon-btn:focus-visible,
+.ui-menu-wrap .ui-icon-btn:hover,
+.ui-menu-wrap .ui-icon-btn:focus-visible {
+  border-color: var(--border-mid);
+  color: var(--text-primary);
 }
 
 .ui-icon-btn-primary {
-  background: var(--text-primary) !important;
-  border-color: var(--text-primary) !important;
-  color: var(--bg-base) !important;
+  color: var(--text-primary);
 }
 
 .ui-icon-btn.is-active {
-  background: var(--text-primary) !important;
-  border-color: var(--text-primary) !important;
-  color: var(--bg-base) !important;
+  background: var(--surface-soft);
+  border-color: var(--border-mid);
+  color: var(--text-primary);
 }
 
 .ui-icon-btn-badge {
@@ -661,9 +721,8 @@
   color: var(--text-primary);
 }
 
-.ui-filter-panel[hidden],
-.ui-action-menu.hidden {
-  display: none !important;
+.ui-filter-panel[hidden] {
+  display: none;
 }
 
 .ui-filter-panel {
@@ -697,6 +756,10 @@
   right: 0;
   top: calc(100% + 0.35rem);
   z-index: 60;
+}
+
+.ui-action-menu.hidden {
+  display: none;
 }
 
 .ui-action-menu-item {
@@ -735,7 +798,7 @@
 @media (max-width: 720px) {
   .ui-action-bar {
     gap: 0.4rem 0.5rem;
-    padding: 0.5rem 0.55rem;
+    padding: 0.6rem 0.55rem;
   }
 
   .ui-action-bar-title {
