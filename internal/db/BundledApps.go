@@ -482,7 +482,6 @@ func deleteDefinitionRolesTx(ctx context.Context, tx pgx.Tx, app RegisteredApp, 
 	}
 
 	statements := []string{
-		`DELETE FROM _user_role WHERE role_id IN (SELECT _id FROM _role WHERE name = ANY($1))`,
 		`DELETE FROM _group_role WHERE role_id IN (SELECT _id FROM _role WHERE name = ANY($1))`,
 		`DELETE FROM _role_permission WHERE role_id IN (SELECT _id FROM _role WHERE name = ANY($1))`,
 		`DELETE FROM _role_inheritance WHERE role_id IN (SELECT _id FROM _role WHERE name = ANY($1)) OR inherits_role_id IN (SELECT _id FROM _role WHERE name = ANY($1))`,

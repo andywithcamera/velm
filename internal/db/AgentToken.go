@@ -12,7 +12,7 @@ import (
 
 // AgentTokenStore persists agent API tokens. It implements auth.TokenStore so
 // the auth package stays DB-agnostic. user_id here is the platform canonical
-// identity key (_id::text, same join key as _user_role) — issue #68: agents are
+// identity key (_id::text, same join key group membership uses) — issue #68: agents are
 // plain _user rows, token-bound identity is what marks API authN.
 
 var _ auth.TokenStore = (*AgentTokenStore)(nil)

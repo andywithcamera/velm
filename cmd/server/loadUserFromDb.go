@@ -34,11 +34,6 @@ func loadUserFromDB(email string) (User, error) {
 
 const effectivePrimaryUserRoleNameQuery = `
 WITH RECURSIVE seed_roles AS (
-	SELECT ur.role_id
-	FROM _user_role ur
-	WHERE ur.user_id = $1
-	  AND ur.app_id = ''
-	UNION
 	SELECT gr.role_id
 	FROM _group_membership gm
 	JOIN _group_role gr ON gr.group_id = gm.group_id

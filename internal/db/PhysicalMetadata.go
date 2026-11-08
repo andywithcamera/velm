@@ -123,11 +123,6 @@ var builtinTableMetadata = map[string]builtinTableMeta{
 		Description:   "Per-user in-app notifications written by scripts and platform flows.",
 		DisplayField:  "title",
 	},
-	"_user_role": {
-		LabelSingular: "User Role",
-		LabelPlural:   "User Roles",
-		Description:   "Direct user-to-role assignments.",
-	},
 	"base_obs_action": {
 		LabelSingular: "Observation Action",
 		LabelPlural:   "Observation Actions",
