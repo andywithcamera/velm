@@ -250,6 +250,10 @@ func appendMissingSystemPhysicalTables(ctx context.Context, definition *AppDefin
 	existing := make(map[string]bool, len(definition.Tables))
 	for _, table := range definition.Tables {
 		name := strings.TrimSpace(strings.ToLower(table.Name))
+		if isRemovedSystemTable(name) {
+			updated = true
+			continue
+		}
 		if strings.HasPrefix(name, "_") && physical[name] {
 			item, err := buildSystemAppDefinitionTable(ctx, name)
 			if err != nil {
@@ -321,6 +325,10 @@ func ensureNamedSystemPhysicalTables(ctx context.Context, app RegisteredApp, def
 			continue
 		}
 		if allowed != nil && !allowed[tableName] {
+			continue
+		}
+		if isRemovedSystemTable(tableName) {
+			// Retired by a migration; the definition entry is pruned below.
 			continue
 		}
 
