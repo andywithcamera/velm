@@ -231,29 +231,6 @@ func RevokeRolePermission(ctx context.Context, roleID, permissionID string) erro
 	return err
 }
 
-func roleHasGlobalAdminPermission(ctx context.Context, roleID string) (bool, error) {
-	var ok bool
-	err := Pool.QueryRow(ctx, `
-		WITH RECURSIVE effective_roles AS (
-			SELECT $1::uuid AS role_id
-			UNION
-			SELECT ri.inherits_role_id
-			FROM effective_roles er
-			JOIN _role_inheritance ri ON ri.role_id = er.role_id
-		)
-		SELECT EXISTS (
-			SELECT 1
-			FROM effective_roles er
-			JOIN _role_permission rp ON rp.role_id = er.role_id
-			JOIN _permission p ON p._id = rp.permission_id
-			WHERE p.resource = 'platform'
-			  AND p.action = 'admin'
-			  AND p.scope = 'global'
-		)
-	`, roleID).Scan(&ok)
-	return ok, err
-}
-
 func permissionIsGlobalAdmin(ctx context.Context, permissionID string) (bool, error) {
 	var ok bool
 	err := Pool.QueryRow(ctx, `
