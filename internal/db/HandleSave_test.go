@@ -126,3 +126,15 @@ func TestRecordFormRedirectTargetOmitsDefaultForm(t *testing.T) {
 		t.Fatalf("recordFormRedirectTarget() = %q, want default form omitted", got)
 	}
 }
+
+func TestSnapshotState(t *testing.T) {
+	if got := snapshotState(map[string]any{"state": " in_progress "}); got != "in_progress" {
+		t.Fatalf("snapshotState trimmed = %q", got)
+	}
+	if got := snapshotState(map[string]any{"state": nil}); got != "" {
+		t.Fatalf("nil state = %q", got)
+	}
+	if got := snapshotState(nil); got != "" {
+		t.Fatalf("nil snapshot = %q", got)
+	}
+}

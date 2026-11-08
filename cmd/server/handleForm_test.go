@@ -121,7 +121,7 @@ func TestBuildFormFieldConfigsMarksBaseTaskLifecycleFieldsReadOnly(t *testing.T)
 		{NAME: "closed_at", DATA_TYPE: "timestamp", IS_NULLABLE: true, LABEL: "Closed At"},
 	}
 
-	configs := buildFormFieldConfigs(context.Background(), "base_task", columns)
+	configs := buildFormFieldConfigs(context.Background(), "base_task", columns, nil)
 	for _, field := range []string{"work_type", "state_changed_at", "started_at", "closed_at"} {
 		cfg, ok := configs[field]
 		if !ok {
@@ -276,5 +276,17 @@ func TestBuildFormVariantOptionsMarksSelectedVariant(t *testing.T) {
 func TestRecordFormHrefOmitsDefaultQuery(t *testing.T) {
 	if got := recordFormHref("base_task", "record-1", "default"); got != "/f/base_task/record-1" {
 		t.Fatalf("recordFormHref() = %q, want default form omitted", got)
+	}
+}
+
+func TestBuildFormFieldConfigsLocksSetDefinitionID(t *testing.T) {
+	columns := []db.Column{{NAME: "definition_id", DATA_TYPE: "text", LABEL: "Ask type"}}
+	set := buildFormFieldConfigs(context.Background(), "base_task", columns, map[string]any{"definition_id": "abc-123"})
+	if !set["definition_id"].ReadOnly {
+		t.Fatal("definition_id should be read-only once set")
+	}
+	unset := buildFormFieldConfigs(context.Background(), "base_task", columns, map[string]any{"definition_id": nil})
+	if unset["definition_id"].ReadOnly {
+		t.Fatal("definition_id should stay editable while unset")
 	}
 }

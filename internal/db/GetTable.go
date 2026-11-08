@@ -44,6 +44,9 @@ func TableExists(ctx context.Context, tableName string) bool {
 	if tableName == "" || !IsSafeIdentifier(tableName) {
 		return false
 	}
+	if Pool == nil {
+		return false // no database attached (tests, tooling): nothing to check
+	}
 
 	if _, _, ok, err := FindYAMLTableByName(ctx, tableName); err == nil && ok {
 		return true

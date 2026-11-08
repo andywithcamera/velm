@@ -379,6 +379,15 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 			log.Printf("failed to sync AI models after save table=%s id=%s err=%v", tableName, id, err)
 		}
 	}
+	if tableName == "base_task" && snapshotState(oldSnapshot) != "in_progress" && snapshotState(newSnapshot) == "in_progress" {
+		// Issue #233: the record form sets the state column directly, which
+		// used to bypass the task engine entirely (no run_if, no script, no
+		// child spawn cascade). Run the start hooks post-commit so a form
+		// start behaves like StartTask.
+		if err := RunEngineHooksAfterStart(context.Background(), id, updatedBy); err != nil {
+			log.Printf("failed to run task engine hooks after form start table=%s id=%s err=%v", tableName, id, err)
+		}
+	}
 	if err := CaptureDataChange(context.Background(), updatedBy, tableName, id, operation, oldSnapshot, newSnapshot); err != nil {
 		log.Printf("failed to capture data change audit table=%s id=%s err=%v", tableName, id, err)
 	}
@@ -632,4 +641,15 @@ func comparableSnapshotValue(column Column, value any) string {
 	default:
 		return fmt.Sprint(v)
 	}
+}
+
+// snapshotState reads the state column from a record snapshot, "" if absent.
+func snapshotState(snapshot map[string]any) string {
+	if snapshot == nil {
+		return ""
+	}
+	if v, ok := snapshot["state"]; ok && v != nil {
+		return strings.TrimSpace(fmt.Sprint(v))
+	}
+	return ""
 }
