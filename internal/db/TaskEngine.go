@@ -27,6 +27,7 @@ import (
 // (same run_if gate: ready/pending -> in_progress, false -> skipped).
 // 'skipped' is terminal.
 const (
+	taskStatePending    = "pending"
 	taskStateReady      = "ready"
 	taskStateInProgress = "in_progress"
 	taskStateSkipped    = "skipped"
@@ -104,11 +105,13 @@ func parseSpawnRules(raw []byte) []TaskSpawnRule {
 type childSpec struct {
 	ChildDefinitionID string
 	InputMapping      map[string]any
+	DependsOn         []string
+	DependsOnReason   string
 }
 
 func getTaskDefinitionChildren(ctx context.Context, q scriptQuerier, containerID string) ([]childSpec, error) {
 	rows, err := q.Query(ctx, `
-		SELECT child_definition_id::text, input_mapping
+		SELECT child_definition_id::text, input_mapping, depends_on, depends_on_reason
 		FROM base_task_definition_child
 		WHERE container_definition_id = $1
 		ORDER BY sort_order, _created_at`, containerID)
@@ -119,18 +122,22 @@ func getTaskDefinitionChildren(ctx context.Context, q scriptQuerier, containerID
 	var specs []childSpec
 	for rows.Next() {
 		var spec childSpec
-		if err := rows.Scan(&spec.ChildDefinitionID, &spec.InputMapping); err != nil {
+		var deps []string
+		if err := rows.Scan(&spec.ChildDefinitionID, &spec.InputMapping, &deps, &spec.DependsOnReason); err != nil {
 			return nil, err
 		}
+		spec.DependsOn = deps
 		specs = append(specs, spec)
 	}
 	return specs, rows.Err()
 }
 
 // SpawnTaskInstance creates a task instance from a definition. Children of
-// a container spawn immediately, in ready, under parent_task_id. Inputs
-// bind at spawn for root tasks; for container children they bind when the
-// parent starts (StartTask applies input_mapping against the parent scope).
+// a container spawn immediately under parent_task_id, in pending (issue
+// #206/#209): dependency-free children promote to ready when the parent
+// starts, the rest when their prerequisites close. Inputs bind at spawn for
+// root tasks; for container children they bind when the parent starts
+// (StartTask applies input_mapping against the parent scope).
 func SpawnTaskInstance(ctx context.Context, q scriptQuerier, definitionID, parentTaskID, requestedBy string, inputs map[string]any) (string, error) {
 	def, err := getTaskDefinition(ctx, q, definitionID)
 	if err != nil {
@@ -166,7 +173,7 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 			$2,
 			'medium', $3, $4, $5, $6, $7::jsonb)
 		RETURNING _id`,
-		def.DisplayName, taskStateReady, nullable(parentTaskID), nullable(def.DefaultGroupID),
+		def.DisplayName, spawnStateFor(def, parentTaskID), nullable(parentTaskID), nullable(def.DefaultGroupID),
 		nullable(requestedBy), def.ID, string(varsJSON)).Scan(&taskID)
 	if err != nil {
 		return "", fmt.Errorf("spawn task: %w", err)
@@ -186,6 +193,15 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 		}
 	}
 	return taskID, nil
+}
+
+// spawnStateFor: root tasks spawn ready; container children spawn pending
+// and promote via dependency edges (issue #209).
+func spawnStateFor(def *TaskDefinition, parentTaskID string) string {
+	if parentTaskID == "" {
+		return taskStateReady
+	}
+	return taskStatePending
 }
 
 func spawnTaskForDefinitionByID(ctx context.Context, q scriptQuerier, defID, parentTaskID, requestedBy string, inputs map[string]any) (string, error) {
@@ -211,6 +227,9 @@ func StartTask(ctx context.Context, taskID, actorUserID string) error {
 		return err
 	}
 	if err := bindChildInputs(ctx, tx, taskID, actorUserID); err != nil {
+		return err
+	}
+	if err := promoteChildren(ctx, tx, taskID, actorUserID); err != nil {
 		return err
 	}
 	if err := runTaskHooks(ctx, tx, taskID, actorUserID); err != nil {
@@ -297,6 +316,202 @@ func bindChildInputs(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID s
 		}
 	}
 	return nil
+}
+
+// promoteChildren advances a container's pending children whose dependency
+// edges are all satisfied: to ready, or to skipped when the child's run_if
+// evaluates false. Called from StartTask (parent start: dependency-free
+// children go ready) and from the close path (a sibling closed/skipped may
+// satisfy the next wave). Loops until no change, so a skipped chain frees
+// its dependents in the same pass.
+//
+// Satisfaction rules (issue #209):
+//   - a skipped sibling always satisfies (one run_if:false must not deadlock)
+//   - a closed sibling satisfies when the edge's depends_on_reason is ”
+//     and its closure_reason is completed or cancelled (success), or when
+//     the reason names that closure_reason exactly (rejection loops wait
+//     for the matching verdict)
+func promoteChildren(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID string) error {
+	for {
+		promoted, err := promoteChildrenOnce(ctx, tx, parentTaskID, actorUserID)
+		if err != nil {
+			return err
+		}
+		if !promoted {
+			return nil
+		}
+	}
+}
+
+type childInstanceState struct {
+	taskID string
+	defID  string
+	state  string
+	reason *string
+	vars   map[string]any
+}
+
+func promoteChildrenOnce(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID string) (bool, error) {
+	// Sibling instances: def id -> (state, closure reason).
+	rows, err := tx.Query(ctx, `
+		SELECT _id::text, definition_id::text, state, closure_reason, variables
+		FROM base_task
+		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, parentTaskID)
+	if err != nil {
+		return false, err
+	}
+	siblings := map[string][]childInstanceState{}
+	for rows.Next() {
+		var st childInstanceState
+		var vj []byte
+		if err := rows.Scan(&st.taskID, &st.defID, &st.state, &st.reason, &vj); err != nil {
+			rows.Close()
+			return false, err
+		}
+		st.vars = map[string]any{}
+		_ = json.Unmarshal(vj, &st.vars)
+		siblings[st.defID] = append(siblings[st.defID], st)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	rows.Close()
+
+	// Template edges for this container's definition.
+	defID, err := getDefinitionIDByTaskID(ctx, tx, parentTaskID)
+	if err != nil || defID == "" {
+		return false, err
+	}
+	specs, err := getTaskDefinitionChildren(ctx, tx, defID)
+	if err != nil {
+		return false, err
+	}
+	specByChild := map[string]childSpec{}
+	for _, spec := range specs {
+		specByChild[spec.ChildDefinitionID] = spec
+	}
+
+	changed := false
+	for cid, instances := range siblings {
+		spec, hasSpec := specByChild[cid]
+		if !hasSpec {
+			continue
+		}
+		if len(spec.DependsOn) == 0 {
+			// Dependency-free: promote at parent start (pending -> ready).
+			for _, inst := range instances {
+				if inst.state != taskStatePending {
+					continue
+				}
+				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID); err != nil {
+					return false, err
+				}
+				changed = true
+			}
+			continue
+		}
+		for _, inst := range instances {
+			if inst.state != taskStatePending {
+				continue
+			}
+			if depsSatisfied(spec.DependsOn, spec.DependsOnReason, siblings) {
+				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID); err != nil {
+					return false, err
+				}
+				changed = true
+			}
+		}
+	}
+	return changed, nil
+}
+
+// depsSatisfied reports whether every dependency definition has a sibling
+// instance whose outcome satisfies the edge.
+func depsSatisfied(deps []string, reason string, siblings map[string][]childInstanceState) bool {
+	for _, dep := range deps {
+		instances := siblings[dep]
+		if len(instances) == 0 {
+			return false
+		}
+		ok := false
+		for _, inst := range instances {
+			if instanceSatisfies(inst, reason) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func instanceSatisfies(inst childInstanceState, reason string) bool {
+	switch inst.state {
+	case taskStateSkipped:
+		return true
+	case taskStateDone:
+		r := ""
+		if inst.reason != nil {
+			r = *inst.reason
+		}
+		if reason == "" {
+			return r == "completed" || r == "cancelled"
+		}
+		return r == reason
+	default:
+		return false
+	}
+}
+
+// promoteInstance moves one pending child to ready (or skipped when its
+// run_if is false) and re-binds its input_mapping against the parent scope,
+// so inputs referencing $outputs.<predecessor> resolve now that the
+// predecessor has published.
+func promoteInstance(ctx context.Context, tx pgx.Tx, parentTaskID string, inst childInstanceState, spec childSpec, actorUserID string) error {
+	def, err := getTaskDefinition(ctx, tx, inst.defID)
+	if err != nil {
+		return err
+	}
+
+	// Re-bind inputs from the current parent scope.
+	parentVars, err := readTaskVariables(ctx, tx, parentTaskID)
+	if err != nil {
+		return err
+	}
+	inputs, _ := inst.vars["inputs"].(map[string]any)
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	for childInput, source := range spec.InputMapping {
+		if val, ok := resolveScopeRef(parentVars, source); ok {
+			inputs[childInput] = val
+		}
+	}
+	inst.vars["inputs"] = inputs
+
+	// run_if gate at promotion, matching the engine's start semantics.
+	if strings.TrimSpace(def.RunIfScript) != "" {
+		allowed, evalErr := evalTaskCondition(ctx, tx, inst.taskID, def.RunIfScript, inst.vars, actorUserID)
+		if evalErr != nil {
+			return fmt.Errorf("run_if evaluation failed for task %s: %w", inst.taskID, evalErr)
+		}
+		if !allowed {
+			return transitionTaskInTx(ctx, tx, inst.taskID, taskStateSkipped)
+		}
+	}
+
+	if err := transitionTaskInTx(ctx, tx, inst.taskID, taskStateReady); err != nil {
+		return err
+	}
+	updated, err := json.Marshal(inst.vars)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, inst.taskID, string(updated))
+	return err
 }
 
 // transitionTaskInTx performs one validated state transition in the
@@ -416,15 +631,16 @@ func CompleteTask(ctx context.Context, taskID, actorUserID string) error {
 	if _, err := tx.Exec(ctx, `UPDATE base_task SET closure_reason = 'completed' WHERE _id = $1`, taskID); err != nil {
 		return err
 	}
-	if err := onTaskClosed(ctx, tx, taskID, actorUserID); err != nil {
+	if err := onTaskClosed(ctx, tx, taskID, "completed", actorUserID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
 // onTaskClosed publishes the task's outputs into the parent's variables
-// (namespaced by child slug) and fires spawn rules for the done reason.
-func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) error {
+// (namespaced by child slug), promotes dependents whose edges this closure
+// satisfies, and fires spawn rules for the closure reason.
+func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, closureReason, actorUserID string) error {
 	var parentID *string
 	var varsJSON []byte
 	err := tx.QueryRow(ctx,
@@ -464,7 +680,18 @@ func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) er
 		}
 	}
 
-	return fireSpawnRules(ctx, tx, taskID, "completed", actorUserID)
+	if err := promoteChildren(ctx, tx, parentIDOrEmpty(parentID), actorUserID); err != nil {
+		return err
+	}
+
+	return fireSpawnRules(ctx, tx, taskID, closureReason, actorUserID)
+}
+
+func parentIDOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // fireSpawnRules spawns follow-on tasks per the definition's spawn_rules
@@ -481,7 +708,8 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 	}
 
 	var groupID *string
-	_ = tx.QueryRow(ctx, `SELECT assignment_group_id::text FROM base_task WHERE _id = $1`, taskID).Scan(&groupID)
+	var parentID *string
+	_ = tx.QueryRow(ctx, `SELECT assignment_group_id::text, parent_task_id::text FROM base_task WHERE _id = $1`, taskID).Scan(&groupID, &parentID)
 
 	vars, err := readTaskVariables(ctx, tx, taskID)
 	if err != nil {
@@ -501,14 +729,17 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 		if rule.Assign == "pool" {
 			groupID = nil
 		}
-		if err := spawnFollowOn(ctx, tx, rule.DefinitionSlug, groupID, actorUserID, inputs); err != nil {
+		if err := spawnFollowOn(ctx, tx, rule.DefinitionSlug, groupID, parentID, actorUserID, inputs); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, groupID *string, requestedBy string, inputs map[string]any) error {
+// spawnFollowOn spawns a spawn-rule follow-on. It inherits the closing
+// task's parent_task_id unless the rule says otherwise, so chained tasks
+// stay inside the container and their outputs publish upward (issue #209).
+func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, groupID, parentTaskID *string, requestedBy string, inputs map[string]any) error {
 	var defID string
 	err := tx.QueryRow(ctx,
 		`SELECT _id::text FROM base_task_definition WHERE slug = $1 AND is_active AND _deleted_at IS NULL`, slug).Scan(&defID)
@@ -523,7 +754,11 @@ func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, groupID *string,
 	if groupID != nil {
 		def.DefaultGroupID = *groupID
 	}
-	_, err = spawnTaskForDefinition(ctx, tx, def, "", requestedBy, inputs)
+	parent := ""
+	if parentTaskID != nil {
+		parent = *parentTaskID
+	}
+	_, err = spawnTaskForDefinition(ctx, tx, def, parent, requestedBy, inputs)
 	return err
 }
 
