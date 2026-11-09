@@ -134,17 +134,17 @@ tables:
 	if got := stateColumn.DataType; got != "choice" {
 		t.Fatalf("expected state column to be choice, got %q", got)
 	}
-	if got := stateColumn.DefaultValue; got != "new" {
-		t.Fatalf("expected state default new, got %q", got)
+	if got := stateColumn.DefaultValue; got != "pending" {
+		t.Fatalf("expected state default pending, got %q", got)
 	}
-	if got := len(stateColumn.Choices); got != 5 {
-		t.Fatalf("expected five state choices, got %d", got)
+	if got := len(stateColumn.Choices); got != 4 {
+		t.Fatalf("expected four state choices, got %d", got)
 	}
-	if got := stateColumn.Choices[0].Value; got != "new" {
-		t.Fatalf("expected first state choice new, got %q", got)
+	if got := stateColumn.Choices[0].Value; got != "pending" {
+		t.Fatalf("expected first state choice pending, got %q", got)
 	}
-	if got := stateColumn.Choices[3].Value; got != "ready_to_close" {
-		t.Fatalf("expected fourth state choice ready_to_close, got %q", got)
+	if got := stateColumn.Choices[3].Value; got != "closed" {
+		t.Fatalf("expected fourth state choice closed, got %q", got)
 	}
 	closureReasonColumn := requireDefinitionColumn(t, task, "closure_reason")
 	if got := closureReasonColumn.DataType; got != "choice" {

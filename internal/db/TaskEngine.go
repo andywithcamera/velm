@@ -20,12 +20,12 @@ import (
 // user is the audit principal for every CRUD write the script performs
 // via ctx.records (captured by _audit_data_change, 009).
 
-// State codes on the real (055 + 077) model: new/pending/ready/
-// in_progress/ready_to_close/closed/skipped, stored in the text `state`
-// column and guarded by chk_base_task_state. The design doc (rev 3) has
-// children spawn in PENDING; the engine uses ready as its spawn state
-// (same run_if gate: ready/pending -> in_progress, false -> skipped).
-// 'skipped' is terminal.
+// State codes on the real model (085): pending/ready/in_progress/closed,
+// stored in the text `state` column and guarded by chk_base_task_state.
+// 'skipped' is an engine-internal terminal for run_if evaluating false; it
+// is not offered in the UI. The design doc (rev 3) has children spawn in
+// PENDING; the engine promotes to ready (same run_if gate:
+// ready/pending -> in_progress, false -> skipped).
 const (
 	taskStatePending    = "pending"
 	taskStateReady      = "ready"
@@ -37,12 +37,11 @@ const (
 // taskTransitions is the engine's allowed-edge set, validated in Go
 // against the text state column (077 removed base_task_transition).
 var taskTransitions = map[string]map[string]bool{
-	"ready":          {"ready": true, "in_progress": true, "skipped": true},
-	"in_progress":    {"in_progress": true, "ready_to_close": true, "pending": true, "skipped": true, "closed": true},
-	"pending":        {"pending": true, "ready": true, "in_progress": true, "skipped": true},
-	"ready_to_close": {"ready_to_close": true, "closed": true, "in_progress": true, "skipped": true},
-	"closed":         {},
-	"skipped":        {},
+	"ready":       {"ready": true, "in_progress": true, "closed": true, "skipped": true},
+	"in_progress": {"in_progress": true, "pending": true, "skipped": true, "closed": true},
+	"pending":     {"pending": true, "ready": true, "in_progress": true, "skipped": true},
+	"closed":      {},
+	"skipped":     {},
 }
 
 // allowedTaskTransition reports whether from -> to is an engine edge.

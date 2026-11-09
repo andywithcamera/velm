@@ -76,36 +76,35 @@ func TestNormalizeTaskBoardTypeRejectsUnknownSelection(t *testing.T) {
 
 func TestBuildTaskBoardLanesUsesChoiceOrderAndAppendsUnknownStates(t *testing.T) {
 	choices := []taskBoardChoice{
-		{Value: "new", Label: "New"},
-		{Value: "ready_to_close", Label: "Ready to Close"},
+		{Value: "ready", Label: "Ready"},
 	}
 	items := []taskBoardItem{
 		{State: normalizeTaskBoardLaneValue("pending"), Card: taskBoardCard{ID: "1"}},
-		{State: normalizeTaskBoardLaneValue("new"), Card: taskBoardCard{ID: "2"}},
-		{State: normalizeTaskBoardLaneValue("ready_to_close"), Card: taskBoardCard{ID: "3"}},
+		{State: normalizeTaskBoardLaneValue("pending"), Card: taskBoardCard{ID: "2"}},
+		{State: normalizeTaskBoardLaneValue("closed"), Card: taskBoardCard{ID: "3"}},
 	}
 
 	lanes := buildTaskBoardLanes(choices, items)
 	if len(lanes) != 3 {
 		t.Fatalf("len(buildTaskBoardLanes()) = %d, want 3", len(lanes))
 	}
-	if lanes[0].Value != "new" || lanes[0].Count != 1 {
-		t.Fatalf("lane[0] = %+v, want new with one task", lanes[0])
+	if lanes[0].Value != "ready" || lanes[0].Count != 0 {
+		t.Fatalf("lane[0] = %+v, want empty ready lane", lanes[0])
 	}
 	if !lanes[0].CanDrop {
-		t.Fatalf("expected new lane to be droppable: %+v", lanes[0])
+		t.Fatalf("expected ready lane to be droppable: %+v", lanes[0])
 	}
-	if lanes[1].Value != "ready_to_close" || lanes[1].Count != 1 {
-		t.Fatalf("lane[1] = %+v, want ready_to_close with one task", lanes[1])
+	if lanes[1].Value != "pending" || lanes[1].Count != 2 {
+		t.Fatalf("lane[1] = %+v, want pending (unknown) with two tasks", lanes[1])
 	}
-	if !lanes[1].CanDrop {
-		t.Fatalf("expected ready_to_close lane to be droppable: %+v", lanes[1])
+	if lanes[1].CanDrop {
+		t.Fatalf("expected pending (unknown) lane to be read-only: %+v", lanes[1])
 	}
-	if lanes[2].Value != "pending" || lanes[2].Count != 1 {
-		t.Fatalf("lane[2] = %+v, want pending with one task", lanes[2])
+	if lanes[2].Value != "closed" || lanes[2].Count != 1 {
+		t.Fatalf("lane[2] = %+v, want closed (unknown) with one task", lanes[2])
 	}
 	if lanes[2].CanDrop {
-		t.Fatalf("expected unknown lane to be read-only: %+v", lanes[2])
+		t.Fatalf("expected closed (unknown) lane to be read-only: %+v", lanes[2])
 	}
 }
 
@@ -116,8 +115,11 @@ func TestTaskBoardShowsStateOmitsClosedStates(t *testing.T) {
 	if taskBoardShowsState("done") {
 		t.Fatal("expected done to be hidden from /task")
 	}
-	if !taskBoardShowsState("ready_to_close") {
-		t.Fatal("expected ready_to_close to remain visible on /task")
+	if taskBoardShowsState("cancelled") {
+		t.Fatal("expected cancelled to be hidden from /task")
+	}
+	if !taskBoardShowsState("in_progress") {
+		t.Fatal("expected in_progress to remain visible on /task")
 	}
 }
 

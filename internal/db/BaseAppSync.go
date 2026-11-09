@@ -9,10 +9,9 @@ import (
 )
 
 var baseTaskStateChoices = []ChoiceOption{
-	{Value: "new", Label: "New"},
 	{Value: "pending", Label: "Pending"},
+	{Value: "ready", Label: "Ready"},
 	{Value: "in_progress", Label: "In Progress"},
-	{Value: "ready_to_close", Label: "Ready to Close"},
 	{Value: "closed", Label: "Closed"},
 }
 
@@ -238,7 +237,7 @@ func simplifyBaseTaskTable(table *AppDefinitionTable) {
 		Label:        "State",
 		DataType:     "choice",
 		IsNullable:   false,
-		DefaultValue: "new",
+		DefaultValue: "pending",
 		Choices:      append([]ChoiceOption(nil), baseTaskStateChoices...),
 	}
 	closureReasonColumn := AppDefinitionColumn{
