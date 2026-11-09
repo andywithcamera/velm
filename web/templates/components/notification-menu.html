@@ -48,6 +48,7 @@
         </div>
 
         <div class="ui-notification-menu-body">
+            <button type="button" id="pushToggle" class="ui-menu-link ui-menu-link-inline" data-push-toggle hidden>Enable push notifications</button>
             {{range .Items}}
             <div class="ui-notification-item{{if .IsUnread}} is-unread{{end}}">
                 <div class="ui-notification-item-row">
