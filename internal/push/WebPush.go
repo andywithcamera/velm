@@ -119,7 +119,9 @@ func Send(ctx context.Context, subs []Subscription, title, body, href string) Se
 			continue
 		}
 		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
+			// Body is drained and closed best-effort in the response-error
+			// path; nothing useful to do with a Close error here.
+			_ = resp.Body.Close()
 		}
 		res.Sent++
 	}
