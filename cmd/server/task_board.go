@@ -638,6 +638,7 @@ func defaultTaskBoardMetadata() taskBoardMetadata {
 	stateChoices := []taskBoardChoice{
 		{Value: "pending", Label: "Pending"},
 		{Value: "in_progress", Label: "In Progress"},
+		{Value: "closed", Label: "Closed"},
 	}
 	return taskBoardMetadata{
 		StateChoices: stateChoices,
@@ -672,12 +673,16 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			COALESCE(NULLIF(BTRIM(u.name), ''), '') AS assignee_label,
 			COALESCE(t.definition_id::text, '') AS definition_id,
 			t.due_at,
-			t._updated_at
+			t._updated_at,
+			(COALESCE(NULLIF(BTRIM(t.state), ''), 'pending') = 'closed') AS is_closed,
+			ROW_NUMBER() OVER (
+				PARTITION BY (COALESCE(NULLIF(BTRIM(t.state), ''), 'pending') = 'closed')
+				ORDER BY t._updated_at DESC, t.number ASC
+			) AS board_rn
 		FROM (` + queryContext.SourceQuery + `) t
 		LEFT JOIN _group g ON g._id = t.assignment_group_id
 		LEFT JOIN _user u ON u._id = t.assigned_user_id
-		WHERE t._deleted_at IS NULL
-		  AND COALESCE(NULLIF(BTRIM(t.state), ''), 'pending') <> 'closed'`
+		WHERE t._deleted_at IS NULL`
 
 	args := make([]any, 0, 6)
 	switch filters.Scope {
@@ -760,6 +765,32 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			t.due_at ASC,
 			t._updated_at DESC,
 			t.number ASC`
+
+	// Closed lane shows only the most recently closed 20 tasks; other states
+	// are uncapped. The window rank above runs after all filters.
+	query = `
+		WITH board AS (
+		` + query + `
+		)
+		SELECT
+			_id, record_table, number, title, state, priority, group_id,
+			group_label, assigned_user_id, assignee_label, definition_id,
+			due_at, _updated_at
+		FROM board
+		WHERE NOT is_closed OR board_rn <= 20
+		ORDER BY
+			CASE priority
+				WHEN 'very_high' THEN 1
+				WHEN 'high' THEN 2
+				WHEN 'medium' THEN 3
+				WHEN 'low' THEN 4
+				WHEN 'very_low' THEN 5
+				ELSE 6
+			END,
+			CASE WHEN due_at IS NULL THEN 1 ELSE 0 END,
+			due_at ASC,
+			_updated_at DESC,
+			number ASC`
 
 	rows, err := db.Pool.Query(ctx, query, args...)
 	if err != nil {
@@ -971,6 +1002,17 @@ func applyTaskBoardIssueTitles(ctx context.Context, items []taskBoardItem) {
 	}
 }
 
+// laneHasChoice reports whether stateChoices already carries value.
+func laneHasChoice(stateChoices []taskBoardChoice, value string) bool {
+	value = normalizeTaskBoardLaneValue(value)
+	for _, choice := range stateChoices {
+		if normalizeTaskBoardLaneValue(choice.Value) == value {
+			return true
+		}
+	}
+	return false
+}
+
 // BTRIMEQ compares two strings the way the board SQL BTRIMs titles.
 func trimEqual(a, b string) bool {
 	return strings.TrimSpace(a) == strings.TrimSpace(b)
@@ -985,8 +1027,28 @@ func taskBoardBulkUpdateURL(tableName string) string {
 }
 
 func buildTaskBoardLanes(stateChoices []taskBoardChoice, items []taskBoardItem) []taskBoardLane {
-	lanes := make([]taskBoardLane, 0, allocHintSum(len(stateChoices), 1))
-	laneIndex := make(map[string]int, allocHintSum(len(stateChoices), 1))
+	lanes := make([]taskBoardLane, 0, allocHintSum(len(stateChoices), 5))
+	laneIndex := make(map[string]int, allocHintSum(len(stateChoices), 5))
+
+	// Canonical states always get lanes, even when empty: a workflow
+	// board must show where work lands next and where it ends, not only
+	// lanes that happen to have cards. Column choices merge in after, so
+	// table-specific states keep their labels.
+	canonicalStates := []string{"pending", "ready", "in_progress", "closed"}
+	for _, state := range canonicalStates {
+		if laneHasChoice(stateChoices, state) {
+			continue
+		}
+		stateChoices = append(stateChoices, taskBoardChoice{Value: state, Label: ""})
+	}
+	sort.SliceStable(stateChoices, func(i, j int) bool {
+		leftRank := taskBoardStateSortRank(stateChoices[i].Value)
+		rightRank := taskBoardStateSortRank(stateChoices[j].Value)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return false
+	})
 
 	for _, choice := range stateChoices {
 		value := normalizeTaskBoardLaneValue(choice.Value)
@@ -1168,7 +1230,7 @@ func taskBoardLaneLabel(value string) string {
 
 func taskBoardShowsState(value string) bool {
 	switch normalizeTaskBoardLaneValue(value) {
-	case taskBoardUnspecifiedLane, "closed", "done", "cancelled":
+	case taskBoardUnspecifiedLane, "done", "cancelled", "skipped":
 		return false
 	default:
 		return true
