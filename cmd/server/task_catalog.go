@@ -6,6 +6,8 @@ package main
 
 import (
 	"context"
+	"html/template"
+	"log"
 	"net/http"
 	"sort"
 	"strings"
@@ -131,9 +133,13 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	rootID, err := runtimeSpawnTaskBySlug(r.Context(), db.Pool, slug, "", userID, nil)
 	if err != nil {
+		// Log the underlying error; the client sees a static message plus the
+		// (escaped) slug. Rendered through html/template so no user-controlled
+		// string is ever concatenated into markup (CodeQL go/reflected-xss).
+		log.Printf("catalog order %q by %s failed: %v", slug, userID, err)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
-		_, _ = w.Write([]byte(`<div class="ui-catalog-order-error">Could not start ` + htmlEscapeText(slug) + `: ` + htmlEscapeText(err.Error()) + `</div>`))
+		_ = catalogOrderErrorTmpl.Execute(w, map[string]string{"Slug": slug})
 		return
 	}
 	number := ""
@@ -141,9 +147,17 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 		number = root.Number
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(`<div class="ui-catalog-order-done">Started as <a href="/f/base_task/` + htmlEscapeText(rootID) + `">` +
-		htmlEscapeText(number) + `</a>. Track it on the <a href="/task">board</a>.</div>`))
+	_ = catalogOrderDoneTmpl.Execute(w, map[string]string{"TaskID": rootID, "Number": number})
 }
+
+// catalogOrderErrorTmpl / catalogOrderDoneTmpl render the HTMX swap fragments
+// for the order endpoint. html/template context-encodes every interpolation,
+// which is both the XSS defence and what the code scanner expects.
+var catalogOrderErrorTmpl = template.Must(template.New("catalogOrderError").Parse(
+	`<div class="ui-catalog-order-error">Could not start {{.Slug}}: the definition could not be spawned. See the server log for details.</div>`))
+
+var catalogOrderDoneTmpl = template.Must(template.New("catalogOrderDone").Parse(
+	`<div class="ui-catalog-order-done">Started as <a href="/f/base_task/{{.TaskID}}">{{.Number}}</a>. Track it on the <a href="/task">board</a>.</div>`))
 
 func htmlEscapeText(s string) string {
 	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;")
