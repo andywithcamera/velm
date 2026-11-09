@@ -205,6 +205,7 @@ func createUserNotificationsWithQuerier(ctx context.Context, querier scriptQueri
 		}
 		items = append(items, item)
 	}
+	DispatchWebPush(items)
 	return items, nil
 }
 

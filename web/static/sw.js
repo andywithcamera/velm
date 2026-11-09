@@ -45,3 +45,36 @@ self.addEventListener('fetch', (event) => {
     )
   );
 });
+
+// ─── Web Push ─────────────────────────────────────────────────────────
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {
+    data = { title: 'Velm', body: event.data ? event.data.text() : '' };
+  }
+  event.waitUntil(self.registration.showNotification(data.title || 'Velm', {
+    body: data.body || '',
+    icon: '/static/icons/icon-192.png',
+    badge: '/static/icons/icon-192.png',
+    tag: 'velm-' + (data.href || ''),
+    data: { href: data.href || '/task' }
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const href = (event.notification.data && event.notification.data.href) || '/task';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url.includes(self.location.origin)) {
+          client.navigate(href).catch(() => {});
+          return client.focus();
+        }
+      }
+      return self.clients.openWindow(href);
+    })
+  );
+});

@@ -1,0 +1,103 @@
+// Velm web push: subscribes the browser via VAPID when the user opts in.
+// The toggle lives in the notification menu (data-push-toggle).
+(function () {
+  'use strict';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+  const btn = document.getElementById('pushToggle');
+  if (!btn) return;
+
+  const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const LS_KEY = 'velm-push-endpoint';
+
+  function endpointStored() {
+    try { return localStorage.getItem(LS_KEY) || ''; } catch (_) { return ''; }
+  }
+
+  function urlB64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  async function postJSON(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error('push request failed (' + res.status + ')');
+    return res.json();
+  }
+
+  function setLabel(on) {
+    btn.textContent = on ? 'Disable push notifications' : 'Enable push notifications';
+  }
+
+  async function refreshState() {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (!reg) return setLabel(false);
+      const sub = await reg.pushManager.getSubscription();
+      setLabel(!!(sub || endpointStored()));
+    } catch (_) {
+      setLabel(false);
+    }
+  }
+
+  async function enable() {
+    const config = await fetch('/api/push/config', { credentials: 'same-origin' }).then((r) => r.json());
+    if (!config.enabled) {
+      btn.textContent = 'Push not available';
+      btn.disabled = true;
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return;
+    const reg = await navigator.serviceWorker.register('/sw.js');
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(config.publicKey)
+    });
+    const json = sub.toJSON();
+    await postJSON('/api/push/subscribe', json);
+    try { localStorage.setItem(LS_KEY, sub.endpoint); } catch (_) {}
+    setLabel(true);
+  }
+
+  async function disable() {
+    const reg = await navigator.serviceWorker.getRegistration();
+    let endpoint = endpointStored();
+    try {
+      const sub = reg && await reg.pushManager.getSubscription();
+      if (sub) {
+        endpoint = sub.endpoint;
+        await sub.unsubscribe();
+      }
+    } catch (_) {}
+    if (endpoint) {
+      try { await postJSON('/api/push/unsubscribe', { endpoint }); } catch (_) {}
+    }
+    try { localStorage.removeItem(LS_KEY); } catch (_) {}
+    setLabel(false);
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      if (btn.textContent.startsWith('Disable')) await disable();
+      else await enable();
+    } catch (err) {
+      console.warn('push toggle failed:', err);
+    } finally {
+      btn.disabled = false;
+      refreshState();
+    }
+  });
+
+  refreshState();
+})();
