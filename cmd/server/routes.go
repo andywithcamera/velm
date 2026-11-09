@@ -157,6 +157,12 @@ func registerRoutes() {
 	http.Handle("/api/task-instances", withAuthOrAgentWrite(
 		http.HandlerFunc(handleTaskInstanceCreate),
 	))
+	// /mcp is the Model Context Protocol endpoint (issue #240). Same agent
+	// token surface as the task API: bearer token or session, write permission
+	// (tools mutate the task engine), CSRF skipped for bearer requests.
+	http.Handle("/mcp", withAuthOrAgentWrite(
+		http.HandlerFunc(handleMCP),
+	))
 	http.Handle("/api/app-runtime/call", withAuthOrAgentOnly(
 		http.HandlerFunc(handleAppRuntimeServiceCall),
 	))
