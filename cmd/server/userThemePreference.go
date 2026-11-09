@@ -24,6 +24,16 @@ var validThemes = map[string]bool{
 	"nord":        true,
 	"tokyo-night": true,
 	"catppuccin":  true,
+	"renault5":    true,
+	"lcars":       true,
+	"galactic":    true,
+	"ember":       true,
+	"verdant":     true,
+	"ocean":       true,
+	"rosewood":    true,
+	"steel":       true,
+	"dune":        true,
+	"aurora":      true,
 }
 
 const defaultTheme = "light"
