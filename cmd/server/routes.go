@@ -156,6 +156,7 @@ func registerRoutes() {
 	// session or agent bearer callers. Lives beside /api/app-runtime/call on
 	// the agent-aware chain; the write permission is enforced in the chain
 	// below rather than inside the handler, matching withAuth's shape.
+	http.Handle("/api/agent-tokens", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleAgentTokensCreate)))
 	http.Handle("/api/task-instances", withAuthOrAgentWrite(
 		http.HandlerFunc(handleTaskInstanceCreate),
 	))
