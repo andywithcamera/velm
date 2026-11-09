@@ -159,6 +159,14 @@
   min-width: 0;
 }
 
+/* The board container is an edgeless full-bleed strip: the panel chrome
+   (border, surface, shadow) only makes sense around tabular content. */
+#taskBoard > .ui-panel {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
 .ui-task-board-scroll {
   overflow-x: auto;
   padding: 0.15rem 0.85rem 0.85rem;
@@ -168,10 +176,13 @@
 .ui-task-board-grid {
   display: grid;
   gap: 0.7rem;
-  /* Lanes are capped so five of them fit a 1280px window instead of one taking half of it. */
-  grid-template-columns: repeat(var(--lane-count, 1), minmax(13.5rem, 19rem));
+  /* Lanes stretch to share the row: each keeps a readable floor (13.5rem),
+   grows equally to fill the viewport, and the whole board tops out at a
+   sensible width so ultra-wide screens don't smear lanes across it. */
+  grid-template-columns: repeat(var(--lane-count, 1), minmax(13.5rem, 1fr));
   justify-content: start;
   min-width: max-content;
+  max-width: min(100%, 110rem);
 }
 
 .ui-task-board-lane {

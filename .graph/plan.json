@@ -1,0 +1,66 @@
+{
+  "goal": "Remove direct user-role grants so group membership is the only path that confers a role (#199 R4).",
+  "base": "main",
+  "test_command": "go test",
+  "closed_paths": [
+    "go.mod",
+    "go.sum",
+    ".graph/**",
+    "scripts/graph/**",
+    ".github/**"
+  ],
+  "migration": {
+    "dir": "internal/db/migrations",
+    "ranges": [
+      [
+        83,
+        83
+      ]
+    ]
+  },
+  "units": [
+    {
+      "id": "U1",
+      "kind": "work",
+      "task": "Remove direct user-role grants: migrate existing grants into groups, drop _user_role, stop the system sync recreating it, and delete the code paths that read or write it.",
+      "files": [
+        "internal/db/migrations/083_drop_user_role.sql",
+        "internal/db/RemovedSystemTables.go",
+        "internal/db/SystemAppSync.go",
+        "internal/db/AuthzSchema.go",
+        "internal/db/AuthzEffective.go",
+        "internal/db/AuthzAdmin.go",
+        "internal/db/AppRuntime.go",
+        "internal/db/GroupMembership.go",
+        "internal/db/BundledApps.go",
+        "internal/db/MetadataGuards.go",
+        "internal/db/ObservabilityAnalysis.go",
+        "internal/db/PhysicalMetadata.go",
+        "internal/db/HandleSave.go",
+        "internal/db/AgentToken.go",
+        "internal/db/BootstrapAdmin.go",
+        "internal/db/AdminGroup.go",
+        "cmd/server/loadUserFromDb.go",
+        "cmd/server/handleAccessControl.go",
+        "cmd/server/routes.go",
+        "web/templates/access-control-view.html",
+        "cmd/server/accessControlTemplate_test.go",
+        "cmd/server/routes_matrix_test.go",
+        "internal/db/AdminGroup_integration_test.go",
+        "internal/db/GroupMembership_integration_test.go",
+        "internal/db/UserRoleRemoval_integration_test.go",
+        "CHANGELOG.md"
+      ],
+      "reads": [
+        "internal/db/Migrations.go",
+        "internal/db/migrations/042_system_app.sql"
+      ],
+      "needs": [],
+      "migration_range": [
+        83,
+        83
+      ],
+      "tests_changed": true
+    }
+  ]
+}
