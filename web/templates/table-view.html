@@ -525,6 +525,14 @@
         <h1 class="ui-action-bar-title">{{if .TableLabel}}{{.TableLabel}}{{else}}{{.TableName}}{{end}}</h1>
       </div>
       <div class="ui-action-bar-actions">
+        {{if .TableCanCreate}}
+        <a href="{{.TableCreateURL}}" class="ui-icon-btn ui-icon-btn-primary" aria-label="New" title="New">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </a>
+        {{end}}
+        <a href="{{.TaskBoardListURL}}" class="ui-icon-btn" aria-label="List view" title="List view">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+        </a>
         <button type="button" class="ui-icon-btn" data-filter-toggle="true" data-filter-panel="taskBoardFiltersForm" aria-controls="taskBoardFiltersForm" aria-expanded="false" aria-label="Filters" title="Filters">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
           <span class="ui-icon-btn-badge" data-filter-active-badge hidden></span>
