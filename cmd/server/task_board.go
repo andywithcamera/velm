@@ -636,10 +636,8 @@ func loadTaskBoardMetadata(tableID string) taskBoardMetadata {
 
 func defaultTaskBoardMetadata() taskBoardMetadata {
 	stateChoices := []taskBoardChoice{
-		{Value: "new", Label: "New"},
 		{Value: "pending", Label: "Pending"},
 		{Value: "in_progress", Label: "In Progress"},
-		{Value: "ready_to_close", Label: "Ready to Close"},
 	}
 	return taskBoardMetadata{
 		StateChoices: stateChoices,
@@ -679,7 +677,7 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 		LEFT JOIN _group g ON g._id = t.assignment_group_id
 		LEFT JOIN _user u ON u._id = t.assigned_user_id
 		WHERE t._deleted_at IS NULL
-		  AND COALESCE(NULLIF(BTRIM(t.state), ''), 'new') <> 'closed'`
+		  AND COALESCE(NULLIF(BTRIM(t.state), ''), 'pending') <> 'closed'`
 
 	args := make([]any, 0, 6)
 	switch filters.Scope {
@@ -1179,14 +1177,12 @@ func taskBoardShowsState(value string) bool {
 
 func taskBoardStateSortRank(value string) int {
 	switch normalizeTaskBoardLaneValue(value) {
-	case "new", "ready", "triage":
+	case "ready":
 		return 10
 	case "pending", "blocked":
 		return 20
 	case "in_progress":
 		return 30
-	case "ready_to_close":
-		return 40
 	case "closed", "done", "cancelled":
 		return 50
 	case taskBoardUnspecifiedLane:
