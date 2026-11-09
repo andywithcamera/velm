@@ -1,7 +1,7 @@
 -- Web push subscriptions per user (browser endpoints via VAPID).
 CREATE TABLE IF NOT EXISTS _user_push_subscription (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id     UUID NOT NULL REFERENCES _user(id) ON DELETE CASCADE,
+    user_id     UUID NOT NULL REFERENCES _user(_id) ON DELETE CASCADE,
     endpoint    TEXT NOT NULL UNIQUE,
     p256dh      TEXT NOT NULL,
     auth        TEXT NOT NULL,
