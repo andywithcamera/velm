@@ -266,8 +266,11 @@ func TestTaskBoardTemplateRendersCleanCardHref(t *testing.T) {
 	if !strings.Contains(rendered, `Overdue`) {
 		t.Fatalf("expected attention badge in rendered output, got %q", rendered)
 	}
-	if !strings.Contains(rendered, `data-lane-empty hidden`) {
-		t.Fatalf("expected populated lane empty state to use hidden attribute, got %q", rendered)
+	if strings.Contains(rendered, `data-lane-empty`) {
+		t.Fatalf("did not expect an empty-lane placeholder box, got %q", rendered)
+	}
+	if !strings.Contains(rendered, `data-lane-body`) {
+		t.Fatalf("expected lane body in rendered output, got %q", rendered)
 	}
 }
 
@@ -581,10 +584,10 @@ func TestTaskBoardTemplateShowsEmptyStateOnlyForEmptyLane(t *testing.T) {
 	}
 
 	rendered := out.String()
-	if !strings.Contains(rendered, `data-lane-empty>No tasks</div>`) {
-		t.Fatalf("expected empty lane to render visible empty state, got %q", rendered)
+	if strings.Contains(rendered, `data-lane-empty`) || strings.Contains(rendered, "No tasks") {
+		t.Fatalf("did not expect an empty-lane placeholder box, got %q", rendered)
 	}
-	if strings.Contains(rendered, `data-lane-empty hidden`) {
-		t.Fatalf("did not expect hidden attribute for empty lane, got %q", rendered)
+	if !strings.Contains(rendered, `data-lane-body`) {
+		t.Fatalf("expected lane body in rendered output, got %q", rendered)
 	}
 }
