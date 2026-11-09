@@ -1002,6 +1002,17 @@ func applyTaskBoardIssueTitles(ctx context.Context, items []taskBoardItem) {
 	}
 }
 
+// laneHasChoice reports whether stateChoices already carries value.
+func laneHasChoice(stateChoices []taskBoardChoice, value string) bool {
+	value = normalizeTaskBoardLaneValue(value)
+	for _, choice := range stateChoices {
+		if normalizeTaskBoardLaneValue(choice.Value) == value {
+			return true
+		}
+	}
+	return false
+}
+
 // BTRIMEQ compares two strings the way the board SQL BTRIMs titles.
 func trimEqual(a, b string) bool {
 	return strings.TrimSpace(a) == strings.TrimSpace(b)
@@ -1016,8 +1027,28 @@ func taskBoardBulkUpdateURL(tableName string) string {
 }
 
 func buildTaskBoardLanes(stateChoices []taskBoardChoice, items []taskBoardItem) []taskBoardLane {
-	lanes := make([]taskBoardLane, 0, allocHintSum(len(stateChoices), 1))
-	laneIndex := make(map[string]int, allocHintSum(len(stateChoices), 1))
+	lanes := make([]taskBoardLane, 0, allocHintSum(len(stateChoices), 5))
+	laneIndex := make(map[string]int, allocHintSum(len(stateChoices), 5))
+
+	// Canonical states always get lanes, even when empty: a workflow
+	// board must show where work lands next and where it ends, not only
+	// lanes that happen to have cards. Column choices merge in after, so
+	// table-specific states keep their labels.
+	canonicalStates := []string{"pending", "ready", "in_progress", "closed"}
+	for _, state := range canonicalStates {
+		if laneHasChoice(stateChoices, state) {
+			continue
+		}
+		stateChoices = append(stateChoices, taskBoardChoice{Value: state, Label: ""})
+	}
+	sort.SliceStable(stateChoices, func(i, j int) bool {
+		leftRank := taskBoardStateSortRank(stateChoices[i].Value)
+		rightRank := taskBoardStateSortRank(stateChoices[j].Value)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		return false
+	})
 
 	for _, choice := range stateChoices {
 		value := normalizeTaskBoardLaneValue(choice.Value)

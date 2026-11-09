@@ -74,7 +74,9 @@ func TestNormalizeTaskBoardTypeRejectsUnknownSelection(t *testing.T) {
 	}
 }
 
-func TestBuildTaskBoardLanesUsesChoiceOrderAndAppendsUnknownStates(t *testing.T) {
+func TestBuildTaskBoardLanesIncludesCanonicalStatesAlways(t *testing.T) {
+	// Only "ready" is defined by the column; the canonical four still
+	// render, in workflow order, droppable, even when empty.
 	choices := []taskBoardChoice{
 		{Value: "ready", Label: "Ready"},
 	}
@@ -85,26 +87,39 @@ func TestBuildTaskBoardLanesUsesChoiceOrderAndAppendsUnknownStates(t *testing.T)
 	}
 
 	lanes := buildTaskBoardLanes(choices, items)
-	if len(lanes) != 3 {
-		t.Fatalf("len(buildTaskBoardLanes()) = %d, want 3", len(lanes))
+	wantOrder := []string{"pending", "ready", "in_progress", "closed"}
+	if len(lanes) != len(wantOrder) {
+		t.Fatalf("len(buildTaskBoardLanes()) = %d, want %d", len(lanes), len(wantOrder))
 	}
-	if lanes[0].Value != "ready" || lanes[0].Count != 0 {
-		t.Fatalf("lane[0] = %+v, want empty ready lane", lanes[0])
+	for i, want := range wantOrder {
+		if lanes[i].Value != want {
+			t.Fatalf("lane[%d] = %q, want %q", i, lanes[i].Value, want)
+		}
+		if !lanes[i].CanDrop {
+			t.Fatalf("lane[%d] (%s) should be droppable: %+v", i, want, lanes[i])
+		}
 	}
-	if !lanes[0].CanDrop {
-		t.Fatalf("expected ready lane to be droppable: %+v", lanes[0])
+	if lanes[0].Count != 2 || lanes[1].Count != 0 || lanes[2].Count != 0 || lanes[3].Count != 1 {
+		t.Fatalf("counts = %d/%d/%d/%d, want 2/0/0/1", lanes[0].Count, lanes[1].Count, lanes[2].Count, lanes[3].Count)
 	}
-	if lanes[1].Value != "pending" || lanes[1].Count != 2 {
-		t.Fatalf("lane[1] = %+v, want pending (unknown) with two tasks", lanes[1])
+	if lanes[1].Label != "Ready" {
+		t.Fatalf("custom label lost: %q", lanes[1].Label)
 	}
-	if lanes[1].CanDrop {
-		t.Fatalf("expected pending (unknown) lane to be read-only: %+v", lanes[1])
+}
+
+func TestBuildTaskBoardLanesKeepsCustomStatesAfterWorkflow(t *testing.T) {
+	choices := []taskBoardChoice{
+		{Value: "blocked", Label: "Blocked"},
 	}
-	if lanes[2].Value != "closed" || lanes[2].Count != 1 {
-		t.Fatalf("lane[2] = %+v, want closed (unknown) with one task", lanes[2])
+	lanes := buildTaskBoardLanes(choices, nil)
+	wantOrder := []string{"ready", "pending", "blocked", "in_progress", "closed"}
+	if len(lanes) != len(wantOrder) {
+		t.Fatalf("len = %d, want %d", len(lanes), len(wantOrder))
 	}
-	if lanes[2].CanDrop {
-		t.Fatalf("expected closed (unknown) lane to be read-only: %+v", lanes[2])
+	for i, want := range wantOrder {
+		if lanes[i].Value != want {
+			t.Fatalf("lane[%d] = %q, want %q", i, lanes[i].Value, want)
+		}
 	}
 }
 
