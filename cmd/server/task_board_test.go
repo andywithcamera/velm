@@ -87,7 +87,7 @@ func TestBuildTaskBoardLanesIncludesCanonicalStatesAlways(t *testing.T) {
 	}
 
 	lanes := buildTaskBoardLanes(choices, items)
-	wantOrder := []string{"pending", "ready", "in_progress", "closed"}
+	wantOrder := []string{"ready", "pending", "in_progress", "closed"}
 	if len(lanes) != len(wantOrder) {
 		t.Fatalf("len(buildTaskBoardLanes()) = %d, want %d", len(lanes), len(wantOrder))
 	}
@@ -99,11 +99,11 @@ func TestBuildTaskBoardLanesIncludesCanonicalStatesAlways(t *testing.T) {
 			t.Fatalf("lane[%d] (%s) should be droppable: %+v", i, want, lanes[i])
 		}
 	}
-	if lanes[0].Count != 2 || lanes[1].Count != 0 || lanes[2].Count != 0 || lanes[3].Count != 1 {
-		t.Fatalf("counts = %d/%d/%d/%d, want 2/0/0/1", lanes[0].Count, lanes[1].Count, lanes[2].Count, lanes[3].Count)
+	if lanes[0].Count != 0 || lanes[1].Count != 2 || lanes[2].Count != 0 || lanes[3].Count != 1 {
+		t.Fatalf("counts = %d/%d/%d/%d, want 0/2/0/1", lanes[0].Count, lanes[1].Count, lanes[2].Count, lanes[3].Count)
 	}
-	if lanes[1].Label != "Ready" {
-		t.Fatalf("custom label lost: %q", lanes[1].Label)
+	if lanes[0].Label != "Ready" {
+		t.Fatalf("custom label lost: %q", lanes[0].Label)
 	}
 }
 
@@ -112,7 +112,7 @@ func TestBuildTaskBoardLanesKeepsCustomStatesAfterWorkflow(t *testing.T) {
 		{Value: "blocked", Label: "Blocked"},
 	}
 	lanes := buildTaskBoardLanes(choices, nil)
-	wantOrder := []string{"ready", "pending", "blocked", "in_progress", "closed"}
+	wantOrder := []string{"ready", "blocked", "pending", "in_progress", "closed"}
 	if len(lanes) != len(wantOrder) {
 		t.Fatalf("len = %d, want %d", len(lanes), len(wantOrder))
 	}
