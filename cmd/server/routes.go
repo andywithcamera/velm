@@ -82,6 +82,16 @@ func registerRoutes() {
 	http.Handle("/version", security.RequestLog(http.HandlerFunc(handleVersion)))
 	http.Handle("/p/", withAuth(authz.PermissionView, http.HandlerFunc(handlePage)))
 	http.Handle("/static/", security.RequestLog(http.StripPrefix("/static/", fs)))
+	// PWA: the service worker must be served from the root scope it controls.
+	http.Handle("/sw.js", security.RequestLog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		http.ServeFile(w, r, "./web/static/sw.js")
+	})))
+	http.Handle("/offline.html", security.RequestLog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeFile(w, r, "./web/static/offline.html")
+	})))
 	http.Handle("/api/monitor/client", security.RequestLog(auth.RequireCSRF(http.HandlerFunc(handleClientMonitoringBeacon), store)))
 	http.Handle(observabilityWebhookPath, security.RequestLog(security.Audit(http.HandlerFunc(handleObservabilityWebhook))))
 	http.Handle("/api/menu/", withAuth(authz.PermissionView, http.HandlerFunc(handleMenu)))
@@ -156,6 +166,7 @@ func registerRoutes() {
 	// session or agent bearer callers. Lives beside /api/app-runtime/call on
 	// the agent-aware chain; the write permission is enforced in the chain
 	// below rather than inside the handler, matching withAuth's shape.
+	http.Handle("/api/agent-tokens", withAuth(authz.PermissionAdmin, http.HandlerFunc(handleAgentTokensCreate)))
 	http.Handle("/api/task-instances", withAuthOrAgentWrite(
 		http.HandlerFunc(handleTaskInstanceCreate),
 	))

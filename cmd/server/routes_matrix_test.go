@@ -42,6 +42,8 @@ var routeAccess = map[string]accessClass{
 	"/healthz":            accessPublic,
 	"/version":            accessPublic,
 	"/static/":            accessPublic,
+	"/sw.js":              accessPublic,
+	"/offline.html":       accessPublic,
 	"/login":              accessPublic,
 	"/login/":             accessPublic,
 	"/auth/login":         accessPublic,
@@ -64,6 +66,10 @@ var routeAccess = map[string]accessClass{
 	// permission in scope, like any /api/save/ client.
 	"/api/task-instances": accessWrite,
 	"/mcp":                accessWrite,
+
+	// Admin-only: minting agent API tokens (issue #240 phase 1). Session
+	// admins only — an agent token must not be able to mint more tokens.
+	"/api/agent-tokens": accessAdmin,
 
 	// Read.
 	"/p/":                              accessView,

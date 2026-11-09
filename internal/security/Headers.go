@@ -66,9 +66,9 @@ func SecurityHeaders(next http.Handler) http.Handler {
 }
 
 func buildCSP(nonce string) string {
-	scriptSrc := "script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://esm.sh"
+	scriptSrc := "script-src 'self'"
 	if nonce != "" {
-		scriptSrc = "script-src 'self' 'nonce-" + nonce + "' https://unpkg.com https://cdn.jsdelivr.net https://esm.sh"
+		scriptSrc = "script-src 'self' 'nonce-" + nonce + "'"
 	}
 	return strings.Join([]string{
 		"default-src 'self'",
@@ -77,9 +77,10 @@ func buildCSP(nonce string) string {
 		"frame-ancestors 'none'",
 		"img-src 'self' data:",
 		"font-src 'self' data:",
-		"connect-src 'self' https://esm.sh",
+		"connect-src 'self'",
 		"form-action 'self'",
 		scriptSrc,
-		"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://esm.sh",
+		"worker-src 'self'",
+		"style-src 'self' 'unsafe-inline'",
 	}, "; ")
 }
