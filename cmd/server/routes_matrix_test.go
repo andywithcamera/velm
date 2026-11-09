@@ -65,6 +65,10 @@ var routeAccess = map[string]accessClass{
 	"/api/task-instances": accessWrite,
 	"/mcp":                accessWrite,
 
+	// Admin-only: minting agent API tokens (issue #240 phase 1). Session
+	// admins only — an agent token must not be able to mint more tokens.
+	"/api/agent-tokens": accessAdmin,
+
 	// Read.
 	"/p/":                              accessView,
 	"/map":                             accessView,
