@@ -42,6 +42,8 @@ var routeAccess = map[string]accessClass{
 	"/healthz":            accessPublic,
 	"/version":            accessPublic,
 	"/static/":            accessPublic,
+	"/sw.js":              accessPublic,
+	"/offline.html":       accessPublic,
 	"/login":              accessPublic,
 	"/login/":             accessPublic,
 	"/auth/login":         accessPublic,
