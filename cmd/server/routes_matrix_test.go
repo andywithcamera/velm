@@ -67,6 +67,8 @@ var routeAccess = map[string]accessClass{
 	// Read.
 	"/p/":                              accessView,
 	"/map":                             accessView,
+	"/task-catalog":                    accessView,
+	"/task-catalog/order":              accessWrite,
 	"/task":                            accessView,
 	"/task/":                           accessView,
 	"/t/":                              accessView,
