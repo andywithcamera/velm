@@ -446,7 +446,6 @@ body,
 
 .ui-btn-secondary,
 .ui-btn-danger,
-.ui-icon-btn,
 .ui-tab,
 .ui-segmented {
   background: transparent;
@@ -455,11 +454,24 @@ body,
   box-shadow: none;
 }
 
+/* Icon buttons are bare glyphs in bars and menus — no box, just the icon. */
+.ui-icon-btn {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+
 .ui-btn-secondary:hover,
-.ui-btn-danger:hover,
-.ui-icon-btn:hover {
+.ui-btn-danger:hover {
   background: var(--surface-soft);
   border-color: var(--border-mid);
+  color: var(--text-primary);
+}
+
+.ui-icon-btn:hover {
+  background: var(--surface-soft);
+  border-color: transparent;
   color: var(--text-primary);
 }
 

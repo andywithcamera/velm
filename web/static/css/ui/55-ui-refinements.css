@@ -656,8 +656,8 @@
 /* 40-velm-monochrome strips .ui-icon-btn to borderless; inside a bar it needs an edge. */
 .ui-action-bar .ui-icon-btn,
 .ui-menu-wrap .ui-icon-btn {
-  background: var(--bg-base);
-  border-color: var(--border);
+  background: transparent;
+  border-color: transparent;
   color: var(--text-dim);
   flex: 0 0 auto;
   position: relative;
@@ -681,7 +681,8 @@
 .ui-action-bar .ui-icon-btn:focus-visible,
 .ui-menu-wrap .ui-icon-btn:hover,
 .ui-menu-wrap .ui-icon-btn:focus-visible {
-  border-color: var(--border-mid);
+  border-color: transparent;
+  background: var(--bg-elevated);
   color: var(--text-primary);
 }
 
