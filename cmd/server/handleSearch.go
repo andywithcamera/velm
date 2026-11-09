@@ -13,6 +13,7 @@ import (
 )
 
 const taskSearchResultLimit = 8
+const taskDefinitionSearchResultLimit = 4
 const docsSearchResultLimit = 8
 
 func handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +45,14 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	results = append(results, taskResults...)
+
+	defResults, err := searchTaskDefinitionResults(r.Context(), query, taskDefinitionSearchResultLimit)
+	if err != nil {
+		http.Error(w, "Database search failed", http.StatusInternalServerError)
+		log.Println("Task definition search error:", err)
+		return
+	}
+	results = append(results, defResults...)
 
 	userID := strings.TrimSpace(auth.UserIDFromRequest(r))
 	if userID != "" {
@@ -121,6 +130,43 @@ func searchTaskResults(ctx context.Context, query string, limit int) ([]MenuItem
 		return nil, err
 	}
 	return results, nil
+}
+
+// searchTaskDefinitionResults surfaces catalog entries: starting an
+// orderable task type straight from global search links into the catalog
+// with the query prefilled.
+func searchTaskDefinitionResults(ctx context.Context, query string, limit int) ([]MenuItem, error) {
+	query = strings.TrimSpace(query)
+	if query == "" || limit <= 0 || db.Pool == nil {
+		return nil, nil
+	}
+
+	rows, err := db.Pool.Query(ctx, `
+		SELECT slug, display_name
+		FROM base_task_definition
+		WHERE is_active AND _deleted_at IS NULL
+		  AND (LOWER(display_name) LIKE '%' || $1 || '%'
+		       OR LOWER(slug) LIKE '%' || $1 || '%'
+		       OR LOWER(description) LIKE '%' || $1 || '%')
+		ORDER BY display_name
+		LIMIT $2`, strings.ToLower(query), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]MenuItem, 0, limit)
+	for rows.Next() {
+		var slug, name string
+		if err := rows.Scan(&slug, &name); err != nil {
+			return nil, err
+		}
+		results = append(results, MenuItem{
+			Title: "Start task: " + name,
+			Href:  "/task-catalog?q=" + url.QueryEscape(slug),
+		})
+	}
+	return results, rows.Err()
 }
 
 func searchDocsResults(ctx context.Context, userID, query string, limit int) ([]MenuItem, error) {

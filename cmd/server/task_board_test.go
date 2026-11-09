@@ -109,14 +109,17 @@ func TestBuildTaskBoardLanesUsesChoiceOrderAndAppendsUnknownStates(t *testing.T)
 }
 
 func TestTaskBoardShowsStateOmitsClosedStates(t *testing.T) {
-	if taskBoardShowsState("closed") {
-		t.Fatal("expected closed to be hidden from /task")
+	if !taskBoardShowsState("closed") {
+		t.Fatal("expected closed lane to be visible on /task")
 	}
 	if taskBoardShowsState("done") {
 		t.Fatal("expected done to be hidden from /task")
 	}
 	if taskBoardShowsState("cancelled") {
 		t.Fatal("expected cancelled to be hidden from /task")
+	}
+	if taskBoardShowsState("skipped") {
+		t.Fatal("expected skipped to be hidden from /task")
 	}
 	if !taskBoardShowsState("in_progress") {
 		t.Fatal("expected in_progress to remain visible on /task")
