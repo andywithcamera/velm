@@ -637,6 +637,7 @@ func loadTaskBoardMetadata(tableID string) taskBoardMetadata {
 func defaultTaskBoardMetadata() taskBoardMetadata {
 	stateChoices := []taskBoardChoice{
 		{Value: "pending", Label: "Pending"},
+		{Value: "ready", Label: "Ready"},
 		{Value: "in_progress", Label: "In Progress"},
 		{Value: "closed", Label: "Closed"},
 	}
@@ -1239,12 +1240,14 @@ func taskBoardShowsState(value string) bool {
 
 func taskBoardStateSortRank(value string) int {
 	switch normalizeTaskBoardLaneValue(value) {
-	case "ready":
+	case "pending":
 		return 10
-	case "pending", "blocked":
+	case "ready":
 		return 20
 	case "in_progress":
 		return 30
+	case "blocked":
+		return 40
 	case "closed", "done", "cancelled":
 		return 50
 	case taskBoardUnspecifiedLane:
