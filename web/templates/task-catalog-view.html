@@ -1,0 +1,219 @@
+{{define "task-catalog-view"}}
+<style>
+  .ui-catalog {
+    padding: 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .ui-catalog-hero {
+    background:
+      radial-gradient(circle at top right, rgba(231, 197, 111, 0.18), transparent 34%),
+      linear-gradient(180deg, var(--bg-surface), var(--bg-base));
+    border: 1px solid rgba(231, 197, 111, 0.32);
+    border-radius: 18px;
+    padding: 1.3rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .ui-catalog-title {
+    margin: 0 0 0.35rem;
+    font-family: "Syne", sans-serif;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+  }
+
+  .ui-catalog-sub {
+    margin: 0 0 1rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-catalog-search {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .ui-catalog-search-input {
+    min-height: 52px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 1rem;
+    padding: 0 1rem;
+  }
+
+  .ui-catalog-search-input::placeholder {
+    color: var(--text-ghost);
+  }
+
+  .ui-catalog-section {
+    margin-bottom: 1.5rem;
+  }
+
+  .ui-catalog-section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .ui-catalog-section-title {
+    margin: 0;
+    font-family: "Syne", sans-serif;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    text-transform: capitalize;
+  }
+
+  .ui-catalog-section-count {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+  }
+
+  .ui-catalog-grid {
+    display: grid;
+    gap: 0.85rem;
+    grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  }
+
+  .ui-catalog-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+  }
+
+  .ui-catalog-card-name {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1rem;
+  }
+
+  .ui-catalog-card-desc {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    flex: 1;
+  }
+
+  .ui-catalog-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  .ui-catalog-chip {
+    font-size: 0.72rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .ui-catalog-start {
+    align-self: flex-start;
+    border: 1px solid var(--border-mid);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    border-radius: 999px;
+    padding: 0.35rem 0.9rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+
+  .ui-catalog-start:hover {
+    background: var(--surface-soft);
+  }
+
+  .ui-catalog-start:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .ui-catalog-order-done {
+    border: 1px solid var(--border-mid);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .ui-catalog-order-error {
+    border: 1px solid rgba(220, 80, 80, 0.4);
+    border-radius: 10px;
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .ui-catalog-empty {
+    color: var(--text-dim);
+    padding: 1rem 0;
+  }
+
+  @media (max-width: 640px) {
+    .ui-catalog {
+      padding: 1rem 0.75rem;
+    }
+    .ui-catalog-grid {
+      grid-template-columns: 1fr;
+    }
+    .ui-catalog-search {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+<div class="ui-catalog" id="task-catalog">
+  <div class="ui-catalog-hero">
+    <h1 class="ui-catalog-title">Task Catalog</h1>
+    <p class="ui-catalog-sub">Everything that can be started, in one place. Pick a definition, start it, track it on the board.</p>
+    <form class="ui-catalog-search" hx-get="/task-catalog" hx-target="#task-catalog-results" hx-swap="outerHTML" hx-trigger="submit, keyup delay:300ms from:find input">
+      <input class="ui-catalog-search-input" type="search" name="q" placeholder="Search definitions…" value="{{.TaskCatalogQuery}}" autocomplete="off" />
+      <button class="ui-catalog-start" type="submit">Search</button>
+    </form>
+  </div>
+
+  {{template "task-catalog-results" .}}
+</div>
+{{end}}
+
+{{define "task-catalog-results"}}
+<div id="task-catalog-results">
+    {{if eq .TaskCatalogTotal 0}}
+      <p class="ui-catalog-empty">No definitions match “{{.TaskCatalogQuery}}”.</p>
+    {{else}}
+      {{range .TaskCatalogCategories}}
+        <section class="ui-catalog-section">
+          <div class="ui-catalog-section-head">
+            <h2 class="ui-catalog-section-title">{{.Name}}</h2>
+            <span class="ui-catalog-section-count">{{len .Entries}}</span>
+          </div>
+          <div class="ui-catalog-grid">
+            {{range .Entries}}
+              <article class="ui-catalog-card">
+                <h3 class="ui-catalog-card-name">{{.DisplayName}}</h3>
+                <p class="ui-catalog-card-desc">{{if .Description}}{{.Description}}{{else}}No description yet.{{end}}</p>
+                <div class="ui-catalog-card-meta">
+                  <span class="ui-catalog-chip">{{if .IsContainer}}pipeline{{else}}task{{end}}</span>
+                  <form hx-post="{{$.TaskCatalogOrderURL}}" hx-target="find .ui-catalog-start" hx-swap="outerHTML">
+                    <input type="hidden" name="definition_slug" value="{{.Slug}}" />
+                    <button class="ui-catalog-start" type="submit">Start</button>
+                  </form>
+                </div>
+              </article>
+            {{end}}
+          </div>
+        </section>
+      {{end}}
+    {{end}}
+  </div>
+</div>
+{{end}}
