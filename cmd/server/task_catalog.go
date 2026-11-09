@@ -158,8 +158,3 @@ var catalogOrderErrorTmpl = template.Must(template.New("catalogOrderError").Pars
 
 var catalogOrderDoneTmpl = template.Must(template.New("catalogOrderDone").Parse(
 	`<div class="ui-catalog-order-done">Started as <a href="/f/base_task/{{.TaskID}}">{{.Number}}</a>. Track it on the <a href="/task">board</a>.</div>`))
-
-func htmlEscapeText(s string) string {
-	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&#34;")
-	return r.Replace(s)
-}

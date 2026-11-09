@@ -63,6 +63,7 @@ var routeAccess = map[string]accessClass{
 	// Accepts an agent bearer token, but the caller still needs the write
 	// permission in scope, like any /api/save/ client.
 	"/api/task-instances": accessWrite,
+	"/mcp":                accessWrite,
 
 	// Read.
 	"/p/":                              accessView,
