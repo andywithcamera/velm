@@ -272,7 +272,7 @@ func mcpText(v any) map[string]any {
 
 func writeMCP(w http.ResponseWriter, resp mcpResponse) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck // best-effort JSON error channel; nothing sane to do on failure
 }
 
 // mcpToolByName finds a tool definition (used by tests).
