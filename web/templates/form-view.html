@@ -557,11 +557,16 @@
     {{if not .FormHideTimeline}}
     <aside id="recordTimelineAside" class="ui-form-side ui-record-timeline-pane" data-form-timeline-pane="true">
       <section class="ui-card ui-form-sidebar-card ui-record-timeline-card">
-	        <div class="ui-record-panel-tabs" data-record-panel-tabs="true" style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.75rem;">
-	          <button type="button" class="ui-tab is-active" data-record-panel-tab="timeline">Updates</button>
-	          <button type="button" class="ui-tab" data-record-panel-tab="map">Related <span data-record-map-count="true"></span></button>
+	        <div class="ui-form-map ui-form-map-square" data-form-map="true" data-form-map-table="{{.FormTable}}" data-form-map-id="{{.FormID}}">
+	          <div class="ui-form-map-bar">
+	            <span class="ui-form-map-title">Related</span>
+	            <span class="ui-form-map-meta"><span data-record-map-count="true"></span></span>
+	            <button type="button" class="ui-icon-btn" data-form-map-link="true" aria-label="Link a record">+</button>
+	          </div>
+	          <div class="ui-form-map-status" data-form-map-status="true">Loading related…</div>
+	          <canvas class="ui-form-map-canvas" data-form-map-canvas="true" aria-label="Relationship map"></canvas>
 	        </div>
-	        <div data-record-panel-view="timeline">
+	        <div data-record-panel-view="timeline" data-record-panel-body="true">
 	        <div class="ui-record-timeline-head">
 	          <div>
 	            <h3 class="ui-form-sidebar-title">Updates and Comments</h3>
@@ -635,12 +640,6 @@
           {{end}}
         </div>
       </section>
-        </div>
-        <div data-record-panel-view="map" hidden>
-          <div class="ui-form-map" data-form-map="true" data-form-map-table="{{.FormTable}}" data-form-map-id="{{.FormID}}">
-            <div class="ui-form-map-status" data-form-map-status="true">Loading related…</div>
-            <svg class="ui-form-map-svg" data-form-map-svg="true" role="img" aria-label="Relationship map"></svg>
-          </div>
         </div>
     </aside>
     {{end}}
@@ -3036,48 +3035,163 @@
 
 <script nonce="{{.CSPNonce}}">
 (function () {
-  var tabs = document.querySelector('[data-record-panel-tabs="true"]');
-  if (!tabs) return;
-  var views = {
-    timeline: document.querySelector('[data-record-panel-view="timeline"]'),
-    map: document.querySelector('[data-record-panel-view="map"]')
-  };
-  var mapWrap = document.querySelector('[data-form-map="true"]');
-  var svg = document.querySelector('[data-form-map-svg="true"]');
+  var wrap = document.querySelector('[data-form-map="true"]');
+  var canvas = document.querySelector('[data-form-map-canvas="true"]');
   var status = document.querySelector('[data-form-map-status="true"]');
   var countEl = document.querySelector('[data-record-map-count="true"]');
-  var loaded = false, graph = null;
+  var linkBtn = document.querySelector('[data-form-map-link="true"]');
+  if (!wrap || !canvas) return;
+  var table = wrap.getAttribute('data-form-map-table') || '';
+  var recordID = wrap.getAttribute('data-form-map-id') || '';
+  if (!recordID || recordID === 'new') { if (status) status.textContent = 'Save this record first.'; return; }
 
-  tabs.addEventListener('click', function (e) {
-    var btn = e.target.closest('[data-record-panel-tab]');
-    if (!btn) return;
-    var which = btn.getAttribute('data-record-panel-tab');
-    tabs.querySelectorAll('[data-record-panel-tab]').forEach(function (b) {
-      b.classList.toggle('is-active', b === btn);
-    });
-    Object.keys(views).forEach(function (k) {
-      if (views[k]) views[k].hidden = k !== which;
-    });
-    if (which === 'map' && !loaded) loadMap();
-  });
-
-  var bar = document.createElement('div');
-  bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.5rem;';
-  var linkBtn = document.createElement('button');
-  linkBtn.type = 'button';
-  linkBtn.className = 'ui-btn ui-btn-secondary';
-  linkBtn.textContent = '+ Link';
   var searchWrap = document.createElement('div');
   searchWrap.hidden = true;
-  searchWrap.style.cssText = 'margin-bottom:0.5rem;';
-  bar.appendChild(linkBtn);
-  bar.appendChild(searchWrap);
-  mapWrap.insertBefore(bar, mapWrap.firstChild);
-
-  linkBtn.addEventListener('click', function () {
+  searchWrap.style.cssText = 'margin:0.4rem 0;';
+  if (linkBtn) wrap.insertBefore(searchWrap, linkBtn.parentNode.nextSibling);
+  if (linkBtn) linkBtn.addEventListener('click', function () {
     searchWrap.hidden = !searchWrap.hidden;
     if (!searchWrap.hidden) buildSearch();
   });
+
+  var loaded = false, graph = null;
+  // 3D state: unit sphere positions, yaw/pitch rotation
+  var nodes = [], yaw = -0.6, pitch = 0.35, dragging = false, lastX = 0, lastY = 0, moved = 0;
+
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      if (entries.some(function (en) { return en.isIntersecting; })) { io.disconnect(); if (!loaded) loadMap(); }
+    }, { rootMargin: '120px' });
+    io.observe(wrap);
+  } else if (!loaded) loadMap();
+
+  function loadMap() {
+    loaded = true;
+    fetch('/f/graph/' + encodeURIComponent(table) + '/' + encodeURIComponent(recordID) + '?depth=2', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (g) { graph = g; layout(); })
+      .catch(function () { if (status) status.textContent = 'Could not load related items.'; });
+  }
+
+  // Place nodes on a sphere: root front-centre, hop-1 mid band, hop-2 outer band.
+  function layout() {
+    nodes = [];
+    if (!graph || !graph.nodes || !graph.nodes.length) {
+      if (status) status.textContent = 'Nothing related yet. Use + to link something.';
+      if (countEl) countEl.textContent = '';
+      draw();
+      return;
+    }
+    if (status) status.textContent = '';
+    var root = null, hop1 = [], hop2 = [];
+    graph.nodes.forEach(function (n) {
+      if (n.depth === 0) root = n;
+      else if (n.depth === 1) hop1.push(n);
+      else hop2.push(n);
+    });
+    if (root) nodes.push({ n: root, theta: 0, phi: Math.PI / 2, root: true });
+    var spread = Math.PI * 2 / Math.max(hop1.length, 1);
+    for (var i = 0; i < hop1.length; i++) nodes.push({ n: hop1[i], theta: i * spread, phi: Math.PI / 2 + 0.5 * ((i % 2) ? 1 : -1) });
+    var spread2 = Math.PI * 2 / Math.max(hop2.length, 1);
+    for (var j = 0; j < hop2.length; j++) nodes.push({ n: hop2[j], theta: j * spread2 + 0.3, phi: Math.PI / 2 + 1.0 * ((j % 2) ? 1 : -1) });
+    if (countEl) countEl.textContent = (graph.nodes.length - 1) + ' related';
+    draw();
+  }
+
+  function project(p) {
+    // rotate around Y (yaw) then X (pitch), then perspective
+    var cy = Math.cos(yaw), sy = Math.sin(yaw);
+    var x = p.x * cy + p.z * sy, z = -p.x * sy + p.z * cy;
+    var cp = Math.cos(pitch), sp = Math.sin(pitch);
+    var y = p.y * cp - z * sp; z = p.y * sp + z * cp;
+    var f = 2.6 / (2.6 - z); // z in [-1,1], camera at 2.6
+    return { x: x * f, y: y * f, z: z, f: f };
+  }
+
+  var R = 120;
+  function draw() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth || 240, h = w; // square
+    if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.height = h + 'px'; }
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    if (!nodes.length) return;
+    R = Math.min(w, h) * 0.34;
+    var cx = w / 2, cy = h / 2;
+    var proj = nodes.map(function (nd) {
+      var p = project({ x: Math.sin(nd.phi) * Math.cos(nd.theta), y: Math.cos(nd.phi), z: Math.sin(nd.phi) * Math.sin(nd.theta) });
+      return { nd: nd, sx: cx + p.x * R, sy: cy - p.y * R, z: p.z, f: p.f };
+    });
+    proj.sort(function (a, b) { return a.z - b.z; });
+    // edges first (behind), then nodes front-to-back
+    var byId = {}; proj.forEach(function (p) { byId[p.nd.n.id] = p; });
+    (graph.edges || []).forEach(function (e) {
+      var a = byId[e.source], b = byId[e.target];
+      if (!a || !b) return;
+      ctx.strokeStyle = 'rgba(100,116,139,0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(a.sx, a.sy); ctx.lineTo(b.sx, b.sy); ctx.stroke();
+    });
+    var cs = getComputedStyle(document.documentElement);
+    var accent = cs.getPropertyValue('--accent').trim() || '#4f46e5';
+    proj.forEach(function (p) {
+      var n = p.nd.n;
+      var r = (p.nd.root ? 13 : 7) * p.f;
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, Math.max(r, 3), 0, Math.PI * 2);
+      ctx.fillStyle = p.nd.root ? accent : (n.kind === 'task' ? '#d97706' : '#64748b');
+      ctx.globalAlpha = 0.45 + 0.55 * ((p.z + 1) / 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (p.nd.root) { ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.stroke(); }
+      // label, always visible
+      var label = n.name || n.number || n.id;
+      ctx.font = (p.nd.root ? '600 11px' : '10px') + ' system-ui,sans-serif';
+      ctx.textAlign = 'center';
+      var ty = p.sy + Math.max(r, 3) + 11;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      var tw = ctx.measureText(label).width;
+      ctx.fillRect(p.sx - tw / 2 - 3, ty - 9, tw + 6, 13);
+      ctx.fillStyle = '#1f2937';
+      ctx.fillText(label, p.sx, ty);
+    });
+  }
+
+  // rotate: pointer drag. click: navigate to node form.
+  canvas.addEventListener('pointerdown', function (e) {
+    dragging = true; moved = 0; lastX = e.clientX; lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var dx = e.clientX - lastX, dy = e.clientY - lastY;
+    moved += Math.abs(dx) + Math.abs(dy);
+    yaw += dx * 0.008; pitch += dy * 0.006;
+    pitch = Math.max(-1.2, Math.min(1.2, pitch));
+    lastX = e.clientX; lastY = e.clientY;
+    draw();
+  });
+  canvas.addEventListener('pointerup', function (e) {
+    dragging = false;
+    if (moved > 6 || !graph || !graph.nodes) return; // it was a drag, not a click
+    var rect = canvas.getBoundingClientRect();
+    var px = e.clientX - rect.left, py = e.clientY - rect.top;
+    var best = null, bestD = 18;
+    nodes.forEach(function (nd) {
+      var p = project({ x: Math.sin(nd.phi) * Math.cos(nd.theta), y: Math.cos(nd.phi), z: Math.sin(nd.phi) * Math.sin(nd.theta) });
+      var sx = rect.width / 2 + p.x * R, sy = rect.height / 2 - p.y * R;
+      var d = Math.hypot(px - sx, py - sy);
+      if (d < bestD) { bestD = d; best = nd; }
+    });
+    if (best && !best.root) {
+      var n = best.n;
+      if (n.kind === 'task') window.location.href = '/f/base_task/' + n.id.replace('task:', '');
+      else window.location.href = '/f/base_entity/' + n.id;
+    }
+  });
+
+  window.addEventListener('resize', draw);
 
   function buildSearch() {
     searchWrap.innerHTML = '';
@@ -3085,179 +3199,52 @@
     input.type = 'search';
     input.className = 'ui-input';
     input.placeholder = 'Search entities or tasks to link…';
-    input.style.width = '100%';
     var results = document.createElement('div');
     results.className = 'ui-form-map-results';
-    searchWrap.appendChild(input);
-    searchWrap.appendChild(results);
+    searchWrap.appendChild(input); searchWrap.appendChild(results);
     input.focus();
     var timer = null;
     input.addEventListener('input', function () {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
       var q = input.value.trim();
       if (q.length < 2) { results.innerHTML = ''; return; }
       timer = setTimeout(function () {
-        Promise.all([
-          fetch('/api/reference-options?table=base_entity&limit=5&q=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : { options: [] }; }),
-          fetch('/api/reference-options?table=base_task&limit=5&q=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : { options: [] }; })
-        ]).then(function (pair) {
-          renderResults(results, (pair[0].options || []).map(function (o) { return { id: o.value, name: o.label, kind: 'entity' }; }),
-            (pair[1].options || []).map(function (o) { return { id: o.value, name: o.label, kind: 'task' }; }));
-        }).catch(function () { results.innerHTML = ''; });
+        fetch('/api/reference-options?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.json() : []; })
+          .then(function (opts) {
+            results.innerHTML = '';
+            (opts || []).slice(0, 8).forEach(function (o) {
+              var row = document.createElement('button');
+              row.type = 'button';
+              row.className = 'ui-form-map-result';
+              row.textContent = (o.table === 'base_task' ? 'Task: ' : '') + (o.label || o.id);
+              row.addEventListener('click', function () {
+                if (o.table === 'base_task') {
+                  postLink({ op: 'link', task_id: o.id, entity_id: rootEntityID() }, function () { searchWrap.hidden = true; loaded = false; loadMap(); });
+                } else if (o.table === 'base_entity') {
+                  if (table === 'base_entity') {
+                    postLink({ op: 'link', source_entity_id: rootEntityID(), target_entity_id: o.id }, function () { searchWrap.hidden = true; loaded = false; loadMap(); });
+                  } else {
+                    postLink({ op: 'link', task_id: recordID, entity_id: o.id }, function () { searchWrap.hidden = true; loaded = false; loadMap(); });
+                  }
+                }
+              });
+              results.appendChild(row);
+            });
+          }).catch(function () { results.innerHTML = ''; });
       }, 250);
     });
   }
-
-  function renderResults(results, entities, tasks) {
-    results.innerHTML = '';
-    var items = entities.map(function (e) { e.kind = 'entity'; return e; })
-      .concat(tasks.map(function (t) { t.kind = 'task'; return t; }));
-    if (!items.length) {
-      results.textContent = 'No matches.';
-      return;
-    }
-    items.slice(0, 10).forEach(function (item) {
-      var row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'ui-form-map-result';
-      row.textContent = (item.kind === 'task' ? '[task] ' : '') + (item.name || '');
-      row.addEventListener('click', function () { createLink(item); });
-      results.appendChild(row);
-    });
+  function rootEntityID() {
+    if (table === 'base_entity') return recordID;
+    return graph && graph.centre_entity_id ? graph.centre_entity_id : '';
   }
-
-  function createLink(item) {
-    var table = mapWrap.getAttribute('data-form-map-table');
-    var id = mapWrap.getAttribute('data-form-map-id');
-    var body;
-    if (table === 'base_task' && item.kind !== 'task') {
-      body = { op: 'link', task_id: id, entity_id: item.id };
-    } else if (table === 'base_entity' && item.kind === 'task') {
-      body = { op: 'link', task_id: item.id, entity_id: id };
-    } else if (table === 'base_entity') {
-      body = { op: 'link', source_entity_id: id, target_entity_id: item.id, relationship_type: 'relates-to' };
-    } else {
-      status.textContent = 'Link from this record type needs the record saved and registered first.';
-      return;
-    }
-    postLink(body, function () {
-      searchWrap.hidden = true;
-      loaded = false;
-      loadMap();
-    });
-  }
-
   function postLink(body, done) {
-    fetch('/api/links/' + (body.task_id ? 'task-entity' : 'entity-rel'), {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+    fetch('/api/links/' + (body.task_id && body.entity_id && !body.source_entity_id ? 'task-entity' : 'entity-rel'), {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (document.querySelector('input[name="csrf_token"]') || {}).value || '' },
       body: JSON.stringify(body)
-    }).then(function (r) { return r.ok ? r.json() : r.text().then(function (t) { throw new Error(t); }); })
-      .then(done)
-      .catch(function (e) { status.textContent = 'Link failed: ' + e.message; });
-  }
-
-  function csrfToken() {
-    var el = document.querySelector('input[name="csrf_token"]');
-    return el ? el.value : '';
-  }
-
-  function loadMap() {
-    if (!mapWrap) return;
-    var table = mapWrap.getAttribute('data-form-map-table');
-    var id = mapWrap.getAttribute('data-form-map-id');
-    if (!id) { status.textContent = 'Save this record to see what it is related to.'; return; }
-    status.hidden = false;
-    status.textContent = 'Loading related…';
-    fetch('/f/graph/' + encodeURIComponent(table) + '/' + encodeURIComponent(id) + '?depth=1', {
-      credentials: 'same-origin'
-    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (g) {
-      loaded = true;
-      graph = g;
-      if (!g || !g.nodes || !g.nodes.length) {
-        status.textContent = 'Nothing related yet.';
-        if (countEl) countEl.textContent = '';
-        return;
-      }
-      status.hidden = true;
-      if (countEl) countEl.textContent = '(' + g.nodes.length + ')';
-      drawMap(g);
-    }).catch(function () {
-      status.textContent = 'Could not load the map.';
-    });
-  }
-
-  function drawMap(g) {
-    var ns = 'http://www.w3.org/2000/svg';
-    var nodes = g.nodes, edges = g.edges || [];
-    var w = 480, h = 380;
-    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-    svg.innerHTML = '';
-    var rootId = g.centre_entity_id || (nodes[0] && nodes[0].id);
-    // group nodes by type for ring assignment
-    var groups = {};
-    nodes.forEach(function (n) {
-      if (n.id === rootId) return;
-      var k = n.entity_type || 'Other';
-      (groups[k] = groups[k] || []).push(n);
-    });
-    var pos = {};
-    pos[rootId] = { x: w / 2, y: h / 2 };
-    var radius = 135, angle = -Math.PI / 2;
-    Object.keys(groups).sort().forEach(function (k) {
-      var arr = groups[k];
-      var step = (2 * Math.PI) / nodes.length;
-      arr.forEach(function (n) {
-        pos[n.id] = { x: w / 2 + Math.cos(angle) * radius, y: h / 2 + Math.sin(angle) * radius };
-        angle += step;
-      });
-    });
-    edges.forEach(function (e) {
-      var a = pos[e.source_entity_id], b = pos[e.target_entity_id];
-      if (!a || !b) return;
-      var line = document.createElementNS(ns, 'line');
-      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-      line.setAttribute('class', 'ui-form-map-edge ui-form-map-edge-' + (e.relationship_type || 'relates-to').replace(/\s+/g, '-'));
-      svg.appendChild(line);
-    });
-    nodes.forEach(function (n) {
-      var p = pos[n.id]; if (!p) return;
-      var grp = document.createElementNS(ns, 'g');
-      var kind = (n.entity_type || 'record').toLowerCase().replace(/\s+/g, '-');
-      grp.setAttribute('class', 'ui-form-map-node ui-form-map-node-' + kind);
-      grp.setAttribute('transform', 'translate(' + p.x + ',' + p.y + ')');
-      if (n.id !== rootId) {
-        var hit = document.createElementNS(ns, 'circle');
-        hit.setAttribute('r', 16);
-        hit.setAttribute('fill', 'transparent');
-        hit.style.cursor = 'pointer';
-        hit.addEventListener('click', function () { unlinkNode(n); });
-        grp.appendChild(hit);
-      }
-      var c = document.createElementNS(ns, 'circle');
-      c.setAttribute('r', n.id === rootId ? 10 : 7);
-      grp.appendChild(c);
-      var label = document.createElementNS(ns, 'text');
-      label.setAttribute('x', 0); label.setAttribute('y', -14);
-      label.setAttribute('text-anchor', 'middle');
-      label.textContent = n.name || n.number || n.id;
-      grp.appendChild(label);
-      svg.appendChild(grp);
-    });
-  }
-
-  function unlinkNode(n) {
-    if (n.id.indexOf('task:') === 0) {
-      var taskID = n.id.slice(5);
-      var entityID = graph.centre_entity_id;
-      postLink({ op: 'unlink', task_id: taskID, entity_id: entityID }, function () { loaded = false; loadMap(); });
-      return;
-    }
-    // entity neighbour: unlink relationship(s) between it and the root entity
-    var rootEntity = graph.centre_entity_id;
-    postLink({ op: 'unlink', source_entity_id: rootEntity, target_entity_id: n.id }, function () { loaded = false; loadMap(); });
+    }).then(function (r) { if (r.ok) done(); }).catch(function () {});
   }
 })();
 </script>

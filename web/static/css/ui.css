@@ -17,6 +17,18 @@
 
 /* Form-embedded relationship map (phase 1) */
 .ui-form-map { position: relative; min-height: 240px; }
+.ui-form-map-square { aspect-ratio: 1 / 1; min-height: 0; display: flex; flex-direction: column; margin-bottom: 0.75rem; }
+.ui-form-map-square .ui-form-map-svg { flex: 1 1 auto; height: 100%; }
+.ui-form-map-bar { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0 0.4rem; }
+.ui-form-map-title { font-weight: 600; font-size: 0.9rem; }
+.ui-form-map-meta { color: var(--text-dim, #6b7280); font-size: 0.8rem; margin-left: auto; }
+.ui-form-map-canvas { flex: 1 1 auto; width: 100%; display: block; touch-action: none; cursor: grab; }
+.ui-form-map-canvas:active { cursor: grabbing; }
+.ui-form-map-results { max-height: 12rem; overflow-y: auto; border: 1px solid var(--border, #e5e7eb); border-radius: 8px; }
+.ui-form-map-result { display: block; width: 100%; text-align: left; padding: 0.45rem 0.6rem; background: none; border: 0; border-bottom: 1px solid var(--border, #e5e7eb); font-size: 0.85rem; cursor: pointer; }
+.ui-form-map-result:last-child { border-bottom: 0; }
+.ui-form-map-result:hover { background: var(--surface-2, #f3f4f6); }
+
 .ui-form-map-status { color: var(--text-dim, #6b7280); font-size: 0.85rem; padding: 0.5rem 0; }
 .ui-form-map-svg { width: 100%; height: auto; }
 .ui-form-map-edge { stroke: var(--border, #d1d5db); stroke-width: 1.5; }
