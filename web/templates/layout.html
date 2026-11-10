@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="{{.Theme}}">
+<html lang="en" data-theme="{{.Theme}}" data-overlay="{{.Overlay}}">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -22,12 +22,13 @@
         </script>
         <script src="/static/js/vendor/htmx-1.9.2.min.js"></script>
         <script src="/static/js/push-client.js" defer></script>
+        <script src="/static/js/velm-overlay.js" defer></script>
         <script src="/static/js/vendor/hyperscript-0.9.11.min.js"></script>
         <script src="/static/js/navigation-guard.js"></script>
         <script src="/static/js/request-monitoring.js"></script>
         <script src="/static/js/csp-behaviour.js"></script>
         <script src="/static/js/vendor/tailwind-browser-4.js"></script>
-        <link rel="stylesheet" href="/static/css/ui.css?v=20261109a" />
+        <link rel="stylesheet" href="/static/css/ui.css?v=20261110a" />
         <style>
             #burgerIcon.open .line1 {
                 transform: rotate(45deg) translate(5px, 5px);
@@ -120,18 +121,17 @@
                 const velmThemes = {
                     "light": "Velm light",
                     "dark": "Velm dark",
-                    "nord": "Nord",
-                    "tokyo-night": "Tokyo Night",
-                    "catppuccin": "Catppuccin Latte",
-                    "renault5": "Renault 5 Yellow",
-                    "lcars": "LCARS",
-                    "galactic": "Galactic Purple",
-                    "ember": "Ember",
-                    "verdant": "Verdant",
-                    "ocean": "Ocean Deep",
-                    "rosewood": "Rosewood",
-                    "steel": "Steel Blue",
-                    "dune": "Dune",
+                    "yellow": "Velm yellow",
+                    "purple": "Velm purple",
+                    "crimson": "Velm crimson",
+                    "mint": "Velm mint"
+                };
+                const velmOverlays = {
+                    "none": "None",
+                    "matrix": "Matrix",
+                    "nature": "Nature",
+                    "rainfall": "Rainfall",
+                    "fireflies": "Fireflies",
                     "aurora": "Aurora"
                 };
                 const defaultTheme = "light";
@@ -155,7 +155,25 @@
                     const resolved = normaliseTheme(theme);
                     document.documentElement.dataset.theme = resolved;
                     syncThemeSelector();
+                    document.dispatchEvent(new CustomEvent("velm:theme", { detail: resolved }));
                     return resolved;
+                }
+
+                function applyOverlay(overlay) {
+                    const resolved = velmOverlays[overlay] ? overlay : "none";
+                    document.documentElement.dataset.overlay = resolved;
+                    document.dispatchEvent(new CustomEvent("velm:overlay", { detail: resolved }));
+                }
+
+                function persistOverlay(overlay) {
+                    fetch("/api/preferences/overlay", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        credentials: "same-origin",
+                        body: JSON.stringify({ value: overlay })
+                    }).catch(function () {
+                        // Non-fatal: keep the applied overlay in-memory for the session.
+                    });
                 }
 
                 function persistTheme(theme) {
@@ -356,6 +374,22 @@
                 });
 
                 applyTheme(getActiveTheme());
+                applyOverlay(document.documentElement.dataset.overlay || "none");
+
+                const overlaySelect = document.getElementById("velm-overlay-select");
+                if (overlaySelect) {
+                    overlaySelect.value = document.documentElement.dataset.overlay || "none";
+                    overlaySelect.addEventListener("change", function () {
+                        applyOverlay(overlaySelect.value);
+                        persistOverlay(overlaySelect.value);
+                    });
+                }
+                document.addEventListener("velm:overlay", function (event) {
+                    if (overlaySelect && overlaySelect.value !== event.detail) {
+                        overlaySelect.value = event.detail;
+                    }
+                });
+
                 animatePageIn();
 
                 if ('serviceWorker' in navigator) {

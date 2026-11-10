@@ -19,21 +19,12 @@ const (
 // validThemes is the set of theme identifiers the registry accepts. Unknown or
 // blank values fall back to the default ("light").
 var validThemes = map[string]bool{
-	"light":       true,
-	"dark":        true,
-	"nord":        true,
-	"tokyo-night": true,
-	"catppuccin":  true,
-	"renault5":    true,
-	"lcars":       true,
-	"galactic":    true,
-	"ember":       true,
-	"verdant":     true,
-	"ocean":       true,
-	"rosewood":    true,
-	"steel":       true,
-	"dune":        true,
-	"aurora":      true,
+	"light":   true,
+	"dark":    true,
+	"yellow":  true,
+	"purple":  true,
+	"crimson": true,
+	"mint":    true,
 }
 
 const defaultTheme = "light"

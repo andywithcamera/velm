@@ -1,0 +1,34 @@
+/* Ambient overlays: decorative, independent of colour theme. Opt-in via
+   html[data-overlay]. The canvas sits behind all app content; panels stay
+   mostly opaque so text contrast is untouched. prefers-reduced-motion gets a
+   static, non-animating layer. */
+
+.ui-overlay-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -1;
+  pointer-events: none;
+  display: none;
+}
+
+html[data-overlay="matrix"] .ui-overlay-canvas,
+html[data-overlay="nature"] .ui-overlay-canvas,
+html[data-overlay="rainfall"] .ui-overlay-canvas,
+html[data-overlay="fireflies"] .ui-overlay-canvas,
+html[data-overlay="aurora"] .ui-overlay-canvas {
+  display: block;
+}
+
+/* Per-overlay tuning. */
+html[data-overlay="matrix"] .ui-overlay-canvas { opacity: 0.55; }
+html[data-overlay="nature"] .ui-overlay-canvas { opacity: 0.6; }
+html[data-overlay="rainfall"] .ui-overlay-canvas { opacity: 0.5; }
+html[data-overlay="fireflies"] .ui-overlay-canvas { opacity: 0.75; }
+html[data-overlay="aurora"] .ui-overlay-canvas { opacity: 0.8; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* Draw one static frame; the script checks the same query and never rAFs. */
+  html[data-overlay]:not([data-overlay="none"]) .ui-overlay-canvas { opacity: 0.35; }
+}
