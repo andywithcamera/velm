@@ -121,7 +121,7 @@ func registerRoutes() {
 	http.Handle("/builder/schema", withAuth(authz.PermissionWrite, http.HandlerFunc(handleSchemaBuilderPage)))
 	http.Handle("/builder/pages", withAuth(authz.PermissionWrite, http.HandlerFunc(handlePageBuilder)))
 	http.Handle("/admin/app-editor", withAuth(authz.PermissionWrite, http.HandlerFunc(handlePageBuilder)))
-	http.Handle("/map", withAuth(authz.PermissionView, http.HandlerFunc(handleRelationshipMapPage)))
+	http.Handle("/map", withAuth(authz.PermissionView, http.HandlerFunc(handleMapRedirect)))
 	http.Handle("/task-catalog", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogPage)))
 	http.Handle("/task-catalog/order", withAuth(authz.PermissionWrite, http.HandlerFunc(handleTaskCatalogOrder)))
 	http.Handle("/task", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))
