@@ -126,6 +126,7 @@ func registerRoutes() {
 	http.Handle("/task", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))
 	http.Handle("/task/", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))
 	http.Handle("/t/", withAuth(authz.PermissionView, http.HandlerFunc(handleTableView)))
+	http.Handle("/f/graph/", withAuth(authz.PermissionView, http.HandlerFunc(handleFormGraph)))
 	http.Handle("/f/", withAuth(
 		authz.PermissionView,
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

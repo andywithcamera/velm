@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"velm/internal/relmap"
+)
 
 func TestParseRelationshipMapDepthDefaultsAndClamps(t *testing.T) {
 	tests := []struct {
@@ -23,13 +27,13 @@ func TestParseRelationshipMapDepthDefaultsAndClamps(t *testing.T) {
 }
 
 func TestRelationshipMapPreferLevelPrefersCloserToCenterThenNegative(t *testing.T) {
-	if !relationshipMapPreferLevel(3, 1) {
+	if !relmap.PreferLevel(3, 1) {
 		t.Fatal("expected closer level to win")
 	}
-	if !relationshipMapPreferLevel(1, -1) {
+	if !relmap.PreferLevel(1, -1) {
 		t.Fatal("expected negative level to win when distance ties")
 	}
-	if relationshipMapPreferLevel(-2, -2) {
+	if relmap.PreferLevel(-2, -2) {
 		t.Fatal("expected identical level not to replace existing value")
 	}
 }
@@ -43,7 +47,7 @@ func TestSelectRelationshipMapTethersUsesExtremesAndDegree(t *testing.T) {
 		{ID: "down-high", Name: "Database", Level: 2, Degree: 5},
 	}
 
-	ceiling, floor := selectRelationshipMapTethers(nodes)
+	ceiling, floor := relmap.SelectTethers(nodes)
 	if ceiling != "up-high" {
 		t.Fatalf("ceiling = %q, want %q", ceiling, "up-high")
 	}
