@@ -14,3 +14,17 @@
 @import url("./ui/40-velm-monochrome.css?v=20261109a");
 @import url("./ui/50-docs.css?v=20260511d");
 @import url("./ui/55-ui-refinements.css?v=20261108a");
+
+/* Form-embedded relationship map (phase 1) */
+.ui-form-map { position: relative; min-height: 240px; }
+.ui-form-map-status { color: var(--text-dim, #6b7280); font-size: 0.85rem; padding: 0.5rem 0; }
+.ui-form-map-svg { width: 100%; height: auto; }
+.ui-form-map-edge { stroke: var(--border, #d1d5db); stroke-width: 1.5; }
+.ui-form-map-edge-secures { stroke: #dc2626; }
+.ui-form-map-edge-part_of { stroke: #2563eb; }
+.ui-form-map-edge-uses { stroke: #059669; }
+.ui-form-map-node circle { fill: var(--accent, #4f46e5); }
+.ui-form-map-node-database-table circle { fill: #7c3aed; }
+.ui-form-map-node-api-route circle { fill: #059669; }
+.ui-form-map-node-security-control circle { fill: #dc2626; }
+.ui-form-map-node text { font-size: 10px; fill: var(--text, currentColor); paint-order: stroke; stroke: var(--surface, #fff); stroke-width: 3px; stroke-linejoin: round; }

@@ -557,6 +557,11 @@
     {{if not .FormHideTimeline}}
     <aside id="recordTimelineAside" class="ui-form-side ui-record-timeline-pane" data-form-timeline-pane="true">
       <section class="ui-card ui-form-sidebar-card ui-record-timeline-card">
+	        <div class="ui-record-panel-tabs" data-record-panel-tabs="true" style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.75rem;">
+	          <button type="button" class="ui-tab is-active" data-record-panel-tab="timeline">Updates</button>
+	          <button type="button" class="ui-tab" data-record-panel-tab="map">Related <span data-record-map-count="true"></span></button>
+	        </div>
+	        <div data-record-panel-view="timeline">
 	        <div class="ui-record-timeline-head">
 	          <div>
 	            <h3 class="ui-form-sidebar-title">Updates and Comments</h3>
@@ -630,6 +635,13 @@
           {{end}}
         </div>
       </section>
+        </div>
+        <div data-record-panel-view="map" hidden>
+          <div class="ui-form-map" data-form-map="true" data-form-map-table="{{.FormTable}}" data-form-map-id="{{.FormID}}">
+            <div class="ui-form-map-status" data-form-map-status="true">Loading related…</div>
+            <svg class="ui-form-map-svg" data-form-map-svg="true" role="img" aria-label="Relationship map"></svg>
+          </div>
+        </div>
     </aside>
     {{end}}
   </div>
@@ -3021,3 +3033,93 @@
 
 		</script>
 {{end}}
+
+<script nonce="{{.CSPNonce}}">
+(function () {
+  var tabs = document.querySelector('[data-record-panel-tabs="true"]');
+  if (!tabs) return;
+  var views = {
+    timeline: document.querySelector('[data-record-panel-view="timeline"]'),
+    map: document.querySelector('[data-record-panel-view="map"]')
+  };
+  var mapWrap = document.querySelector('[data-form-map="true"]');
+  var svg = document.querySelector('[data-form-map-svg="true"]');
+  var status = document.querySelector('[data-form-map-status="true"]');
+  var countEl = document.querySelector('[data-record-map-count="true"]');
+  var loaded = false;
+  tabs.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-record-panel-tab]');
+    if (!btn) return;
+    var which = btn.getAttribute('data-record-panel-tab');
+    tabs.querySelectorAll('[data-record-panel-tab]').forEach(function (b) {
+      b.classList.toggle('is-active', b === btn);
+    });
+    Object.keys(views).forEach(function (k) {
+      if (views[k]) views[k].hidden = k !== which;
+    });
+    if (which === 'map' && !loaded) loadMap();
+  });
+  function loadMap() {
+    if (!mapWrap) return;
+    var table = mapWrap.getAttribute('data-form-map-table');
+    var id = mapWrap.getAttribute('data-form-map-id');
+    if (!id) { status.textContent = 'Save this record to see what it is related to.'; return; }
+    fetch('/f/graph/' + encodeURIComponent(table) + '/' + encodeURIComponent(id) + '?depth=1', {
+      credentials: 'same-origin'
+    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (g) {
+      loaded = true;
+      if (!g || !g.nodes || !g.nodes.length) {
+        status.textContent = 'Nothing related yet.';
+        return;
+      }
+      status.hidden = true;
+      if (countEl) countEl.textContent = '(' + g.nodes.length + ')';
+      drawMap(g);
+    }).catch(function () {
+      status.textContent = 'Could not load the map.';
+    });
+  }
+  function drawMap(g) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var nodes = g.nodes, edges = g.edges || [];
+    var w = 480, h = 360;
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    svg.innerHTML = '';
+    var byId = {};
+    nodes.forEach(function (n, i) { byId[n.id] = n; });
+    // radial layout: root centre, others on rings
+    var rootId = g.centre_entity_id || (nodes[0] && nodes[0].id);
+    var others = nodes.filter(function (n) { return n.id !== rootId; });
+    var pos = {};
+    pos[rootId] = { x: w / 2, y: h / 2 };
+    others.forEach(function (n, i) {
+      var a = (2 * Math.PI * i) / Math.max(others.length, 1);
+      pos[n.id] = { x: w / 2 + Math.cos(a) * 130, y: h / 2 + Math.sin(a) * 110 };
+    });
+    edges.forEach(function (e) {
+      var a = pos[e.source_entity_id], b = pos[e.target_entity_id];
+      if (!a || !b) return;
+      var line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+      line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
+      line.setAttribute('class', 'ui-form-map-edge ui-form-map-edge-' + (e.relationship_type || 'relates-to'));
+      svg.appendChild(line);
+    });
+    nodes.forEach(function (n) {
+      var p = pos[n.id]; if (!p) return;
+      var grp = document.createElementNS(ns, 'g');
+      grp.setAttribute('class', 'ui-form-map-node ui-form-map-node-' + (n.entity_type || 'record').toLowerCase().replace(/\s+/g, '-'));
+      grp.setAttribute('transform', 'translate(' + p.x + ',' + p.y + ')');
+      var c = document.createElementNS(ns, 'circle');
+      c.setAttribute('r', n.id === rootId ? 10 : 7);
+      grp.appendChild(c);
+      var label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', 0); label.setAttribute('y', -14);
+      label.setAttribute('text-anchor', 'middle');
+      label.textContent = n.name || n.number || n.id;
+      grp.appendChild(label);
+      svg.appendChild(grp);
+    });
+  }
+})();
+</script>

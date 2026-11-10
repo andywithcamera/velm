@@ -80,6 +80,7 @@ var routeAccess = map[string]accessClass{
 	"/task/":                           accessView,
 	"/t/":                              accessView,
 	"/f/":                              accessView,
+	"/f/graph/":                        accessView,
 	"/docs":                            accessView,
 	"/docs/manage":                     accessView,
 	"/d/":                              accessView,
