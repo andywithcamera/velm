@@ -225,6 +225,34 @@ func LoadGraph(ctx context.Context, userID, rootID string, maxDepth int) (Graph,
 		})
 	}
 
+	// Task layer: tasks linked to any visible entity, with hierarchy
+	// (ancestors, siblings via shared parents, children). Task nodes are
+	// additive to the entity graph; a task failure must not break it.
+	taskNodes, taskEdges, taskErr := taskNodesForEntities(ctx, visibleEntityIDs(visibleEntities))
+	if taskErr == nil {
+		taskSet := map[string]bool{}
+		for _, n := range taskNodes {
+			taskSet[n.ID] = true
+		}
+		nodeIDs := map[string]bool{}
+		for _, n := range nodes {
+			nodeIDs[n.ID] = true
+		}
+		for _, e := range taskEdges {
+			if taskSet[e.SourceEntityID] && (nodeIDs[e.TargetEntityID] || taskSet[e.TargetEntityID]) {
+				edges = append(edges, e)
+				if taskSet[e.TargetEntityID] && !nodeIDs[e.TargetEntityID] {
+					connectedNodes[e.TargetEntityID] = true
+				}
+			}
+		}
+		for _, n := range taskNodes {
+			// keep only tasks that ended up connected
+			if connectedNodes[n.ID] {
+				nodes = append(nodes, n)
+			}
+		}
+	}
 	ceilingEntity, floorEntity := SelectTethers(nodes)
 	selectedNode := Node{}
 	for _, node := range nodes {
@@ -244,6 +272,14 @@ func LoadGraph(ctx context.Context, userID, rootID string, maxDepth int) (Graph,
 		Nodes:          nodes,
 		Edges:          edges,
 	}, selectedNode, nil
+}
+
+func visibleEntityIDs(entities map[string]EntityRecord) []string {
+	out := make([]string, 0, len(entities))
+	for id := range entities {
+		out = append(out, id)
+	}
+	return out
 }
 
 func AdoptLevel(levels, distances, frontier map[string]int, entityID string, candidateLevel, candidateDistance int) {

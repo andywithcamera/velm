@@ -3046,7 +3046,8 @@
   var svg = document.querySelector('[data-form-map-svg="true"]');
   var status = document.querySelector('[data-form-map-status="true"]');
   var countEl = document.querySelector('[data-record-map-count="true"]');
-  var loaded = false;
+  var loaded = false, graph = null;
+
   tabs.addEventListener('click', function (e) {
     var btn = e.target.closest('[data-record-panel-tab]');
     if (!btn) return;
@@ -3059,17 +3060,124 @@
     });
     if (which === 'map' && !loaded) loadMap();
   });
+
+  var bar = document.createElement('div');
+  bar.style.cssText = 'display:flex;gap:0.5rem;margin-bottom:0.5rem;';
+  var linkBtn = document.createElement('button');
+  linkBtn.type = 'button';
+  linkBtn.className = 'ui-btn ui-btn-secondary';
+  linkBtn.textContent = '+ Link';
+  var searchWrap = document.createElement('div');
+  searchWrap.hidden = true;
+  searchWrap.style.cssText = 'margin-bottom:0.5rem;';
+  bar.appendChild(linkBtn);
+  bar.appendChild(searchWrap);
+  mapWrap.insertBefore(bar, mapWrap.firstChild);
+
+  linkBtn.addEventListener('click', function () {
+    searchWrap.hidden = !searchWrap.hidden;
+    if (!searchWrap.hidden) buildSearch();
+  });
+
+  function buildSearch() {
+    searchWrap.innerHTML = '';
+    var input = document.createElement('input');
+    input.type = 'search';
+    input.className = 'ui-input';
+    input.placeholder = 'Search entities or tasks to link…';
+    input.style.width = '100%';
+    var results = document.createElement('div');
+    results.className = 'ui-form-map-results';
+    searchWrap.appendChild(input);
+    searchWrap.appendChild(results);
+    input.focus();
+    var timer = null;
+    input.addEventListener('input', function () {
+      clearTimeout(timer);
+      var q = input.value.trim();
+      if (q.length < 2) { results.innerHTML = ''; return; }
+      timer = setTimeout(function () {
+        Promise.all([
+          fetch('/api/reference-options?table=base_entity&limit=5&q=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : { options: [] }; }),
+          fetch('/api/reference-options?table=base_task&limit=5&q=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : { options: [] }; })
+        ]).then(function (pair) {
+          renderResults(results, (pair[0].options || []).map(function (o) { return { id: o.value, name: o.label, kind: 'entity' }; }),
+            (pair[1].options || []).map(function (o) { return { id: o.value, name: o.label, kind: 'task' }; }));
+        }).catch(function () { results.innerHTML = ''; });
+      }, 250);
+    });
+  }
+
+  function renderResults(results, entities, tasks) {
+    results.innerHTML = '';
+    var items = entities.map(function (e) { e.kind = 'entity'; return e; })
+      .concat(tasks.map(function (t) { t.kind = 'task'; return t; }));
+    if (!items.length) {
+      results.textContent = 'No matches.';
+      return;
+    }
+    items.slice(0, 10).forEach(function (item) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'ui-form-map-result';
+      row.textContent = (item.kind === 'task' ? '[task] ' : '') + (item.name || '');
+      row.addEventListener('click', function () { createLink(item); });
+      results.appendChild(row);
+    });
+  }
+
+  function createLink(item) {
+    var table = mapWrap.getAttribute('data-form-map-table');
+    var id = mapWrap.getAttribute('data-form-map-id');
+    var body;
+    if (table === 'base_task' && item.kind !== 'task') {
+      body = { op: 'link', task_id: id, entity_id: item.id };
+    } else if (table === 'base_entity' && item.kind === 'task') {
+      body = { op: 'link', task_id: item.id, entity_id: id };
+    } else if (table === 'base_entity') {
+      body = { op: 'link', source_entity_id: id, target_entity_id: item.id, relationship_type: 'relates-to' };
+    } else {
+      status.textContent = 'Link from this record type needs the record saved and registered first.';
+      return;
+    }
+    postLink(body, function () {
+      searchWrap.hidden = true;
+      loaded = false;
+      loadMap();
+    });
+  }
+
+  function postLink(body, done) {
+    fetch('/api/links/' + (body.task_id ? 'task-entity' : 'entity-rel'), {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.ok ? r.json() : r.text().then(function (t) { throw new Error(t); }); })
+      .then(done)
+      .catch(function (e) { status.textContent = 'Link failed: ' + e.message; });
+  }
+
+  function csrfToken() {
+    var el = document.querySelector('input[name="csrf_token"]');
+    return el ? el.value : '';
+  }
+
   function loadMap() {
     if (!mapWrap) return;
     var table = mapWrap.getAttribute('data-form-map-table');
     var id = mapWrap.getAttribute('data-form-map-id');
     if (!id) { status.textContent = 'Save this record to see what it is related to.'; return; }
+    status.hidden = false;
+    status.textContent = 'Loading related…';
     fetch('/f/graph/' + encodeURIComponent(table) + '/' + encodeURIComponent(id) + '?depth=1', {
       credentials: 'same-origin'
     }).then(function (r) { return r.ok ? r.json() : null; }).then(function (g) {
       loaded = true;
+      graph = g;
       if (!g || !g.nodes || !g.nodes.length) {
         status.textContent = 'Nothing related yet.';
+        if (countEl) countEl.textContent = '';
         return;
       }
       status.hidden = true;
@@ -3079,22 +3187,31 @@
       status.textContent = 'Could not load the map.';
     });
   }
+
   function drawMap(g) {
     var ns = 'http://www.w3.org/2000/svg';
     var nodes = g.nodes, edges = g.edges || [];
-    var w = 480, h = 360;
+    var w = 480, h = 380;
     svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     svg.innerHTML = '';
-    var byId = {};
-    nodes.forEach(function (n, i) { byId[n.id] = n; });
-    // radial layout: root centre, others on rings
     var rootId = g.centre_entity_id || (nodes[0] && nodes[0].id);
-    var others = nodes.filter(function (n) { return n.id !== rootId; });
+    // group nodes by type for ring assignment
+    var groups = {};
+    nodes.forEach(function (n) {
+      if (n.id === rootId) return;
+      var k = n.entity_type || 'Other';
+      (groups[k] = groups[k] || []).push(n);
+    });
     var pos = {};
     pos[rootId] = { x: w / 2, y: h / 2 };
-    others.forEach(function (n, i) {
-      var a = (2 * Math.PI * i) / Math.max(others.length, 1);
-      pos[n.id] = { x: w / 2 + Math.cos(a) * 130, y: h / 2 + Math.sin(a) * 110 };
+    var radius = 135, angle = -Math.PI / 2;
+    Object.keys(groups).sort().forEach(function (k) {
+      var arr = groups[k];
+      var step = (2 * Math.PI) / nodes.length;
+      arr.forEach(function (n) {
+        pos[n.id] = { x: w / 2 + Math.cos(angle) * radius, y: h / 2 + Math.sin(angle) * radius };
+        angle += step;
+      });
     });
     edges.forEach(function (e) {
       var a = pos[e.source_entity_id], b = pos[e.target_entity_id];
@@ -3102,14 +3219,23 @@
       var line = document.createElementNS(ns, 'line');
       line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
       line.setAttribute('x2', b.x); line.setAttribute('y2', b.y);
-      line.setAttribute('class', 'ui-form-map-edge ui-form-map-edge-' + (e.relationship_type || 'relates-to'));
+      line.setAttribute('class', 'ui-form-map-edge ui-form-map-edge-' + (e.relationship_type || 'relates-to').replace(/\s+/g, '-'));
       svg.appendChild(line);
     });
     nodes.forEach(function (n) {
       var p = pos[n.id]; if (!p) return;
       var grp = document.createElementNS(ns, 'g');
-      grp.setAttribute('class', 'ui-form-map-node ui-form-map-node-' + (n.entity_type || 'record').toLowerCase().replace(/\s+/g, '-'));
+      var kind = (n.entity_type || 'record').toLowerCase().replace(/\s+/g, '-');
+      grp.setAttribute('class', 'ui-form-map-node ui-form-map-node-' + kind);
       grp.setAttribute('transform', 'translate(' + p.x + ',' + p.y + ')');
+      if (n.id !== rootId) {
+        var hit = document.createElementNS(ns, 'circle');
+        hit.setAttribute('r', 16);
+        hit.setAttribute('fill', 'transparent');
+        hit.style.cursor = 'pointer';
+        hit.addEventListener('click', function () { unlinkNode(n); });
+        grp.appendChild(hit);
+      }
       var c = document.createElementNS(ns, 'circle');
       c.setAttribute('r', n.id === rootId ? 10 : 7);
       grp.appendChild(c);
@@ -3120,6 +3246,18 @@
       grp.appendChild(label);
       svg.appendChild(grp);
     });
+  }
+
+  function unlinkNode(n) {
+    if (n.id.indexOf('task:') === 0) {
+      var taskID = n.id.slice(5);
+      var entityID = graph.centre_entity_id;
+      postLink({ op: 'unlink', task_id: taskID, entity_id: entityID }, function () { loaded = false; loadMap(); });
+      return;
+    }
+    // entity neighbour: unlink relationship(s) between it and the root entity
+    var rootEntity = graph.centre_entity_id;
+    postLink({ op: 'unlink', source_entity_id: rootEntity, target_entity_id: n.id }, function () { loaded = false; loadMap(); });
   }
 })();
 </script>
