@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Task engine (issue #112, design: Task Composition Model.md).
@@ -60,8 +61,13 @@ type TaskDefinition struct {
 	ScriptText     string
 	RunIfScript    string
 	DefaultGroupID string
-	SpawnRules     []TaskSpawnRule
-	IsActive       bool
+	// DefaultAssigneeID routes the instance to a person as well as a group.
+	// A group alone leaves the task unassigned, and the 085 trigger refuses
+	// in_progress without an assignee, so every spawned task needed a
+	// dispatcher click before anyone could start it.
+	DefaultAssigneeID string
+	SpawnRules        []TaskSpawnRule
+	IsActive          bool
 }
 
 type TaskSpawnRule struct {
@@ -79,10 +85,11 @@ func getTaskDefinition(ctx context.Context, q scriptQuerier, id string) (*TaskDe
 	var spawnRulesJSON []byte
 	err := q.QueryRow(ctx, `
 		SELECT _id::text, slug, display_name, COALESCE(description, ''), is_container,
-			script_text, run_if_script, default_group_id::text, spawn_rules, is_active
+			script_text, run_if_script, default_group_id::text, spawn_rules, is_active,
+			COALESCE(default_assignee_id::text, '')
 		FROM base_task_definition WHERE _id = $1 AND _deleted_at IS NULL`, id).Scan(
 		&d.ID, &d.Slug, &d.DisplayName, &d.Description, &d.IsContainer, &d.ScriptText, &d.RunIfScript,
-		&groupID, &spawnRulesJSON, &d.IsActive)
+		&groupID, &spawnRulesJSON, &d.IsActive, &d.DefaultAssigneeID)
 	if err != nil {
 		return nil, fmt.Errorf("load task definition: %w", err)
 	}
@@ -134,19 +141,69 @@ func getTaskDefinitionChildren(ctx context.Context, q scriptQuerier, containerID
 
 // SpawnTaskInstance creates a task instance from a definition. Children of
 // a container spawn immediately under parent_task_id, in pending (issue
-// #206/#209): dependency-free children promote to ready when the parent
-// starts, the rest when their prerequisites close. Inputs bind at spawn for
-// root tasks; for container children they bind when the parent starts
-// (StartTask applies input_mapping against the parent scope).
+// #206/#209). A container that is itself ready opens in the same call: it
+// binds each child's input_mapping from its own scope and promotes the ones
+// whose dependency edges are satisfied (090). Inputs bind at spawn for root
+// tasks and at open for children, both against the parent's variable scope.
 func SpawnTaskInstance(ctx context.Context, q scriptQuerier, definitionID, parentTaskID, requestedBy string, inputs map[string]any) (string, error) {
-	def, err := getTaskDefinition(ctx, q, definitionID)
-	if err != nil {
-		return "", err
+	// A spawn now opens the containers it creates, which is several writes.
+	// When the caller hands us the pool rather than a transaction, give the
+	// whole tree one so a failure half way cannot leave a request with
+	// children that were spawned but never opened.
+	var taskID string
+	err := inSpawnTransaction(ctx, q, func(querier scriptQuerier) error {
+		def, err := getTaskDefinition(ctx, querier, definitionID)
+		if err != nil {
+			return err
+		}
+		taskID, err = spawnTaskForDefinition(ctx, querier, def, parentTaskID, requestedBy, inputs)
+		return err
+	})
+	return taskID, err
+}
+
+// inSpawnTransaction runs fn inside a transaction when the caller passed the
+// pool, and directly when it already passed a transaction.
+func inSpawnTransaction(ctx context.Context, q scriptQuerier, fn func(scriptQuerier) error) error {
+	pool, ok := q.(*pgxpool.Pool)
+	if !ok {
+		return fn(q)
 	}
-	return spawnTaskForDefinition(ctx, q, def, parentTaskID, requestedBy, inputs)
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefinition, parentTaskID, requestedBy string, inputs map[string]any) (string, error) {
+	return spawnTaskWithRoute(ctx, q, def, parentTaskID, requestedBy, inputs, nil)
+}
+
+// taskRoute overrides where a spawned instance lands. A non-nil route is
+// explicit: a nil GroupID or AssigneeID clears that field rather than
+// inheriting the definition's default, which is what a "pool" spawn rule
+// means. Ready marks an event-driven spawn (a spawn rule fired by a closure)
+// that has no template position to wait in — see spawnFollowOn.
+type taskRoute struct {
+	GroupID    *string
+	AssigneeID *string
+	Override   bool // apply GroupID/AssigneeID instead of the definition defaults
+	Ready      bool
+}
+
+// spawnTaskWithRoute inserts one instance of def.
+//
+// Routing: the definition carries a default group and a default assignee, and
+// the instance gets both, so a spawned task lands on the desk of the person
+// who does that kind of work instead of waiting for a dispatcher. An assignee
+// is only stamped when it is a member of the group; 085 rejects the write
+// otherwise, and a misconfigured definition must not fail a whole spawn.
+func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinition, parentTaskID, requestedBy string, inputs map[string]any, route *taskRoute) (string, error) {
 	if !def.IsActive {
 		return "", fmt.Errorf("task definition %s is not active", def.Slug)
 	}
@@ -164,6 +221,24 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 		return s
 	}
 
+	groupID := def.DefaultGroupID
+	assigneeID := def.DefaultAssigneeID
+	if route != nil && route.Override {
+		groupID, assigneeID = "", ""
+		if route.GroupID != nil {
+			groupID = *route.GroupID
+		}
+		if route.AssigneeID != nil {
+			assigneeID = *route.AssigneeID
+		}
+	}
+	assigneeID = validatedAssignee(ctx, q, groupID, assigneeID)
+
+	state := spawnStateFor(def, parentTaskID)
+	if route != nil && route.Ready {
+		state = taskStateReady
+	}
+
 	var taskID string
 	var taskNumber string
 	title := instanceTitle(ctx, q, def, parentTaskID)
@@ -176,17 +251,17 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 	plannedStart := instancePlannedStart(inputs)
 	err = q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, priority, parent_task_id,
-			assignment_group_id, requested_by_user_id, definition_id, variables,
+			assignment_group_id, assigned_user_id, requested_by_user_id, definition_id, variables,
 			description, planned_start_at)
 		VALUES (
 			'', -- assigned by the autonumber trigger (051); base_task_number_seq was dropped there
 			$1, 'TASK',
 			$2,
-			$3, $4, $5, $6, $7, $8::jsonb,
-			$9, $10)
+			$3, $4, $5, $6, $7, $8, $9::jsonb,
+			$10, $11)
 		RETURNING _id, number`,
-		title, spawnStateFor(def, parentTaskID), priority, nullable(parentTaskID), nullable(def.DefaultGroupID),
-		nullable(requestedBy), def.ID, string(varsJSON),
+		title, state, priority, nullable(parentTaskID), nullable(groupID),
+		nullable(assigneeID), nullable(requestedBy), def.ID, string(varsJSON),
 		description, plannedStart).Scan(&taskID, &taskNumber)
 	if err != nil {
 		return "", fmt.Errorf("spawn task: %w", err)
@@ -207,9 +282,14 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 			return "", err
 		}
 		for _, child := range children {
-			// Children spawn with empty inputs; StartTask binds them from
-			// the parent scope via input_mapping.
+			// Children spawn with empty inputs; the container opening binds
+			// them from its scope via input_mapping.
 			if _, err := spawnTaskForDefinitionByID(ctx, q, child.ChildDefinitionID, taskID, requestedBy, map[string]any{}); err != nil {
+				return "", err
+			}
+		}
+		if state == taskStateReady {
+			if err := openContainer(ctx, q, taskID, requestedBy, 0); err != nil {
 				return "", err
 			}
 		}
@@ -217,8 +297,45 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 	return taskID, nil
 }
 
+// openContainer starts a plan, not a job. A container holds no work of its
+// own: its work is its children. Waiting for a person to press Start on each
+// wrapper meant a three-level pipeline needed three clicks before the first
+// real task appeared, and in practice nobody made them — the live Feature
+// Request runs had a started root, a ready pipeline, and seven stages that
+// stayed pending for ever.
+//
+// So a container that is itself ready opens its children in the same pass:
+// bind their input mappings from the container's scope, then promote the ones
+// whose dependency edges are satisfied. The container stays ready and closes
+// by roll-up when its children finish; its state is the aggregate, not a
+// person's claim on the wrapper.
+func openContainer(ctx context.Context, q scriptQuerier, taskID, actorUserID string, depth int) error {
+	if depth > maxContainerDepth {
+		return fmt.Errorf("container nesting exceeded %d levels at task %s", maxContainerDepth, taskID)
+	}
+	defID, err := getDefinitionIDByTaskID(ctx, q, taskID)
+	if err != nil || defID == "" {
+		return err
+	}
+	def, err := getTaskDefinition(ctx, q, defID)
+	if err != nil {
+		return err
+	}
+	if !def.IsContainer {
+		return nil
+	}
+	if err := bindChildInputs(ctx, q, taskID, actorUserID); err != nil {
+		return err
+	}
+	return promoteChildrenDepth(ctx, q, taskID, actorUserID, depth+1)
+}
+
+// maxContainerDepth bounds container recursion.
+const maxContainerDepth = 16
+
 // spawnStateFor: root tasks spawn ready; container children spawn pending
-// and promote via dependency edges (issue #209).
+// and are promoted by their container opening or by a dependency edge
+// closing (issues #209, 090).
 func spawnStateFor(def *TaskDefinition, parentTaskID string) string {
 	if parentTaskID == "" {
 		return taskStateReady
@@ -297,7 +414,7 @@ func runStartHooksInTx(ctx context.Context, tx pgx.Tx, taskID, actorUserID strin
 // this is where they receive the parent's context. Mapped values overwrite
 // spawn-time inputs for the same key. Unresolvable $refs are skipped, not
 // fatal — the child starts without that input and its run_if decides.
-func bindChildInputs(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID string) error {
+func bindChildInputs(ctx context.Context, tx scriptQuerier, parentTaskID, actorUserID string) error {
 	defID, err := getDefinitionIDByTaskID(ctx, tx, parentTaskID)
 	if err != nil || defID == "" {
 		return err
@@ -384,9 +501,16 @@ func bindChildInputs(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID s
 //     and its closure_reason is completed or cancelled (success), or when
 //     the reason names that closure_reason exactly (rejection loops wait
 //     for the matching verdict)
-func promoteChildren(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID string) error {
+func promoteChildren(ctx context.Context, tx scriptQuerier, parentTaskID, actorUserID string) error {
+	return promoteChildrenDepth(ctx, tx, parentTaskID, actorUserID, 0)
+}
+
+// promoteChildrenDepth is promoteChildren with the container depth carried
+// through, so a definition that (accidentally) contains itself cannot
+// recurse without bound.
+func promoteChildrenDepth(ctx context.Context, tx scriptQuerier, parentTaskID, actorUserID string, depth int) error {
 	for {
-		promoted, err := promoteChildrenOnce(ctx, tx, parentTaskID, actorUserID)
+		promoted, err := promoteChildrenOnce(ctx, tx, parentTaskID, actorUserID, depth)
 		if err != nil {
 			return err
 		}
@@ -404,7 +528,7 @@ type childInstanceState struct {
 	vars   map[string]any
 }
 
-func promoteChildrenOnce(ctx context.Context, tx pgx.Tx, parentTaskID, actorUserID string) (bool, error) {
+func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, actorUserID string, depth int) (bool, error) {
 	// Sibling instances: def id -> (state, closure reason).
 	rows, err := tx.Query(ctx, `
 		SELECT _id::text, definition_id::text, state, closure_reason, variables
@@ -457,7 +581,7 @@ func promoteChildrenOnce(ctx context.Context, tx pgx.Tx, parentTaskID, actorUser
 				if inst.state != taskStatePending {
 					continue
 				}
-				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID); err != nil {
+				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID, depth); err != nil {
 					return false, err
 				}
 				changed = true
@@ -469,7 +593,7 @@ func promoteChildrenOnce(ctx context.Context, tx pgx.Tx, parentTaskID, actorUser
 				continue
 			}
 			if depsSatisfied(spec.DependsOn, spec.DependsOnReason, siblings) {
-				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID); err != nil {
+				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID, depth); err != nil {
 					return false, err
 				}
 				changed = true
@@ -523,7 +647,7 @@ func instanceSatisfies(inst childInstanceState, reason string) bool {
 // run_if is false) and re-binds its input_mapping against the parent scope,
 // so inputs referencing $outputs.<predecessor> resolve now that the
 // predecessor has published.
-func promoteInstance(ctx context.Context, tx pgx.Tx, parentTaskID string, inst childInstanceState, spec childSpec, actorUserID string) error {
+func promoteInstance(ctx context.Context, tx scriptQuerier, parentTaskID string, inst childInstanceState, spec childSpec, actorUserID string, depth int) error {
 	def, err := getTaskDefinition(ctx, tx, inst.defID)
 	if err != nil {
 		return err
@@ -579,7 +703,15 @@ func promoteInstance(ctx context.Context, tx pgx.Tx, parentTaskID string, inst c
 		SET variables = $2::jsonb,
 			description = CASE WHEN $3 THEN $4 ELSE description END
 		WHERE _id = $1`, inst.taskID, string(updated), refreshDescription, description)
-	return err
+	if err != nil {
+		return err
+	}
+	// A stage that has just become ready opens itself: its children are the
+	// work, and nobody should have to claim the wrapper first.
+	if def.IsContainer {
+		return openContainer(ctx, tx, inst.taskID, actorUserID, depth)
+	}
+	return nil
 }
 
 // transitionTaskInTx performs one validated state transition in the
@@ -640,7 +772,7 @@ func runTaskHooks(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) er
 	return nil
 }
 
-func evalTaskCondition(ctx context.Context, tx pgx.Tx, taskID, code string, vars map[string]any, actorUserID string) (bool, error) {
+func evalTaskCondition(ctx context.Context, tx scriptQuerier, taskID, code string, vars map[string]any, actorUserID string) (bool, error) {
 	result, err := executeTaskGoja(ctx, tx, taskID, code, vars, actorUserID)
 	if err != nil {
 		return false, err
@@ -652,14 +784,60 @@ func evalTaskCondition(ctx context.Context, tx pgx.Tx, taskID, code string, vars
 	return b, nil
 }
 
-func runTaskScript(ctx context.Context, tx pgx.Tx, taskID, code string, vars map[string]any, actorUserID string) error {
-	_, err := executeTaskGoja(ctx, tx, taskID, code, vars, actorUserID)
+func runTaskScript(ctx context.Context, tx scriptQuerier, taskID, code string, vars map[string]any, actorUserID string) error {
+	result, err := executeTaskGoja(ctx, tx, taskID, code, vars, actorUserID)
+	if err != nil {
+		return err
+	}
+	return publishScriptOutputs(ctx, tx, taskID, result)
+}
+
+// publishScriptOutputs stores what a task script returned.
+//
+// Every definition's script ends in `return { outputs: {...} }`, and the whole
+// variable chain — a stage's declared outputs, a sibling's input_mapping,
+// the gate that judges an artefact — reads $outputs.<task>.<name>. Nothing
+// wrote the returned object anywhere: the value was discarded, so a script
+// task published an empty output map and every $outputs reference downstream
+// resolved to nothing, silently, because an unresolvable reference is
+// skipped rather than fatal. `intake_validation` returning route, and
+// `deployment_scheduling` returning the window, both went nowhere.
+func publishScriptOutputs(ctx context.Context, q scriptQuerier, taskID string, result any) error {
+	if result == nil {
+		return nil
+	}
+	returned, ok := result.(map[string]any)
+	if !ok {
+		return nil // a script returning a bare value has no outputs to publish
+	}
+	returnedOutputs, ok := returned["outputs"].(map[string]any)
+	if !ok || len(returnedOutputs) == 0 {
+		return nil
+	}
+
+	vars, err := readTaskVariables(ctx, q, taskID)
+	if err != nil {
+		return err
+	}
+	outputs, _ := vars["outputs"].(map[string]any)
+	if outputs == nil {
+		outputs = map[string]any{}
+	}
+	for name, value := range returnedOutputs {
+		outputs[name] = value
+	}
+	vars["outputs"] = outputs
+	updated, err := json.Marshal(vars)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(updated))
 	return err
 }
 
 // executeTaskGoja runs Goja code with the task scope in Input. Writes the
 // script performs via ctx.records are audited to actorUserID.
-func executeTaskGoja(ctx context.Context, tx pgx.Tx, taskID, code string, vars map[string]any, actorUserID string) (any, error) {
+func executeTaskGoja(ctx context.Context, tx scriptQuerier, taskID, code string, vars map[string]any, actorUserID string) (any, error) {
 	opts := ScriptExecutionOptions{
 		Code:        code,
 		TableName:   "base_task",
@@ -701,6 +879,24 @@ func CloseTaskWithReason(ctx context.Context, taskID, actorUserID, closureReason
 	}
 	defer tx.Rollback(ctx)
 
+	// A script task that is closed without ever being started has not done its
+	// work: the script is the work, and it runs on in_progress. Closing it
+	// from the form would otherwise publish an empty output map and hand a
+	// gate an artefact that was never produced. Run the start hooks first so
+	// the script (and its run_if) happen exactly once.
+	if err := runStartHooksBeforeClose(ctx, tx, taskID, actorUserID); err != nil {
+		return err
+	}
+	// run_if may have decided the task should be skipped instead: it is
+	// terminal already, so there is nothing left to close.
+	var stateAfterHooks string
+	if err := tx.QueryRow(ctx, `SELECT state FROM base_task WHERE _id = $1`, taskID).Scan(&stateAfterHooks); err != nil {
+		return err
+	}
+	if stateAfterHooks == taskStateSkipped || stateAfterHooks == taskStateDone {
+		return tx.Commit(ctx)
+	}
+
 	if err := transitionTaskInTx(ctx, tx, taskID, taskStateDone); err != nil {
 		return err
 	}
@@ -733,6 +929,14 @@ func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, closureReason, actorUs
 		_ = json.Unmarshal(varsJSON, &vars)
 	}
 	outputs, _ := vars["outputs"].(map[string]any)
+
+	// A container's declared outputs are answered by its children: fill them
+	// before publishing upward so a sibling stage's mapping can bind.
+	if containerYAML, isContainer, err := containerVariablesYAML(ctx, tx, taskID); err == nil && isContainer {
+		if merged, mergeErr := mergeContainerOutputs(ctx, tx, taskID, vars, containerYAML); mergeErr == nil {
+			outputs = merged
+		}
+	}
 
 	// Publish up: parent's variables.outputs.<child slug> = this outputs.
 	if parentID != nil && *parentID != "" && outputs != nil {
@@ -791,13 +995,22 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 	}
 
 	var groupID *string
+	var assigneeID *string
 	var parentID *string
-	_ = tx.QueryRow(ctx, `SELECT assignment_group_id::text, parent_task_id::text FROM base_task WHERE _id = $1`, taskID).Scan(&groupID, &parentID)
+	_ = tx.QueryRow(ctx,
+		`SELECT assignment_group_id::text, assigned_user_id::text, parent_task_id::text FROM base_task WHERE _id = $1`,
+		taskID).Scan(&groupID, &assigneeID, &parentID)
 
 	vars, err := readTaskVariables(ctx, tx, taskID)
 	if err != nil {
 		return err
 	}
+	// The closing task is part of the scope a spawn rule resolves against, so
+	// a rule can name a target it cannot know at design time: a reviewer
+	// records which definition produced the artefact it judged and rejects
+	// back to that definition. One gate definition then serves every stage
+	// instead of one gate per loop.
+	vars["task"] = map[string]any{"id": taskID, "definition_slug": def.Slug}
 
 	for _, rule := range def.SpawnRules {
 		if rule.On != closureReason {
@@ -809,10 +1022,28 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 				inputs[childInput] = val
 			}
 		}
-		if rule.Assign == "pool" {
-			groupID = nil
+		slug := rule.DefinitionSlug
+		if strings.HasPrefix(strings.TrimSpace(slug), "$") {
+			val, ok := resolveScopeRef(vars, slug)
+			resolved, isString := val.(string)
+			if !ok || !isString || strings.TrimSpace(resolved) == "" {
+				log.Printf("task engine: spawn rule target %q unresolvable on task %s; rule skipped", slug, taskID)
+				continue
+			}
+			slug = resolved
 		}
-		if err := spawnFollowOn(ctx, tx, rule.DefinitionSlug, groupID, parentID, actorUserID, inputs); err != nil {
+		// A follow-on fires because something closed: its slot in the plan
+		// has arrived, so it spawns ready rather than waiting for a
+		// promotion that will never come (promotion only walks the
+		// container's static child list, which a rule target need not be in).
+		route := &taskRoute{Ready: true, Override: true, GroupID: groupID, AssigneeID: assigneeID}
+		switch rule.Assign {
+		case "pool":
+			route.GroupID, route.AssigneeID = nil, nil
+		case "definition":
+			route = &taskRoute{Ready: true}
+		}
+		if err := spawnFollowOn(ctx, tx, slug, route, parentID, actorUserID, inputs); err != nil {
 			return err
 		}
 	}
@@ -822,7 +1053,7 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 // spawnFollowOn spawns a spawn-rule follow-on. It inherits the closing
 // task's parent_task_id unless the rule says otherwise, so chained tasks
 // stay inside the container and their outputs publish upward (issue #209).
-func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, groupID, parentTaskID *string, requestedBy string, inputs map[string]any) error {
+func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, route *taskRoute, parentTaskID *string, requestedBy string, inputs map[string]any) error {
 	var defID string
 	err := tx.QueryRow(ctx,
 		`SELECT _id::text FROM base_task_definition WHERE slug = $1 AND is_active AND _deleted_at IS NULL`, slug).Scan(&defID)
@@ -833,16 +1064,35 @@ func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, groupID, parentT
 	if err != nil {
 		return err
 	}
-	// Follow-on takes the rule's group when given, else the definition's default.
-	if groupID != nil {
-		def.DefaultGroupID = *groupID
-	}
 	parent := ""
 	if parentTaskID != nil {
 		parent = *parentTaskID
 	}
-	_, err = spawnTaskForDefinition(ctx, tx, def, parent, requestedBy, inputs)
+	_, err = spawnTaskWithRoute(ctx, tx, def, parent, requestedBy, inputs, route)
 	return err
+}
+
+// validatedAssignee returns assigneeID only when it is a member of groupID.
+// 085 rejects any other pairing, and a definition with a stale assignee must
+// not fail the spawn that carries it — the task lands unassigned instead,
+// which is visible and recoverable.
+func validatedAssignee(ctx context.Context, q scriptQuerier, groupID, assigneeID string) string {
+	if groupID == "" || assigneeID == "" {
+		return ""
+	}
+	var member bool
+	if err := q.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM _group_membership
+			WHERE group_id = $1 AND user_id = $2::text
+		)`, groupID, assigneeID).Scan(&member); err != nil {
+		return ""
+	}
+	if !member {
+		log.Printf("task engine: default assignee %s is not a member of group %s; instance left unassigned", assigneeID, groupID)
+		return ""
+	}
+	return assigneeID
 }
 
 func readTaskVariables(ctx context.Context, q scriptQuerier, taskID string) (map[string]any, error) {
@@ -951,4 +1201,33 @@ func DescribeTaskInstance(ctx context.Context, q scriptQuerier, taskID string) (
 		children = append(children, c)
 	}
 	return &root, children, rows.Err()
+}
+
+// runStartHooksBeforeClose runs the start half of the engine for a task that
+// is being closed from ready or pending — the case where nobody pressed Start.
+//
+// Only script work needs this: a person's task can legitimately be closed
+// without being started (they did the work elsewhere), but a script task's
+// output IS its returned object, and skipping the script publishes nothing.
+func runStartHooksBeforeClose(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) error {
+	var state string
+	if err := tx.QueryRow(ctx, `SELECT state FROM base_task WHERE _id = $1 AND _deleted_at IS NULL`, taskID).
+		Scan(&state); err != nil {
+		return fmt.Errorf("load task: %w", err)
+	}
+	if state != taskStateReady && state != taskStatePending {
+		return nil
+	}
+	defID, err := getDefinitionIDByTaskID(ctx, tx, taskID)
+	if err != nil || defID == "" {
+		return err
+	}
+	def, err := getTaskDefinition(ctx, tx, defID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(def.ScriptText) == "" {
+		return nil // work task: nothing to run
+	}
+	return runTaskHooks(ctx, tx, taskID, actorUserID)
 }

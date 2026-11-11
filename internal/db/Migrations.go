@@ -93,6 +93,9 @@ func RunMigrations(ctx context.Context) error {
 	if err := SyncBaseAppDefinitionTaskModel(ctx); err != nil {
 		return err
 	}
+	if err := SyncTaskDefinitionCatalog(ctx); err != nil {
+		return err
+	}
 	if err := SyncBaseObservabilityDefinition(ctx); err != nil {
 		return err
 	}

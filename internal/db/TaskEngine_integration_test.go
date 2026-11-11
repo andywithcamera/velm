@@ -65,8 +65,13 @@ func taskVars(ctx context.Context, t *testing.T, taskID string) map[string]any {
 }
 
 // TestContainerInputMappingAtParentStart is the #208 acceptance test: a
-// container started via StartTask binds its children's input_mapping from
-// the parent scope, and mapped values overwrite spawn-time inputs.
+// container binds its children's input_mapping from the parent scope, and
+// mapped values overwrite spawn-time inputs.
+//
+// Since 090 a root container opens itself at spawn rather than waiting for
+// StartTask, so the mapping is already applied by the time the child exists
+// to inspect. The binding is re-asserted on every open and on every
+// promotion, which is what the overwrite assertion below still checks.
 func TestContainerInputMappingAtParentStart(t *testing.T) {
 	ctx := taskEngineTestDB(t)
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -94,8 +99,8 @@ func TestContainerInputMappingAtParentStart(t *testing.T) {
 		t.Fatalf("expected 1 child, got %d", len(kids))
 	}
 	childID := kids[0]
-	if v := taskVars(ctx, t, childID)["inputs"].(map[string]any); len(v) != 0 {
-		t.Fatalf("child should spawn with empty inputs, got %v", v)
+	if got := taskVars(ctx, t, childID)["inputs"].(map[string]any); got["entity_id"] != "E-42" {
+		t.Fatalf("child inputs not bound when the container opened: %v", got)
 	}
 
 	// Pre-seed a spawn-time input that the mapping must overwrite.
@@ -246,24 +251,26 @@ func TestDependencyEdgesFanIn(t *testing.T) {
 	}
 	assignAll(ctx, t, parentID, groupID, actorID)
 
-	// Nothing promoted before start: all five children pending.
-	if got := countState(ctx, t, parentID, "pending"); got != 5 {
-		t.Fatalf("after spawn: %d pending, want 5", got)
+	// The container opens itself at spawn (090): a wrapper is a plan, not a
+	// job, so design/impl/comms are already ready, risk was skipped by its
+	// run_if at promotion, and review waits on three dependencies.
+	if got := countState(ctx, t, parentID, "ready"); got != 3 {
+		t.Fatalf("after spawn: %d ready, want 3", got)
+	}
+	if got := countState(ctx, t, parentID, "skipped"); got != 1 {
+		t.Fatalf("after spawn: risk should be skipped, got %d", got)
+	}
+	if got := countState(ctx, t, parentID, "pending"); got != 1 {
+		t.Fatalf("after spawn: %d pending, want 1 (review)", got)
 	}
 
+	// StartTask on an already-open container re-asserts the same state; it
+	// must not open a second wave or undo anything.
 	if err := StartTask(ctx, parentID, actorID); err != nil {
 		t.Fatalf("StartTask: %v", err)
 	}
-	// design/impl/comms promote; risk is run_if:false -> skipped at
-	// promotion; review waits on three deps.
 	if got := countState(ctx, t, parentID, "ready"); got != 3 {
 		t.Fatalf("after start: %d ready, want 3", got)
-	}
-	if got := countState(ctx, t, parentID, "skipped"); got != 1 {
-		t.Fatalf("after start: risk should be skipped, got %d", got)
-	}
-	if got := countState(ctx, t, parentID, "pending"); got != 1 {
-		t.Fatalf("after start: %d pending, want 1 (review)", got)
 	}
 
 	// Close design only: review blocked (fan-in, 1/3 — risk already skipped,
@@ -320,8 +327,8 @@ func TestDependencyEdgesRejectionLoop(t *testing.T) {
 	if err := closeWithReason(ctx, t, implID, "rejected"); err != nil {
 		t.Fatalf("close rejected: %v", err)
 	}
-	if got := countState(ctx, t, parentID, "pending"); got != 2 {
-		t.Fatalf("after rejection: %d pending, want 2 (review + follow-on impl)", got)
+	if got := countState(ctx, t, parentID, "pending"); got != 1 {
+		t.Fatalf("after rejection: %d pending, want 1 (review, still blocked)", got)
 	}
 	followOns := childrenOfDef(ctx, t, parentID, implDef)
 	if len(followOns) != 2 {
@@ -331,19 +338,15 @@ func TestDependencyEdgesRejectionLoop(t *testing.T) {
 	// promotes at the next promotion pass triggered by the rejection.
 	// (promoteChildren ran in the same transaction as the close.)
 	newImpl := followOns[1]
-	if got := taskState(ctx, t, newImpl); got != "ready" && got != "pending" {
-		t.Fatalf("follow-on impl state = %s, want ready or pending", got)
+	// A spawn rule fires on an event, so its target has a slot now: it
+	// spawns ready. Leaving it pending put the follow-on where nothing could
+	// promote it — promotion only walks the container's static child list,
+	// and a rule target need not be in it.
+	if got := taskState(ctx, t, newImpl); got != "ready" {
+		t.Fatalf("follow-on impl state = %s, want ready", got)
 	}
 
 	// The revision completes: now review promotes.
-	if got := taskState(ctx, t, newImpl); got == "pending" {
-		// dependency-free pending children only promote on a promotion pass;
-		// the close of the rejected instance already ran one, and the
-		// follow-on spawned after it. Start the parent again? No — start the
-		// revision directly is not the model. Closing the rejected twin
-		// triggered one pass; this branch documents the ordering.
-		_ = got
-	}
 	if _, err := Pool.Exec(ctx, `UPDATE base_task SET assignment_group_id = $2, assigned_user_id = $3 WHERE _id = $1`,
 		newImpl, groupID, actorID); err != nil {
 		t.Fatal(err)

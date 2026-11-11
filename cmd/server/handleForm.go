@@ -1110,6 +1110,15 @@ func formatFieldValue(value any, cfg formFieldConfig) string {
 			return v.Format(time.RFC3339)
 		}
 	default:
+		// JSON columns arrive from pgx as map/slice values. fmt.Sprint is Go
+		// syntax (map[k:v]), which is not valid JSON, so a form opened on a
+		// row with spawn rules or an input mapping rendered something the
+		// field would then refuse to save. Render the JSON the column holds.
+		if cfg.Kind == "json" {
+			if encoded, err := json.Marshal(v); err == nil {
+				return string(encoded)
+			}
+		}
 		return fmt.Sprint(v)
 	}
 }

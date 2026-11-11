@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,14 +121,19 @@ func TestPromotionRefreshesDescriptionButKeepsEdits(t *testing.T) {
 		t.Fatalf("find child: %v", err)
 	}
 
-	// Child spawned with the definition's purpose only.
+	// Since 090 the root container opens itself at spawn, so the child has
+	// already had its input_mapping bound and its description composed from
+	// the requester's words plus the definition's purpose.
 	var spawned string
 	if err := Pool.QueryRow(ctx, `SELECT COALESCE(description,'') FROM base_task WHERE _id = $1`, childID).
 		Scan(&spawned); err != nil {
 		t.Fatalf("read child description: %v", err)
 	}
-	if spawned != "Run the suite against a specific commit." {
-		t.Fatalf("child description at spawn = %q", spawned)
+	if !strings.Contains(spawned, "Tenant onboarding must not drop rows.") {
+		t.Fatalf("child description at spawn lacks the requester's words: %q", spawned)
+	}
+	if !strings.Contains(spawned, "Run the suite against a specific commit.") {
+		t.Fatalf("child description at spawn lacks the definition's purpose: %q", spawned)
 	}
 
 	// 085's trigger refuses in_progress without an assignee inside the
