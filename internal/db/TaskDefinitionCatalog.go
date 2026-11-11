@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -130,11 +131,9 @@ func ensureTaskDefinitionAssigneeColumn(definition *AppDefinition) bool {
 				ReferenceTable: "_user",
 			}
 			if groupIndex >= 0 {
-				columns := make([]AppDefinitionColumn, 0, len(table.Columns)+1)
-				columns = append(columns, table.Columns[:groupIndex+1]...)
-				columns = append(columns, column)
-				columns = append(columns, table.Columns[groupIndex+1:]...)
-				table.Columns = columns
+				// Keep the column next to the group it belongs with rather than
+				// at the end, so the catalog form reads as routing config.
+				table.Columns = slices.Insert(table.Columns, groupIndex+1, column)
 			} else {
 				table.Columns = append(table.Columns, column)
 			}
