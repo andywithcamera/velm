@@ -232,7 +232,7 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 			assigneeID = *route.AssigneeID
 		}
 	}
-	assigneeID = validatedAssignee(ctx, q, groupID, assigneeID)
+	assigneeID = resolveSpawnAssignee(ctx, q, groupID, assigneeID)
 
 	state := spawnStateFor(def, parentTaskID)
 	if route != nil && route.Ready {
@@ -1076,6 +1076,34 @@ func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, route *taskRoute
 // 085 rejects any other pairing, and a definition with a stale assignee must
 // not fail the spawn that carries it — the task lands unassigned instead,
 // which is visible and recoverable.
+// resolveSpawnAssignee decides who a spawned task belongs to. An explicit
+// default assignee wins, provided it is really a member of the group (085
+// refuses to start a task assigned to a non-member, so an invalid default
+// would produce work nobody can begin). Otherwise the group's sole member is
+// used: a one-member group has exactly one possible answer, so this invents no
+// routing policy, while an ambiguous group stays unassigned for a dispatcher
+// (#276). Before this, 42 of 45 spawned tasks arrived unassigned and needed a
+// click each before any work could start.
+func resolveSpawnAssignee(ctx context.Context, q scriptQuerier, groupID, assigneeID string) string {
+	if groupID == "" {
+		return ""
+	}
+	if assigneeID != "" {
+		return validatedAssignee(ctx, q, groupID, assigneeID)
+	}
+	var count int64
+	var sole *string
+	if err := q.QueryRow(ctx, `
+		SELECT COUNT(*), MIN(user_id)
+		FROM _group_membership WHERE group_id = $1`, groupID).Scan(&count, &sole); err != nil {
+		return ""
+	}
+	if count != 1 || sole == nil || strings.TrimSpace(*sole) == "" {
+		return ""
+	}
+	return strings.TrimSpace(*sole)
+}
+
 func validatedAssignee(ctx context.Context, q scriptQuerier, groupID, assigneeID string) string {
 	if groupID == "" || assigneeID == "" {
 		return ""

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"velm/internal/auth"
@@ -44,12 +45,15 @@ type mcpTool struct {
 
 var mcpTools = []mcpTool{
 	{
-		Name:        "list_tasks",
-		Description: "List recent tasks. Filter by state (pending, ready, in_progress, closed).",
+		Name: "list_tasks",
+		Description: "List recent tasks, newest first. Filter by state: pass \"states\" as an array " +
+			"(e.g. {\"states\":[\"ready\"]}) or \"state\" as a single string. Allowed values: pending, " +
+			"ready, in_progress, closed, skipped. Omitting the filter returns every state.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"states": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional state filter"},
+				"states": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Optional state filter, e.g. [\"ready\",\"in_progress\"]"},
+				"state":  map[string]any{"type": "string", "description": "Optional single-state filter; alias for a one-element states"},
 				"limit":  map[string]any{"type": "integer", "description": "Max results, default 20, max 100"},
 			},
 		},
@@ -172,6 +176,17 @@ func mcpCallTool(r *http.Request, params json.RawMessage) (any, int, string) {
 			return nil, -32602, "invalid arguments"
 		}
 	}
+	// Unknown arguments used to be dropped silently, so a caller who spelled
+	// a filter differently than the schema (state vs states) got the whole
+	// backlog back with a successful result and no way to tell. A misspelled
+	// filter must not look like "no filter needed".
+	if tool := mcpToolByName(p.Name); tool != nil {
+		if unknown := firstUnknownArgument(args, tool); unknown != "" {
+			return nil, -32602, fmt.Sprintf("unknown argument %q for %s (accepted: %s)",
+				unknown, p.Name, strings.Join(acceptedArguments(tool), ", "))
+		}
+	}
+
 	str := func(key string) string {
 		s, _ := args[key].(string)
 		return strings.TrimSpace(s)
@@ -181,13 +196,9 @@ func mcpCallTool(r *http.Request, params json.RawMessage) (any, int, string) {
 
 	switch p.Name {
 	case "list_tasks":
-		var states []string
-		if raw, ok := args["states"].([]any); ok {
-			for _, s := range raw {
-				if v, ok := s.(string); ok {
-					states = append(states, v)
-				}
-			}
+		states, err := mcpStateFilter(args)
+		if err != nil {
+			return nil, -32602, err.Error()
 		}
 		limit := 20
 		if n, ok := args["limit"].(float64); ok {
@@ -273,6 +284,91 @@ func mcpText(v any) map[string]any {
 func writeMCP(w http.ResponseWriter, resp mcpResponse) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp) // best-effort error channel; nothing sane to do on write failure
+}
+
+// acceptedArguments lists the argument names a tool's schema declares.
+func acceptedArguments(tool *mcpTool) []string {
+	props, _ := tool.InputSchema["properties"].(map[string]any)
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// firstUnknownArgument returns the first argument key the tool does not
+// declare, or "" when every key is known. Keys are visited in sorted order so
+// the reported name is stable across runs.
+func firstUnknownArgument(args map[string]any, tool *mcpTool) string {
+	if len(args) == 0 {
+		return ""
+	}
+	accepted := acceptedArguments(tool)
+	keys := make([]string, 0, len(args))
+	for k := range args {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		known := false
+		for _, a := range accepted {
+			if a == k {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return k
+		}
+	}
+	return ""
+}
+
+// mcpStateFilter reads the state filter from either accepted spelling (states
+// or state, scalar or array) and validates the values against the engine's
+// state set. An unrecognised state is an error rather than an empty list:
+// "nothing is ready" and "you misspelled ready" must not look alike.
+func mcpStateFilter(args map[string]any) ([]string, error) {
+	allowed := map[string]bool{}
+	for _, s := range db.TaskStates() {
+		allowed[s] = true
+	}
+	var raw []string
+	for _, key := range []string{"states", "state"} {
+		switch v := args[key].(type) {
+		case nil:
+		case string:
+			raw = append(raw, v)
+		case []any:
+			for _, item := range v {
+				s, ok := item.(string)
+				if !ok {
+					return nil, fmt.Errorf("%s must contain strings", key)
+				}
+				raw = append(raw, s)
+			}
+		default:
+			return nil, fmt.Errorf("%s must be a string or an array of strings", key)
+		}
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, s := range raw {
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			continue
+		}
+		if !allowed[s] {
+			return nil, fmt.Errorf("unknown state %q (allowed: %s)", s, strings.Join(db.TaskStates(), ", "))
+		}
+		if seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out, nil
 }
 
 // mcpToolByName finds a tool definition (used by tests).
