@@ -18,6 +18,11 @@ var baseTaskStateChoices = []ChoiceOption{
 var baseTaskClosureReasonChoices = []ChoiceOption{
 	{Value: "completed", Label: "Completed"},
 	{Value: "cancelled", Label: "Cancelled"},
+	// 084 widened chk_base_task_closure_reason with these two so rejection
+	// loops and failure spawn rules could fire, but the form never offered
+	// them — the constraint and the metadata had drifted apart (#264).
+	{Value: "rejected", Label: "Rejected"},
+	{Value: "failed", Label: "Failed"},
 }
 
 var baseTaskPriorityChoices = []ChoiceOption{

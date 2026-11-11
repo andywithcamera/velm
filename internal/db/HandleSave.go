@@ -379,13 +379,26 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 			log.Printf("failed to sync AI models after save table=%s id=%s err=%v", tableName, id, err)
 		}
 	}
-	if tableName == "base_task" && snapshotState(oldSnapshot) != "in_progress" && snapshotState(newSnapshot) == "in_progress" {
-		// Issue #233: the record form sets the state column directly, which
-		// used to bypass the task engine entirely (no run_if, no script, no
-		// child spawn cascade). Run the start hooks post-commit so a form
-		// start behaves like StartTask.
-		if err := RunEngineHooksAfterStart(context.Background(), id, updatedBy); err != nil {
-			log.Printf("failed to run task engine hooks after form start table=%s id=%s err=%v", tableName, id, err)
+	if tableName == "base_task" {
+		oldState := snapshotState(oldSnapshot)
+		newState := snapshotState(newSnapshot)
+		if oldState != taskStateDone && newState == taskStateDone {
+			// Mirror of the start hook above: a form close used to bypass the
+			// engine entirely, so outputs never published, dependants never
+			// promoted, spawn rules never fired and containers never rolled
+			// up (#264, #265). Post-commit, like the start hook.
+			if err := RunEngineHooksAfterClose(context.Background(), id, updatedBy, snapshotStringValue(newSnapshot, "closure_reason")); err != nil {
+				log.Printf("failed to run task engine hooks after form close table=%s id=%s err=%v", tableName, id, err)
+			}
+		}
+		if oldState != "in_progress" && newState == "in_progress" {
+			// Issue #233: the record form sets the state column directly, which
+			// used to bypass the task engine entirely (no run_if, no script, no
+			// child spawn cascade). Run the start hooks post-commit so a form
+			// start behaves like StartTask.
+			if err := RunEngineHooksAfterStart(context.Background(), id, updatedBy); err != nil {
+				log.Printf("failed to run task engine hooks after form start table=%s id=%s err=%v", tableName, id, err)
+			}
 		}
 	}
 	if err := CaptureDataChange(context.Background(), updatedBy, tableName, id, operation, oldSnapshot, newSnapshot); err != nil {
