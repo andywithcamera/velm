@@ -11,6 +11,13 @@ import (
 // references as either a uuid or a TASK-n number, so remote agents can use
 // the human-visible identifier.
 
+// TaskStates lists every state the engine writes, in lifecycle order. Callers
+// that validate input (the MCP tool layer) use it so the accepted set cannot
+// drift from the engine's own constants.
+func TaskStates() []string {
+	return []string{taskStatePending, taskStateReady, taskStateInProgress, taskStateDone, taskStateSkipped}
+}
+
 // ResolveTaskRef maps a task reference (uuid or TASK-n number) to its uuid.
 // Empty or ambiguous results return an error.
 func ResolveTaskRef(ctx context.Context, q scriptQuerier, ref string) (string, error) {

@@ -591,3 +591,37 @@ func TestTaskBoardTemplateShowsEmptyStateOnlyForEmptyLane(t *testing.T) {
 		t.Fatalf("expected lane body in rendered output, got %q", rendered)
 	}
 }
+
+// TestNormalizeTaskBoardAssignedToAcceptsMeSpelling: the filter sentinel is
+// __me__, but a person writing a link types ?assigned_to=me. That used to fall
+// through to "" and show the whole board — indistinguishable from "no filter",
+// so the reader believed 106 tasks were theirs.
+func TestNormalizeTaskBoardAssignedToAcceptsMeSpelling(t *testing.T) {
+	const userID = "c7dfc376-515f-4785-89cb-1185b9be788c"
+	options := []taskBoardChoice{
+		{Value: "group-a", Label: "A"},
+		{Value: "user-b", Label: "B"},
+	}
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"empty", "", ""},
+		{"sentinel", taskBoardAssignedToMe, taskBoardAssignedToMe},
+		{"me", "me", taskBoardAssignedToMe},
+		{"me_upper", "ME", taskBoardAssignedToMe},
+		{"me_spaced", "  me  ", taskBoardAssignedToMe},
+		{"own_uuid", userID, taskBoardAssignedToMe},
+		{"none_sentinel", taskBoardAssignedNone, taskBoardAssignedNone},
+		{"known_option", "user-b", "user-b"},
+		{"unknown", "nobody", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeTaskBoardAssignedTo(tc.raw, userID, options); got != tc.want {
+				t.Fatalf("normalizeTaskBoardAssignedTo(%q) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+}

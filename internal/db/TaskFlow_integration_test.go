@@ -254,3 +254,85 @@ func TestContainerOutputsBubble(t *testing.T) {
 		t.Fatalf("stage outputs not published to the request scope: %v", rootOutputs)
 	}
 }
+
+// TestSpawnAssigneeResolution pins the #276 rule: an explicit default assignee
+// wins (and must be a member), otherwise a group with exactly one member
+// supplies its own answer, and a group with several members stays unassigned
+// so a dispatcher decides rather than the engine guessing.
+func TestSpawnAssigneeResolution(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	machineID, machineGroup := seedActorAndGroup(ctx, t)
+	humanID, humanGroup := seedSecondActor(ctx, t, "second")
+
+	// A group with two members: no obvious answer.
+	if _, err := Pool.Exec(ctx, `INSERT INTO _group_membership (group_id, user_id) VALUES ($1, $2)`,
+		humanGroup, machineID); err != nil {
+		t.Fatalf("add second member: %v", err)
+	}
+
+	assigneeOf := func(t *testing.T, defID string) string {
+		t.Helper()
+		taskID, err := SpawnTaskInstance(ctx, Pool, defID, "", humanID, map[string]any{})
+		if err != nil {
+			t.Fatalf("spawn: %v", err)
+		}
+		var got *string
+		if err := Pool.QueryRow(ctx, `SELECT assigned_user_id::text FROM base_task WHERE _id = $1`, taskID).Scan(&got); err != nil {
+			t.Fatalf("read assignee: %v", err)
+		}
+		if got == nil {
+			return ""
+		}
+		return *got
+	}
+
+	t.Run("sole member is assigned", func(t *testing.T) {
+		defID := seedDefinition(ctx, t, "assign-sole-"+suffix, "Sole Member Task", false, "")
+		if _, err := Pool.Exec(ctx, `UPDATE base_task_definition SET default_group_id = $2, default_assignee_id = NULL WHERE _id = $1`,
+			defID, machineGroup); err != nil {
+			t.Fatalf("configure: %v", err)
+		}
+		if got := assigneeOf(t, defID); got != machineID {
+			t.Fatalf("assignee = %q, want the group's only member %q", got, machineID)
+		}
+	})
+
+	t.Run("multi-member group stays unassigned", func(t *testing.T) {
+		defID := seedDefinition(ctx, t, "assign-multi-"+suffix, "Multi Member Task", false, "")
+		if _, err := Pool.Exec(ctx, `UPDATE base_task_definition SET default_group_id = $2, default_assignee_id = NULL WHERE _id = $1`,
+			defID, humanGroup); err != nil {
+			t.Fatalf("configure: %v", err)
+		}
+		if got := assigneeOf(t, defID); got != "" {
+			t.Fatalf("assignee = %q, want unassigned so a dispatcher decides", got)
+		}
+	})
+
+	t.Run("explicit default wins over sole member", func(t *testing.T) {
+		defID := seedDefinition(ctx, t, "assign-explicit-"+suffix, "Explicit Assignee Task", false, "")
+		if _, err := Pool.Exec(ctx, `UPDATE base_task_definition SET default_group_id = $2, default_assignee_id = $3 WHERE _id = $1`,
+			defID, humanGroup, humanID); err != nil {
+			t.Fatalf("configure: %v", err)
+		}
+		if got := assigneeOf(t, defID); got != humanID {
+			t.Fatalf("assignee = %q, want the configured default %q", got, humanID)
+		}
+	})
+
+	t.Run("default assignee outside the group is rejected, not guessed", func(t *testing.T) {
+		// humanID is not a member of machineGroup. 085 would refuse to start a
+		// task assigned to a non-member, so the invalid default is dropped. The
+		// group's sole member is *not* substituted here: reassigning would
+		// override an explicit configuration, and the safer outcome is a task
+		// a dispatcher must route.
+		defID := seedDefinition(ctx, t, "assign-nonmember-"+suffix, "Non Member Default Task", false, "")
+		if _, err := Pool.Exec(ctx, `UPDATE base_task_definition SET default_group_id = $2, default_assignee_id = $3 WHERE _id = $1`,
+			defID, machineGroup, humanID); err != nil {
+			t.Fatalf("configure: %v", err)
+		}
+		if got := assigneeOf(t, defID); got != "" {
+			t.Fatalf("assignee = %q, want unassigned: a non-member default must not be applied", got)
+		}
+	})
+}

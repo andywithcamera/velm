@@ -76,3 +76,91 @@ func TestMCPUnknownTool(t *testing.T) {
 		t.Fatalf("got (%d,%q), want (-32602, unknown tool: nope)", code, msg)
 	}
 }
+
+// TestMCPStateFilter covers both accepted spellings and the value validation.
+// The filter itself lives in SQL; this asserts the argument contract in front
+// of it, which is where the state=ready call used to be dropped on the floor.
+func TestMCPStateFilter(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    map[string]any
+		want    []string
+		wantErr string
+	}{
+		{"absent", map[string]any{}, []string{}, ""},
+		{"states_array", map[string]any{"states": []any{"ready", "in_progress"}}, []string{"ready", "in_progress"}, ""},
+		{"state_scalar", map[string]any{"state": "ready"}, []string{"ready"}, ""},
+		{"state_and_states", map[string]any{"state": "closed", "states": []any{"ready"}}, []string{"ready", "closed"}, ""},
+		{"case_and_space", map[string]any{"state": "  READY "}, []string{"ready"}, ""},
+		{"duplicate", map[string]any{"states": []any{"ready", "ready"}}, []string{"ready"}, ""},
+		{"unknown_state", map[string]any{"state": "redy"}, nil, `unknown state "redy"`},
+		{"non_string_element", map[string]any{"states": []any{1}}, nil, "states must contain strings"},
+		{"wrong_type", map[string]any{"state": 42}, nil, "state must be a string or an array of strings"},
+		{"only_limits", map[string]any{"limit": float64(5)}, []string{}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := mcpStateFilter(tc.args)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got %v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// TestMCPEveryToolRejectsUnknownArguments guards the silent-drop regression:
+// an argument the schema does not declare must be named back to the caller.
+func TestMCPEveryToolRejectsUnknownArguments(t *testing.T) {
+	for _, tool := range mcpTools {
+		t.Run(tool.Name, func(t *testing.T) {
+			params := map[string]any{"name": tool.Name, "arguments": map[string]any{"stauts": "ready"}}
+			raw, err := json.Marshal(params)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			req := httptest.NewRequest("POST", "/mcp", strings.NewReader(""))
+			_, code, msg := mcpCallTool(req, raw)
+			if code != -32602 {
+				t.Fatalf("code = %d, want -32602 (msg %q)", code, msg)
+			}
+			if !strings.Contains(msg, `unknown argument "stauts"`) {
+				t.Fatalf("msg = %q, want it to name the unknown argument", msg)
+			}
+			if !strings.Contains(msg, tool.Name) {
+				t.Fatalf("msg = %q, want it to name the tool", msg)
+			}
+		})
+	}
+}
+
+// TestMCPDeclaredArgumentsAreAccepted is the other half: every argument the
+// schema advertises must pass validation. Called with no database, a declared
+// tool that got past validation fails later on the nil pool — which is fine,
+// as long as the failure is not "unknown argument".
+func TestMCPDeclaredArgumentsAreAccepted(t *testing.T) {
+	for _, tool := range mcpTools {
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		for name := range props {
+			if got := firstUnknownArgument(map[string]any{name: "x"}, &tool); got != "" {
+				t.Errorf("%s: declared argument %q reported as unknown", tool.Name, name)
+			}
+		}
+		if got := firstUnknownArgument(map[string]any{"state": "ready"}, mcpToolByName("list_tasks")); got != "" {
+			t.Errorf("list_tasks: state alias reported as unknown (%q)", got)
+		}
+	}
+}
