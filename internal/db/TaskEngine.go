@@ -55,6 +55,7 @@ type TaskDefinition struct {
 	ID             string
 	Slug           string
 	DisplayName    string
+	Description    string
 	IsContainer    bool
 	ScriptText     string
 	RunIfScript    string
@@ -77,10 +78,10 @@ func getTaskDefinition(ctx context.Context, q scriptQuerier, id string) (*TaskDe
 	var groupID *string
 	var spawnRulesJSON []byte
 	err := q.QueryRow(ctx, `
-		SELECT _id::text, slug, display_name, is_container, script_text, run_if_script,
-			default_group_id::text, spawn_rules, is_active
+		SELECT _id::text, slug, display_name, COALESCE(description, ''), is_container,
+			script_text, run_if_script, default_group_id::text, spawn_rules, is_active
 		FROM base_task_definition WHERE _id = $1 AND _deleted_at IS NULL`, id).Scan(
-		&d.ID, &d.Slug, &d.DisplayName, &d.IsContainer, &d.ScriptText, &d.RunIfScript,
+		&d.ID, &d.Slug, &d.DisplayName, &d.Description, &d.IsContainer, &d.ScriptText, &d.RunIfScript,
 		&groupID, &spawnRulesJSON, &d.IsActive)
 	if err != nil {
 		return nil, fmt.Errorf("load task definition: %w", err)
@@ -150,6 +151,7 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 		return "", fmt.Errorf("task definition %s is not active", def.Slug)
 	}
 
+	inputs = nonNilInputs(inputs)
 	vars := map[string]any{"inputs": inputs, "locals": map[string]any{}, "outputs": map[string]any{}}
 	varsJSON, err := json.Marshal(vars)
 	if err != nil {
@@ -165,17 +167,27 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 	var taskID string
 	var taskNumber string
 	title := instanceTitle(ctx, q, def, parentTaskID)
+	// Instance fields: the definition's own description and the request's
+	// priority/planned start are known at spawn time, so the doer's form is
+	// populated from the first render instead of being blank until someone
+	// types into it.
+	description := nullable(instanceDescription(def, inputs))
+	priority := instancePriority(inputs)
+	plannedStart := instancePlannedStart(inputs)
 	err = q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, priority, parent_task_id,
-			assignment_group_id, requested_by_user_id, definition_id, variables)
+			assignment_group_id, requested_by_user_id, definition_id, variables,
+			description, planned_start_at)
 		VALUES (
 			'', -- assigned by the autonumber trigger (051); base_task_number_seq was dropped there
 			$1, 'TASK',
 			$2,
-			'medium', $3, $4, $5, $6, $7::jsonb)
+			$3, $4, $5, $6, $7, $8::jsonb,
+			$9, $10)
 		RETURNING _id, number`,
-		title, spawnStateFor(def, parentTaskID), nullable(parentTaskID), nullable(def.DefaultGroupID),
-		nullable(requestedBy), def.ID, string(varsJSON)).Scan(&taskID, &taskNumber)
+		title, spawnStateFor(def, parentTaskID), priority, nullable(parentTaskID), nullable(def.DefaultGroupID),
+		nullable(requestedBy), def.ID, string(varsJSON),
+		description, plannedStart).Scan(&taskID, &taskNumber)
 	if err != nil {
 		return "", fmt.Errorf("spawn task: %w", err)
 	}
@@ -551,7 +563,22 @@ func promoteInstance(ctx context.Context, tx pgx.Tx, parentTaskID string, inst c
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, inst.taskID, string(updated))
+	// The body that makes the task legible is only bound now: a child spawns
+	// with empty inputs and learns the requester's words when its
+	// input_mapping resolves. Refresh the description with the bound inputs,
+	// but never overwrite text a human has rewritten.
+	var currentDescription string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(description, '') FROM base_task WHERE _id = $1`,
+		inst.taskID).Scan(&currentDescription); err != nil {
+		return fmt.Errorf("load task description: %w", err)
+	}
+	description := instanceDescription(def, inputs)
+	refreshDescription := description != "" && descriptionIsEngineAuthored(currentDescription, def)
+	_, err = tx.Exec(ctx, `
+		UPDATE base_task
+		SET variables = $2::jsonb,
+			description = CASE WHEN $3 THEN $4 ELSE description END
+		WHERE _id = $1`, inst.taskID, string(updated), refreshDescription, description)
 	return err
 }
 
