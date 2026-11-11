@@ -259,19 +259,40 @@
               <p class="ui-field-help">Structured content is validated before save.</p>
               <p id="{{$x.NAME}}-json-error" class="ui-field-error hidden">Invalid JSON. Fix the syntax before saving.</p>
               {{else if eq $cfg.Kind "markdown"}}
-              <textarea
-                id="{{$x.NAME}}"
-                name="{{$x.NAME}}"
-                data-field-name="{{$x.NAME}}"
-                data-base-required="{{if $required}}1{{else}}0{{end}}"
-                {{if $x.IS_HIDDEN}}hidden{{end}}
-                {{if $readonly}}readonly{{end}}
-                {{if not $x.IS_NULLABLE}}required{{end}}
-                data-markdown-input="true"
-                data-autoexpand="true"
-                placeholder="Write markdown…"
-                class="ui-textarea ui-markdown-textarea"
-              >{{$val}}</textarea>
+              <div
+                class="ui-markdown-field"
+                data-markdown-field="true"
+                data-markdown-readonly="{{if $readonly}}1{{else}}0{{end}}"
+              >
+                <div class="ui-markdown-field-bar">
+                  <div class="ui-segmented ui-markdown-mode" role="tablist" aria-label="{{$x.LABEL}} view">
+                    <button type="button" role="tab" data-markdown-mode="write" aria-selected="false"{{if $readonly}} hidden{{end}}>Write</button>
+                    <button type="button" role="tab" data-markdown-mode="preview" aria-selected="true">Preview</button>
+                  </div>
+                  <span class="ui-field-help" data-markdown-status="true">Markdown, rendered</span>
+                </div>
+                <textarea
+                  id="{{$x.NAME}}"
+                  name="{{$x.NAME}}"
+                  data-field-name="{{$x.NAME}}"
+                  data-base-required="{{if $required}}1{{else}}0{{end}}"
+                  {{if $x.IS_HIDDEN}}hidden{{end}}
+                  {{if $readonly}}readonly{{end}}
+                  {{if not $x.IS_NULLABLE}}required{{end}}
+                  data-markdown-input="true"
+                  data-markdown-preview-id="{{$x.NAME}}-markdown-preview"
+                  data-autoexpand="true"
+                  placeholder="Write markdown…"
+                  class="ui-textarea ui-markdown-textarea"
+                >{{$val}}</textarea>
+                <div
+                  id="{{$x.NAME}}-markdown-preview"
+                  class="ui-markdown-preview ui-content-prose"
+                  data-markdown-preview="true"
+                  aria-live="polite"
+                ></div>
+                <p class="ui-field-error hidden" data-markdown-error="true">Markdown preview unavailable. The saved text is unchanged.</p>
+              </div>
               {{else if or (eq $cfg.Kind "page_wysiwyg") (eq $cfg.Kind "page_html")}}
               <div
                 class="ui-page-editor-frame"
@@ -1059,25 +1080,100 @@
           headers: { "X-CSRF-Token": csrf },
         })
           .then(function (r) { return r.ok ? r.json() : null; })
-          .then(function (data) { if (data && preview) preview.innerHTML = data.html || ""; })
-          .catch(function () {});
+          .then(function (data) {
+            if (!data || !preview) return;
+            preview.innerHTML = data.html || "";
+            input.dispatchEvent(new Event("markdown-preview-ok"));
+          })
+          .catch(function () {
+            // A failed render must not look like an empty document: the
+            // reader would think the field had nothing in it.
+            input.dispatchEvent(new Event("markdown-preview-failed"));
+            if (preview) preview.textContent = input.value || "";
+          });
       }, 350));
     }
 
+    // A markdown field reads as rendered prose by default and switches to a
+    // source box on demand. Reading is the common case (open a task, read the
+    // brief); editing is the occasional one. An empty field still opens in
+    // write mode, because a preview of nothing is not a starting point.
+    function expand(input) {
+      if (!input.hasAttribute("data-autoexpand")) return;
+      // A hidden textarea reports scrollHeight 0, so only measure it when it
+      // is actually laid out; the toggle re-expands on the way back to write.
+      if (!input.offsetParent) return;
+      input.style.height = "auto";
+      input.style.height = input.scrollHeight + "px";
+    }
+
+    function setMode(field, mode) {
+      const input = field.querySelector("textarea[data-markdown-input='true']");
+      if (!input) return;
+      // A readonly field has no write affordance, so it stays in preview.
+      if (field.getAttribute("data-markdown-readonly") === "1") mode = "preview";
+      field.setAttribute("data-markdown-mode", mode);
+      field.querySelectorAll("[data-markdown-mode]").forEach(function (button) {
+        const active = button.getAttribute("data-markdown-mode") === mode;
+        button.setAttribute("aria-selected", active ? "true" : "false");
+        button.classList.toggle("is-active", active);
+      });
+      if (mode === "write") {
+        expand(input);
+        if (document.activeElement !== input && field.dataset.markdownAutofocus === "1") {
+          input.focus();
+        }
+      }
+    }
+
+    document.querySelectorAll("[data-markdown-field='true']").forEach(function (field) {
+      const input = field.querySelector("textarea[data-markdown-input='true']");
+      if (!input) return;
+      const error = field.querySelector("[data-markdown-error='true']");
+      const empty = (input.value || "").trim() === "";
+      setMode(field, empty ? "write" : "preview");
+
+      field.querySelectorAll("[data-markdown-mode]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          field.dataset.markdownAutofocus = button.getAttribute("data-markdown-mode") === "write" ? "1" : "0";
+          setMode(field, button.getAttribute("data-markdown-mode"));
+          if (field.dataset.markdownAutofocus === "1") input.focus();
+        });
+      });
+
+      // Clicking the rendered prose is the obvious way to start editing it.
+      const preview = field.querySelector("[data-markdown-preview='true']");
+      if (preview && field.getAttribute("data-markdown-readonly") !== "1") {
+        preview.addEventListener("click", function (event) {
+          if (event.target.closest("a")) return;
+          setMode(field, "write");
+          input.focus();
+        });
+      }
+
+      if (error) {
+        input.addEventListener("markdown-preview-failed", function () { error.classList.remove("hidden"); });
+        input.addEventListener("markdown-preview-ok", function () { error.classList.add("hidden"); });
+      }
+      expand(input);
+    });
+
     markdownInputs.forEach(function (input) {
-      input.addEventListener("input", function () { refresh(input); });
+      input.addEventListener("input", function () { refresh(input); expand(input); });
+      if (input.hasAttribute("data-autoexpand")) {
+        input.addEventListener("input", function () { expand(input); });
+      }
       refresh(input);
     });
 
-    // Auto-expand textareas that have data-autoexpand="true".
-    markdownInputs.forEach(function (input) {
-      if (!input.hasAttribute("data-autoexpand")) return;
-      function expand() {
-        input.style.height = "auto";
-        input.style.height = input.scrollHeight + "px";
-      }
-      expand();
-      input.addEventListener("input", expand);
+    // Width changes reflow the text, so a height measured before the change is
+    // wrong. Cheaper than a ResizeObserver for a handful of fields.
+    let resizeTimer = null;
+    window.addEventListener("resize", function () {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        markdownInputs.forEach(expand);
+      }, 120);
     });
 
     // Wikilink [[ autocomplete for markdown textareas.

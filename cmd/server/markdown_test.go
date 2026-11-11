@@ -123,3 +123,57 @@ func TestRenderMarkdownWikilinks(t *testing.T) {
 		})
 	}
 }
+
+func TestRenderMarkdownLinkifiesBareURLs(t *testing.T) {
+	// Task briefs are issue text: the URL arrives bare, and CommonMark leaves
+	// it as text. It is the most useful thing in the brief, so it must be
+	// clickable.
+	rendered := string(renderMarkdownToSafeHTML("GitHub: #216 https://github.com/andywithcamera/velm/issues/216"))
+	want := `<a href="https://github.com/andywithcamera/velm/issues/216" target="_blank" rel="noopener noreferrer">https://github.com/andywithcamera/velm/issues/216</a>`
+	if !strings.Contains(rendered, want) {
+		t.Fatalf("bare URL not linkified: %s", rendered)
+	}
+
+	// An explicit markdown link is not linkified a second time.
+	rendered = string(renderMarkdownToSafeHTML("[site](https://example.com/docs)"))
+	if strings.Count(rendered, "<a ") != 1 {
+		t.Fatalf("explicit link double-linked: %s", rendered)
+	}
+
+	// Trailing punctuation belongs to the sentence, not the URL.
+	rendered = string(renderMarkdownToSafeHTML("see https://example.com/docs, then stop"))
+	if !strings.Contains(rendered, `href="https://example.com/docs"`) {
+		t.Fatalf("trailing comma kept inside the href: %s", rendered)
+	}
+
+	// A closing parenthesis is dropped only when it is unbalanced.
+	rendered = string(renderMarkdownToSafeHTML("(see https://example.com/docs)"))
+	if !strings.Contains(rendered, `href="https://example.com/docs"`) {
+		t.Fatalf("sentence parenthesis kept inside the href: %s", rendered)
+	}
+
+	// Nothing but http(s) is ever auto-linked: the pattern is the allowlist.
+	rendered = string(renderMarkdownToSafeHTML("javascript:alert(1) and file:///etc/passwd"))
+	if strings.Contains(rendered, "<a ") {
+		t.Fatalf("non-http scheme auto-linked: %s", rendered)
+	}
+}
+
+func TestRenderMarkdownOrderedListsAndQuotes(t *testing.T) {
+	rendered := string(renderMarkdownToSafeHTML("1. Create a member\n2. Grant the group\n3. Observe the denial"))
+	if !strings.Contains(rendered, "<ol><li>Create a member</li><li>Grant the group</li><li>Observe the denial</li></ol>") {
+		t.Fatalf("ordered list not rendered as <ol>: %s", rendered)
+	}
+
+	// A bullet list followed by a numbered list must not merge: the numbering
+	// the author typed is the instructions' order.
+	rendered = string(renderMarkdownToSafeHTML("- a\n- b\n\n1. first\n2. second"))
+	if !strings.Contains(rendered, "<ul><li>a</li><li>b</li></ul>") || !strings.Contains(rendered, "<ol><li>first</li><li>second</li></ol>") {
+		t.Fatalf("list types merged: %s", rendered)
+	}
+
+	rendered = string(renderMarkdownToSafeHTML("> The scope wins over the role."))
+	if !strings.Contains(rendered, "<blockquote>The scope wins over the role.</blockquote>") {
+		t.Fatalf("blockquote not rendered: %s", rendered)
+	}
+}

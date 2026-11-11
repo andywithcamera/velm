@@ -171,6 +171,7 @@ func summarizeTimelineValue(value string) string {
 	if value == "" {
 		return "Empty"
 	}
+	value = normalizeTimelineValueTimestamp(value)
 	value = strings.ReplaceAll(value, "\r\n", "\n")
 	value = strings.ReplaceAll(value, "\n", " ")
 	if len(value) > 120 {
@@ -184,6 +185,35 @@ func formatTimelineTimestamp(value time.Time) string {
 		return ""
 	}
 	return value.Local().Format("2006-01-02 15:04:05 MST")
+}
+
+// normalizeTimelineValueTimestamp rewrites the Go-formatted timestamps that
+// end up in the change log. A diff stores the previous and next values as they
+// were rendered, and a timestamp rendered by fmt was "2026-11-09
+// 21:03:33.127531 +0000 UTC": microseconds and a redundant zone offset in a
+// column of prose. Re-formatting to the same shape the entry header uses keeps
+// one clock format on the record.
+var timelineValueLayouts = []string{
+	"2006-01-02 15:04:05.999999999 -0700 MST",
+	"2006-01-02 15:04:05.999999999 -0700",
+	"2006-01-02 15:04:05 -0700 MST",
+	"2006-01-02 15:04:05 -0700",
+	"2006-01-02T15:04:05.999999999Z07:00",
+	time.RFC3339Nano,
+}
+
+func normalizeTimelineValueTimestamp(value string) string {
+	if len(value) < 19 || value[4] != '-' || value[7] != '-' {
+		return value
+	}
+	for _, layout := range timelineValueLayouts {
+		parsed, err := time.Parse(layout, value)
+		if err != nil {
+			continue
+		}
+		return formatTimelineTimestamp(parsed)
+	}
+	return value
 }
 
 func humanizeTimelineIdentifier(value string) string {
