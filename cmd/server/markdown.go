@@ -13,6 +13,9 @@ var (
 	mdItalicPattern   = regexp.MustCompile(`\*([^*]+)\*`)
 	mdCodePattern     = regexp.MustCompile("`([^`]+)`")
 	mdWikilinkPattern = regexp.MustCompile(`\[\[([^\]|]+?)(?:\|([^\]]+?))?\]\]`)
+	mdBareURLPattern  = regexp.MustCompile(`https?://[^\s<>"]+`)
+	mdOrderedPattern  = regexp.MustCompile(`^[0-9]+\.\s+`)
+	mdTagSplitPattern = regexp.MustCompile(`<[^>]+>`)
 )
 
 func renderMarkdownToSafeHTML(raw string) template.HTML {
@@ -26,12 +29,23 @@ func renderMarkdownToSafeHTMLResolved(raw string, resolver func(string) string) 
 	lines := strings.Split(raw, "\n")
 	out := make([]string, 0, len(lines))
 	listItems := make([]string, 0, 8)
+	listTag := "ul"
 	flushList := func() {
 		if len(listItems) == 0 {
 			return
 		}
-		out = append(out, "<ul>"+strings.Join(listItems, "")+"</ul>")
+		out = append(out, "<"+listTag+">"+strings.Join(listItems, "")+"</"+listTag+">")
 		listItems = listItems[:0]
+		listTag = "ul"
+	}
+	appendListItem := func(tag string, body string) {
+		// A change of marker starts a new list: mixing bullet and numbered
+		// items through one <ul> loses the numbering the author typed.
+		if tag != listTag {
+			flushList()
+			listTag = tag
+		}
+		listItems = append(listItems, "<li>"+body+"</li>")
 	}
 	for _, line := range lines {
 		trim := strings.TrimSpace(line)
@@ -73,10 +87,16 @@ func renderMarkdownToSafeHTMLResolved(raw string, resolver func(string) string) 
 			}
 			return `<span class="docs-wikilink docs-wikilink-unresolved" title="No matching record found">` + display + `</span>`
 		})
+		esc = autolinkBareURLs(esc)
 
 		switch {
 		case strings.HasPrefix(trim, "- "):
-			listItems = append(listItems, "<li>"+strings.TrimPrefix(esc, "- ")+"</li>")
+			appendListItem("ul", strings.TrimPrefix(esc, "- "))
+		case mdOrderedPattern.MatchString(trim):
+			appendListItem("ol", mdOrderedPattern.ReplaceAllString(esc, ""))
+		case strings.HasPrefix(trim, "> "):
+			flushList()
+			out = append(out, "<blockquote>"+strings.TrimPrefix(esc, "&gt; ")+"</blockquote>")
 		case strings.HasPrefix(trim, "### "):
 			flushList()
 			out = append(out, "<h3>"+strings.TrimPrefix(esc, "### ")+"</h3>")
@@ -99,6 +119,58 @@ func renderMarkdownToSafeHTMLResolved(raw string, resolver func(string) string) 
 	// HTMLEscapeString. Escaping first is what makes the injected tags safe;
 	// applying them to raw input would not be.
 	return template.HTML(strings.Join(out, "\n")) // #nosec G203 -- escaped before markup, see comment above
+}
+
+// autolinkBareURLs turns pasted URLs into links. A task brief is usually
+// issue text, and issue text carries bare URLs ("GitHub: #216
+// https://github.com/..."). CommonMark does not link those without an
+// autolink extension, so without this the most useful thing in a brief was
+// dead text — the exact complaint the rendered field was meant to fix.
+//
+// Only text outside existing tags is scanned: the tag boundary is a fixed
+// injected tag, never user input, and a URL already inside href="..." must not
+// be wrapped again.
+func autolinkBareURLs(escaped string) string {
+	if !strings.Contains(escaped, "http") {
+		return escaped
+	}
+	parts := mdTagSplitPattern.Split(escaped, -1)
+	tags := mdTagSplitPattern.FindAllString(escaped, -1)
+	var builder strings.Builder
+	builder.Grow(len(escaped) + 32)
+	for i, part := range parts {
+		builder.WriteString(linkifyText(part))
+		if i < len(tags) {
+			builder.WriteString(tags[i])
+		}
+	}
+	return builder.String()
+}
+
+func linkifyText(text string) string {
+	if !strings.Contains(text, "http") {
+		return text
+	}
+	return mdBareURLPattern.ReplaceAllStringFunc(text, func(match string) string {
+		url := strings.TrimRight(match, ".,;:!?'\"")
+		// A URL at the end of a parenthesised clause commonly ends with ')'
+		// that belongs to the sentence: balance it before trimming.
+		for strings.Count(url, ")") > strings.Count(url, "(") && strings.HasSuffix(url, ")") {
+			url = strings.TrimSuffix(url, ")")
+		}
+		if url == "" {
+			return match
+		}
+		href, external := sanitizeURLForHTML(html.UnescapeString(url))
+		if href == "#" {
+			return match
+		}
+		suffix := match[len(url):]
+		if external {
+			return `<a href="` + href + `" target="_blank" rel="noopener noreferrer">` + url + `</a>` + suffix
+		}
+		return `<a href="` + href + `">` + url + `</a>` + suffix
+	})
 }
 
 func sanitizeURLForHTML(raw string) (string, bool) {

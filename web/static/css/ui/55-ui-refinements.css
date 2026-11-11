@@ -871,3 +871,144 @@
     width: auto;
   }
 }
+
+/*
+ * Markdown form fields.
+ *
+ * A markdown field used to be a plain textarea: the source was shown as
+ * source, links stayed dead, and the box scrolled internally so a long brief
+ * was read through a letterbox. It now shows rendered prose, switches to a
+ * source box on demand, and grows to fit its content instead of scrolling.
+ */
+.ui-markdown-field {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.ui-markdown-field-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.ui-markdown-field-bar .ui-field-help {
+  margin: 0;
+}
+
+.ui-markdown-mode {
+  font-size: 0.78rem;
+}
+
+.ui-markdown-field .ui-markdown-textarea {
+  overflow: hidden;
+  resize: vertical;
+  min-height: 6.5rem;
+}
+
+.ui-markdown-preview {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  padding: 0.7rem 0.85rem;
+  min-height: 3rem;
+  cursor: text;
+  overflow-wrap: anywhere;
+}
+
+.ui-markdown-preview:empty::before {
+  content: "Nothing to preview yet.";
+  color: var(--text-dim, currentColor);
+  opacity: 0.7;
+}
+
+.ui-markdown-preview :first-child {
+  margin-top: 0;
+}
+
+.ui-markdown-preview :last-child {
+  margin-bottom: 0;
+}
+
+.ui-markdown-preview a {
+  text-decoration: underline;
+}
+
+.ui-markdown-field[data-markdown-mode="preview"] .ui-markdown-textarea {
+  display: none;
+}
+
+.ui-markdown-field[data-markdown-mode="write"] .ui-markdown-preview {
+  display: none;
+}
+
+.ui-markdown-field[data-markdown-readonly="1"] .ui-markdown-mode {
+  display: none;
+}
+
+/* The toggle keeps both options visible: hiding the inactive one left a
+   single button and no way back to the editor. */
+.ui-markdown-mode [data-markdown-mode] {
+  cursor: pointer;
+}
+
+/* The relationship map is a fixed-aspect block: it must not be squeezed. */
+.ui-record-timeline-card > .ui-form-map {
+  flex: 0 0 auto;
+  max-height: 42vh;
+}
+
+.ui-record-timeline-card > [data-record-panel-body="true"] {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Prose inside a rendered field. The global reset removes list markers and
+   blockquote rules; markdown that renders as unmarked lines reads as loose
+   text rather than a list, so restore them inside the preview only. */
+.ui-markdown-preview ul,
+.ui-markdown-preview ol {
+  margin: 0.35rem 0;
+  padding-left: 1.35rem;
+}
+
+.ui-markdown-preview ul {
+  list-style: disc outside;
+}
+
+.ui-markdown-preview ol {
+  list-style: decimal outside;
+}
+
+.ui-markdown-preview li {
+  margin: 0.15rem 0;
+}
+
+.ui-markdown-preview blockquote {
+  margin: 0.5rem 0;
+  padding: 0.15rem 0 0.15rem 0.75rem;
+  border-left: 3px solid var(--border-mid);
+  color: var(--text-secondary);
+}
+
+.ui-markdown-preview h1,
+.ui-markdown-preview h2,
+.ui-markdown-preview h3 {
+  margin: 0.6rem 0 0.3rem;
+  line-height: 1.25;
+}
+
+.ui-markdown-preview code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  font-size: 0.9em;
+}
+
+.ui-markdown-preview p {
+  margin: 0.35rem 0;
+}

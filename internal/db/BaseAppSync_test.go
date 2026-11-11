@@ -407,3 +407,36 @@ func TestApplyBaseTaskFormLayout(t *testing.T) {
 		t.Fatalf("second pass changed the column set (%d columns)", len(table.Columns))
 	}
 }
+
+// A task description carries markdown — definition briefs are authored that
+// way, the engine copies them verbatim, and people paste GitHub issue text in.
+// While it was long_text the form showed the source: links stayed dead and
+// bullets stayed literal. The kind is metadata only; both map to TEXT.
+func TestSimplifyBaseTaskDescriptionRendersMarkdown(t *testing.T) {
+	table := AppDefinitionTable{
+		Name: "base_task",
+		Columns: []AppDefinitionColumn{
+			{Name: "title", DataType: "text"},
+			{Name: "description", DataType: "long_text"},
+			{Name: "notes", DataType: "long_text"},
+		},
+	}
+
+	simplifyBaseTaskTable(&table)
+
+	if got := requireDefinitionColumn(t, table, "description").DataType; got != "markdown" {
+		t.Fatalf("description data type = %q, want markdown", got)
+	}
+	// Idempotent: the rewrite runs on every boot, so a second pass must not
+	// change anything (a flip-flopping kind would rewrite the definition each sync).
+	before := table.Columns[1].DataType
+	simplifyBaseTaskTable(&table)
+	if got := table.Columns[1].DataType; got != before {
+		t.Fatalf("second pass changed description from %q to %q", before, got)
+	}
+	// Only description: another long_text column on the same table is not
+	// prose by definition and must keep its own kind.
+	if got := requireDefinitionColumn(t, table, "notes").DataType; got != "long_text" {
+		t.Fatalf("notes data type = %q, want long_text (only description is markdown)", got)
+	}
+}

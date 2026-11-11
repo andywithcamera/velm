@@ -14,7 +14,7 @@
 @import url("./ui/40-velm-monochrome.css?v=20261110a");
 @import url("./ui/50-docs.css?v=20260511d");
 @import url("./ui/45-overlays.css?v=20261110a");
-@import url("./ui/55-ui-refinements.css?v=20261108a");
+@import url("./ui/55-ui-refinements.css?v=20261111b");
 
 /* Form-embedded relationship map (phase 1) */
 .ui-form-map { position: relative; min-height: 240px; }

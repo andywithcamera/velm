@@ -74,3 +74,32 @@ func TestSummarizeTimelineValue(t *testing.T) {
 		t.Fatalf("expected truncated value to end with ellipsis, got %q", got)
 	}
 }
+
+func TestNormalizeTimelineValueTimestamp(t *testing.T) {
+	// The change log stores the previous and next value as rendered, so a
+	// timestamp arrives in whatever shape fmt produced:
+	// "2026-11-09 21:03:33.127531 +0000 UTC". Microseconds and a redundant
+	// offset do not belong in a column of prose.
+	cases := map[string]string{
+		"2026-11-09 21:03:33.127531 +0000 UTC": "2026-11-09 21:03:33 UTC",
+		"2026-11-09 21:03:33 +0000 UTC":        "2026-11-09 21:03:33 UTC",
+		"2026-11-09 21:03:33.127531 +0000":     "2026-11-09 21:03:33 UTC",
+		"2026-11-09T21:03:33Z":                 "2026-11-09 21:03:33 UTC",
+		// Not timestamps: left exactly as they are.
+		"2026-11-09":       "2026-11-09",
+		"ready":            "ready",
+		"TASK-000125":      "TASK-000125",
+		"2026-11-09 notes": "2026-11-09 notes",
+	}
+	for input, want := range cases {
+		if got := normalizeTimelineValueTimestamp(input); got != want {
+			t.Fatalf("normalizeTimelineValueTimestamp(%q) = %q, want %q", input, got, want)
+		}
+	}
+
+	// And it is applied on the way through the summariser used by the stream.
+	got := summarizeTimelineValue("2026-11-09 21:03:33.366623 +0000 UTC")
+	if got != "2026-11-09 21:03:33 UTC" {
+		t.Fatalf("summarizeTimelineValue timestamp = %q, want normalised", got)
+	}
+}

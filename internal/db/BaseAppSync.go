@@ -331,6 +331,16 @@ func simplifyBaseTaskTable(table *AppDefinitionTable) {
 			column.DefaultValue = "medium"
 			column.Choices = append([]ChoiceOption(nil), baseTaskPriorityChoices...)
 		}
+		if column.Name == "description" {
+			// Task descriptions are markdown in practice: definition briefs
+			// are authored as markdown, the engine copies them verbatim, and
+			// people paste GitHub issue text in. As long_text the form showed
+			// the source, so links stayed dead and bullets stayed literal.
+			// The markdown kind renders a preview without changing the
+			// column type: builderDataTypeToSQL maps both to TEXT, so no
+			// physical migration is implied.
+			column.DataType = "markdown"
+		}
 		columns = append(columns, column)
 		if column.Name == "work_type" && insertAt == -1 {
 			insertAt = len(columns)
