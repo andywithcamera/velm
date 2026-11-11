@@ -153,8 +153,19 @@ tables:
 	if got := closureReasonColumn.ConditionExpr; got != "state=closed" {
 		t.Fatalf("expected closure_reason condition expr state=closed, got %q", got)
 	}
-	if got := len(closureReasonColumn.Choices); got != 2 {
-		t.Fatalf("expected two closure reason choices, got %d", got)
+	if got := len(closureReasonColumn.Choices); got != 4 {
+		t.Fatalf("expected four closure reason choices, got %d", got)
+	}
+	// #264: the DB constraint has allowed rejected/failed since 084, but the
+	// form only offered two, so rejection loops could never fire.
+	values := []string{}
+	for _, choice := range closureReasonColumn.Choices {
+		values = append(values, choice.Value)
+	}
+	for _, want := range []string{"completed", "cancelled", "rejected", "failed"} {
+		if !containsString(values, want) {
+			t.Fatalf("expected closure reason choice %q, got %v", want, values)
+		}
 	}
 
 	if fields := task.Forms[0].Fields; containsString(fields, "state_id") || containsString(fields, "entity_id") {

@@ -163,6 +163,8 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 	}
 
 	var taskID string
+	var taskNumber string
+	title := instanceTitle(ctx, q, def, parentTaskID)
 	err = q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, priority, parent_task_id,
 			assignment_group_id, requested_by_user_id, definition_id, variables)
@@ -171,11 +173,20 @@ func spawnTaskForDefinition(ctx context.Context, q scriptQuerier, def *TaskDefin
 			$1, 'TASK',
 			$2,
 			'medium', $3, $4, $5, $6, $7::jsonb)
-		RETURNING _id`,
-		def.DisplayName, spawnStateFor(def, parentTaskID), nullable(parentTaskID), nullable(def.DefaultGroupID),
-		nullable(requestedBy), def.ID, string(varsJSON)).Scan(&taskID)
+		RETURNING _id, number`,
+		title, spawnStateFor(def, parentTaskID), nullable(parentTaskID), nullable(def.DefaultGroupID),
+		nullable(requestedBy), def.ID, string(varsJSON)).Scan(&taskID, &taskNumber)
 	if err != nil {
 		return "", fmt.Errorf("spawn task: %w", err)
+	}
+
+	// Identity (#272): every run of a definition used to carry the same
+	// title, so a board of 28 "Feature Request" cards was unreadable. The
+	// number is assigned by the before-write trigger, so it is appended
+	// after the insert rather than composed into the value above.
+	if _, err := q.Exec(ctx, `UPDATE base_task SET title = $2 WHERE _id = $1`,
+		taskID, composeInstanceTitle(title, taskNumber)); err != nil {
+		return "", fmt.Errorf("spawn task title: %w", err)
 	}
 
 	if def.IsContainer {
@@ -646,9 +657,17 @@ func executeTaskGoja(ctx context.Context, tx pgx.Tx, taskID, code string, vars m
 }
 
 // CompleteTask closes a task (state closed, closure_reason completed),
-// publishing its declared outputs to the parent scope and firing the
-// definition's spawn rules.
+// publishing its declared outputs to the parent scope, firing the
+// definition's spawn rules, and rolling up any ancestor container whose
+// children are now all terminal.
 func CompleteTask(ctx context.Context, taskID, actorUserID string) error {
+	return CloseTaskWithReason(ctx, taskID, actorUserID, "completed")
+}
+
+// CloseTaskWithReason is the engine-side close for every surface: it sets
+// state and reason, then runs the same post-close hooks a form save runs.
+func CloseTaskWithReason(ctx context.Context, taskID, actorUserID, closureReason string) error {
+	reason := normalizeClosureReason(closureReason)
 	tx, err := Pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -658,10 +677,13 @@ func CompleteTask(ctx context.Context, taskID, actorUserID string) error {
 	if err := transitionTaskInTx(ctx, tx, taskID, taskStateDone); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE base_task SET closure_reason = 'completed' WHERE _id = $1`, taskID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE base_task SET closure_reason = $2 WHERE _id = $1`, taskID, reason); err != nil {
 		return err
 	}
-	if err := onTaskClosed(ctx, tx, taskID, "completed", actorUserID); err != nil {
+	if err := onTaskClosed(ctx, tx, taskID, reason, actorUserID); err != nil {
+		return err
+	}
+	if err := rollUpAncestors(ctx, tx, taskID, actorUserID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -710,8 +732,12 @@ func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, closureReason, actorUs
 		}
 	}
 
-	if err := promoteChildren(ctx, tx, parentIDOrEmpty(parentID), actorUserID); err != nil {
-		return err
+	// A root task has no parent to promote: passing an empty id to the
+	// sibling query would be an invalid uuid cast, so short-circuit.
+	if parent := parentIDOrEmpty(parentID); parent != "" {
+		if err := promoteChildren(ctx, tx, parent, actorUserID); err != nil {
+			return err
+		}
 	}
 
 	return fireSpawnRules(ctx, tx, taskID, closureReason, actorUserID)
