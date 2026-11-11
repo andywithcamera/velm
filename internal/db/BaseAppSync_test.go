@@ -305,3 +305,105 @@ func containsString(values []string, target string) bool {
 	}
 	return false
 }
+
+func TestApplyBaseTaskFormLayout(t *testing.T) {
+	table := AppDefinitionTable{
+		Name: "base_task",
+		Columns: []AppDefinitionColumn{
+			{Name: "number", DataType: "autnumber"},
+			{Name: "title", DataType: "text"},
+			{Name: "description", DataType: "long_text"},
+			{Name: "work_type", DataType: "text"},
+			{Name: "state", DataType: "choice"},
+			{Name: "closure_reason", DataType: "choice", ConditionExpr: "state=closed"},
+			{Name: "priority", DataType: "choice"},
+			{Name: "parent_task_id", DataType: "reference"},
+			{Name: "assignment_group_id", DataType: "reference"},
+			{Name: "assigned_user_id", DataType: "reference"},
+			{Name: "requested_by_user_id", DataType: "reference"},
+			{Name: "planned_start_at", DataType: "timestamptz"},
+			{Name: "due_at", DataType: "timestamptz"},
+			{Name: "started_at", DataType: "timestamptz"},
+			{Name: "closed_at", DataType: "timestamptz"},
+			// Operator-added extension column that IS on the form must survive.
+			{Name: "custom_note", DataType: "text"},
+			// System timestamp that the form deliberately leaves out.
+			{Name: "state_changed_at", DataType: "timestamptz"},
+			// Extension column that was never on the form: not our business.
+			{Name: "unused_extension", DataType: "text"},
+		},
+		Forms: []AppDefinitionForm{{
+			Name:   "default",
+			Fields: []string{"number", "title", "work_type", "state", "closure_reason", "custom_note"},
+		}},
+	}
+
+	applyBaseTaskFormLayout(&table)
+
+	want := []string{
+		"number", "title", "description", "parent_task_id",
+		"state", "closure_reason", "priority",
+		"assignment_group_id", "assigned_user_id", "requested_by_user_id",
+		"planned_start_at", "due_at", "started_at", "closed_at", "custom_note",
+	}
+	got := table.Forms[0].Fields
+	if len(got) != len(want) {
+		t.Fatalf("form order length %d, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("form field %d = %q, want %q (full: %v)", i, got[i], want[i], got)
+		}
+	}
+
+	// description must read before the bookkeeping fields.
+	index := func(name string) int {
+		for i, field := range got {
+			if field == name {
+				return i
+			}
+		}
+		return -1
+	}
+	if index("description") < 0 || index("state") < 0 {
+		t.Fatalf("description and state must both be on the form: %v", got)
+	}
+	if index("description") > index("state") {
+		t.Fatal("description must come before state")
+	}
+	if index("work_type") >= 0 {
+		t.Fatal("work_type is auto-stamped and must not be on the form")
+	}
+	if index("state_changed_at") >= 0 {
+		t.Fatal("state_changed_at was never on the form and must not be added")
+	}
+	if index("unused_extension") >= 0 {
+		t.Fatal("a column that was never on the form must not be promoted onto it")
+	}
+
+	conditions := map[string]string{}
+	for _, column := range table.Columns {
+		conditions[column.Name] = column.ConditionExpr
+	}
+	if conditions["started_at"] != "state=in_progress||state=closed" {
+		t.Fatalf("started_at condition = %q", conditions["started_at"])
+	}
+	if conditions["closed_at"] != "state=closed" {
+		t.Fatalf("closed_at condition = %q", conditions["closed_at"])
+	}
+	if conditions["closure_reason"] != "state=closed" {
+		t.Fatalf("closure_reason condition was disturbed: %q", conditions["closure_reason"])
+	}
+
+	// Idempotent: a second pass must not change anything.
+	before := append([]string(nil), table.Forms[0].Fields...)
+	applyBaseTaskFormLayout(&table)
+	for i := range before {
+		if table.Forms[0].Fields[i] != before[i] {
+			t.Fatalf("second pass changed field %d: %q -> %q", i, before[i], table.Forms[0].Fields[i])
+		}
+	}
+	if len(table.Columns) != 18 {
+		t.Fatalf("second pass changed the column set (%d columns)", len(table.Columns))
+	}
+}

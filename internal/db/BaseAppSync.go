@@ -152,6 +152,7 @@ func simplifyBaseTaskModelDefinition(definition *AppDefinition) bool {
 			table.Forms = removeFieldFromForms(table.Forms, "entity_id")
 			table.Forms = removeFieldFromForms(table.Forms, "board_rank")
 			table.Forms = removeFieldFromForms(table.Forms, "resolved_at")
+			applyBaseTaskFormLayout(&table)
 			table.Lists = removeFieldFromLists(table.Lists, "entity_id")
 			table.Lists = removeFieldFromLists(table.Lists, "board_rank")
 			table.Lists = removeFieldFromLists(table.Lists, "resolved_at")
@@ -193,6 +194,116 @@ func simplifyBaseTaskModelDefinition(definition *AppDefinition) bool {
 
 	after, _ := yaml.Marshal(definition)
 	return string(before) != string(after)
+}
+
+// baseTaskFormOrder is the reading order for a task form: identity, the
+// brief, what the task belongs to, its control state, its ownership, then
+// the timestamps. It replaces an order where description sat last, below
+// four timestamps, and where the doer's first question ("what is this?")
+// was answered by a field they had to scroll past five others to reach.
+//
+// work_type is deliberately absent: it is auto-stamped on every write
+// (HandleSave, ScriptOps, AppSeeds) and is the constant TASK on all 116
+// live rows, so offering it as an editable text box only invited damage.
+var baseTaskFormOrder = []string{
+	"number",
+	"title",
+	"description",
+	"parent_task_id",
+	"state",
+	"closure_reason",
+	"priority",
+	"assignment_group_id",
+	"assigned_user_id",
+	"requested_by_user_id",
+	"planned_start_at",
+	"due_at",
+	"started_at",
+	"closed_at",
+}
+
+// applyBaseTaskFormLayout makes the task form describe the work before it
+// describes the bookkeeping. Idempotent: it rewrites the ordering every
+// boot and reports nothing when it is already correct.
+func applyBaseTaskFormLayout(table *AppDefinitionTable) {
+	if table == nil {
+		return
+	}
+	table.Columns = applyBaseTaskFieldConditions(table.Columns)
+
+	present := make(map[string]bool, len(table.Columns))
+	for _, column := range table.Columns {
+		present[strings.TrimSpace(strings.ToLower(column.Name))] = true
+	}
+	order := make([]string, 0, len(table.Columns))
+	seen := make(map[string]bool, len(table.Columns))
+	for _, name := range baseTaskFormOrder {
+		if !present[name] || seen[name] {
+			continue
+		}
+		order = append(order, name)
+		seen[name] = true
+	}
+	// Preserve hand-added form fields in their existing order, but never
+	// promote a column that was never on the form: state_changed_at is the
+	// system timestamp the current form leaves out on purpose, and adding
+	// it here would put a fifth timestamp back on the doer's screen.
+	// work_type is dropped outright — it stays a column (HandleSave stamps
+	// it) but is the constant TASK on every live row.
+	var previous []string
+	if len(table.Forms) > 0 {
+		previous = table.Forms[0].Fields
+	}
+	for _, field := range previous {
+		name := strings.TrimSpace(field)
+		key := strings.ToLower(name)
+		if name == "" || seen[key] || !present[key] {
+			continue
+		}
+		if strings.HasPrefix(name, "_") || key == "work_type" {
+			continue
+		}
+		order = append(order, name)
+		seen[key] = true
+	}
+
+	if len(table.Forms) == 0 {
+		table.Forms = []AppDefinitionForm{{
+			Name:   "default",
+			Label:  "Default",
+			Fields: order,
+		}}
+		return
+	}
+	for i := range table.Forms {
+		if i > 0 {
+			// Secondary forms are hand-built; only strip the dead field.
+			table.Forms[i].Fields = removeFieldName(table.Forms[i].Fields, "work_type")
+			continue
+		}
+		table.Forms[i].Fields = order
+	}
+}
+
+// applyBaseTaskFieldConditions hides the timestamps a task has not reached
+// yet, matching closure_reason's existing state=closed condition. The
+// fields stay in the form: when state moves the condition re-evaluates and
+// the timestamp appears, so nobody has to wonder what started_at means on
+// a task that has not started.
+func applyBaseTaskFieldConditions(columns []AppDefinitionColumn) []AppDefinitionColumn {
+	for i := range columns {
+		switch strings.ToLower(strings.TrimSpace(columns[i].Name)) {
+		case "started_at":
+			columns[i].ConditionExpr = "state=in_progress||state=closed"
+		case "closed_at":
+			columns[i].ConditionExpr = "state=closed"
+		case "planned_start_at", "due_at":
+			// Plan dates are always relevant: a task can be scheduled
+			// before anyone starts it.
+			columns[i].ConditionExpr = ""
+		}
+	}
+	return columns
 }
 
 func simplifyBaseTaskTable(table *AppDefinitionTable) {
