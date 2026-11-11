@@ -551,6 +551,13 @@ func normalizeTaskBoardAssignedTo(raw, userID string, options []taskBoardChoice)
 	case taskBoardAssignedToMe:
 		return taskBoardAssignedToMe
 	}
+	// "me" is what a person types and what a hand-written link contains;
+	// the sentinel is __me__. Treating the obvious spelling as an unknown
+	// value silently dropped the filter and showed the whole board, which
+	// reads as "you have 106 tasks" when it means "filter ignored".
+	if strings.EqualFold(value, "me") {
+		return taskBoardAssignedToMe
+	}
 	if value == strings.TrimSpace(userID) {
 		return taskBoardAssignedToMe
 	}
