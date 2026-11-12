@@ -30,11 +30,14 @@ type AuthzGroupMembership struct {
 	Roles     string
 }
 
-// ListAuthzGroups returns every group with the roles it grants.
+// ListAuthzGroups returns every group with the roles it grants. A role granted
+// at app scope is annotated with @<app_id> (issue #216): the scope is part of
+// what the grant means, and a scoped grant on a system group is now rejected
+// outright.
 func ListAuthzGroups(ctx context.Context) ([]AuthzGroup, error) {
 	rows, err := Pool.Query(ctx, `
 		SELECT g._id::text, g.name, COALESCE(g.is_system, FALSE),
-		       COALESCE(string_agg(DISTINCT r.name, ', ' ORDER BY r.name), ''),
+		       COALESCE(string_agg(DISTINCT r.name || CASE WHEN gr.app_id = '' THEN '' ELSE ' @' || gr.app_id END, ', ' ORDER BY r.name || CASE WHEN gr.app_id = '' THEN '' ELSE ' @' || gr.app_id END), ''),
 		       (SELECT COUNT(*) FROM _group_membership gm WHERE gm.group_id = g._id)
 		FROM _group g
 		LEFT JOIN _group_role gr ON gr.group_id = g._id
@@ -63,7 +66,7 @@ func ListAuthzGroups(ctx context.Context) ([]AuthzGroup, error) {
 func ListAuthzGroupMemberships(ctx context.Context) ([]AuthzGroupMembership, error) {
 	rows, err := Pool.Query(ctx, `
 		SELECT u._id::text, u.name, u.email, g._id::text, g.name,
-		       COALESCE(string_agg(DISTINCT r.name, ', ' ORDER BY r.name), '')
+		       COALESCE(string_agg(DISTINCT r.name || CASE WHEN gr.app_id = '' THEN '' ELSE ' @' || gr.app_id END, ', ' ORDER BY r.name || CASE WHEN gr.app_id = '' THEN '' ELSE ' @' || gr.app_id END), '')
 		FROM _group_membership gm
 		JOIN _group g ON g._id = gm.group_id
 		JOIN _user u ON u._id::text = gm.user_id
