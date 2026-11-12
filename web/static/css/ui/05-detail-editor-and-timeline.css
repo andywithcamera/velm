@@ -270,6 +270,17 @@
   font-weight: 600;
 }
 
+.ui-record-timeline-scope {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+
 .ui-record-timeline-comment {
   margin-top: 0.55rem;
   color: var(--text-secondary);
@@ -686,3 +697,65 @@
 .docs-library-settings-body {
   padding: 0.9rem;
 }
+
+.ui-task-request {
+  margin-bottom: 1rem;
+}
+
+.ui-task-request-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: 0.6rem;
+}
+
+.ui-task-request-title {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.ui-task-request-def {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.ui-task-request-group + .ui-task-request-group {
+  margin-top: 0.85rem;
+}
+
+.ui-task-request-group-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+
+.ui-task-request-list {
+  margin: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ui-task-request-item {
+  display: grid;
+  gap: 0.15rem;
+  border-left: 2px solid var(--border);
+  padding-left: 0.6rem;
+}
+
+.ui-task-request-label {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.ui-task-request-value {
+  margin: 0;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+

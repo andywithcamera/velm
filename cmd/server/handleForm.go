@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -300,6 +301,7 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 	viewData["FormPasswordState"] = loadFormPasswordState(ctx, tableName, id)
 	viewData["FormTimelineCanComment"] = id != "" && id != "new" && !formReadOnly
 	viewData["FormTimelineItems"] = []formTimelineItem{}
+	viewData["FormTaskRequest"] = db.TaskRequestView{}
 	viewData["FormRelatedSections"] = []formRelatedSection{}
 	viewData["FormRuntimeApp"] = ""
 	viewData["FormClientScriptsJSON"] = "[]"
@@ -322,6 +324,7 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 			timelineItems   []formTimelineItem
 			relatedSections []formRelatedSection
 			docBacklinks    []docsBacklink
+			taskRequest     db.TaskRequestView
 			wg              sync.WaitGroup
 		)
 		wg.Add(3)
@@ -337,10 +340,24 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 			defer wg.Done()
 			docBacklinks = loadFormDocsBacklinks(ctx, formFieldValues)
 		}()
+		// A task's request (its inputs and outputs) is what a doer needs to
+		// know what was actually asked for. Only base_task carries it.
+		if tableName == db.TaskTableName {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if request, err := db.LoadTaskRequest(ctx, id); err == nil {
+					taskRequest = request
+				} else {
+					log.Printf("failed to load task request table=%s id=%s err=%v", tableName, id, err)
+				}
+			}()
+		}
 		wg.Wait()
 		viewData["FormTimelineItems"] = timelineItems
 		viewData["FormRelatedSections"] = relatedSections
 		viewData["FormDocBacklinks"] = docBacklinks
+		viewData["FormTaskRequest"] = taskRequest
 	}
 	return viewData, nil
 }

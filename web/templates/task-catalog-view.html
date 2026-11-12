@@ -154,6 +154,64 @@
     font-size: 0.85rem;
   }
 
+  .ui-catalog-order {
+    border-top: 1px solid var(--border);
+    padding-top: 0.5rem;
+  }
+
+  .ui-catalog-order > summary {
+    list-style: none;
+    cursor: pointer;
+    display: inline-block;
+  }
+
+  .ui-catalog-order > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .ui-catalog-order-form {
+    display: grid;
+    gap: 0.6rem;
+    margin-top: 0.6rem;
+  }
+
+  .ui-catalog-field {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .ui-catalog-field-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-catalog-required {
+    color: rgb(220, 80, 80);
+    margin-left: 0.2rem;
+  }
+
+  .ui-catalog-field-input {
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  textarea.ui-catalog-field-input {
+    resize: vertical;
+  }
+
+  .ui-catalog-field-help {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+
   .ui-catalog-empty {
     color: var(--text-dim);
     padding: 1rem 0;
@@ -203,11 +261,41 @@
                 <p class="ui-catalog-card-desc">{{if .Description}}{{.Description}}{{else}}No description yet.{{end}}</p>
                 <div class="ui-catalog-card-meta">
                   <span class="ui-catalog-chip">{{if .IsContainer}}pipeline{{else}}task{{end}}</span>
-                  <form hx-post="{{$.TaskCatalogOrderURL}}" hx-target="find .ui-catalog-start" hx-swap="outerHTML">
+                  {{if .HasInputs}}<span class="ui-catalog-chip">{{len .InputFields}} input{{if ne (len .InputFields) 1}}s{{end}}</span>{{end}}
+                </div>
+                {{if .HasInputs}}
+                  <details class="ui-catalog-order">
+                    <summary class="ui-catalog-start">Start…</summary>
+                    <form class="ui-catalog-order-form" hx-post="{{$.TaskCatalogOrderURL}}" hx-target="find .ui-catalog-order-result" hx-swap="innerHTML">
+                      <input type="hidden" name="definition_slug" value="{{.Slug}}" />
+                      {{range $field := .InputFields}}
+                        <label class="ui-catalog-field">
+                          <span class="ui-catalog-field-label">{{.LabelOrName}}{{if .IsRequired}}<span class="ui-catalog-required" title="Required">*</span>{{end}}</span>
+                          {{if eq $field.InputControlKind "textarea"}}
+                            <textarea class="ui-catalog-field-input" name="{{.Name}}" rows="3"{{if .IsRequired}} required{{end}}>{{.DefaultValue}}</textarea>
+                          {{else if eq $field.InputControlKind "select"}}
+                            <select class="ui-catalog-field-input" name="{{.Name}}"{{if .IsRequired}} required{{end}}>
+                              {{if not .IsRequired}}<option value="">—</option>{{end}}
+                              {{range $field.Choices}}<option value="{{.Value}}"{{if eq .Value $field.DefaultValue}} selected{{end}}>{{.Label}}</option>{{end}}
+                            </select>
+                          {{else if eq $field.InputControlKind "checkbox"}}
+                            <input type="checkbox" name="{{.Name}}" value="yes"{{if eq .DefaultValue "yes"}} checked{{end}} />
+                          {{else}}
+                            <input class="ui-catalog-field-input" type="{{.InputHTMLType}}" name="{{.Name}}" value="{{.DefaultValue}}"{{if .IsRequired}} required{{end}} />
+                          {{end}}
+                          {{if .HelpText}}<span class="ui-catalog-field-help">{{.HelpText}}</span>{{end}}
+                        </label>
+                      {{end}}
+                      <button class="ui-catalog-start" type="submit">Submit request</button>
+                      <div class="ui-catalog-order-result"></div>
+                    </form>
+                  </details>
+                {{else}}
+                  <form class="ui-catalog-order-form" hx-post="{{$.TaskCatalogOrderURL}}" hx-target="find .ui-catalog-start" hx-swap="outerHTML">
                     <input type="hidden" name="definition_slug" value="{{.Slug}}" />
                     <button class="ui-catalog-start" type="submit">Start</button>
                   </form>
-                </div>
+                {{end}}
               </article>
             {{end}}
           </div>

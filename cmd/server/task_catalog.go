@@ -6,9 +6,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -22,7 +24,12 @@ type taskCatalogEntry struct {
 	Description string
 	Category    string
 	IsContainer bool
+	InputFields []db.TaskInputField
 }
+
+// HasInputs reports whether starting this definition opens a form rather than
+// spawning immediately.
+func (e taskCatalogEntry) HasInputs() bool { return len(e.InputFields) > 0 }
 
 type taskCatalogCategory struct {
 	Name    string
@@ -31,7 +38,8 @@ type taskCatalogCategory struct {
 
 func loadTaskCatalog(ctx context.Context, query string) ([]taskCatalogCategory, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT slug, display_name, description, category, is_container
+		`SELECT slug, display_name, description, category, is_container,
+		        COALESCE(input_schema_yaml, '')
 		 FROM base_task_definition
 		 WHERE _deleted_at IS NULL
 		 ORDER BY display_name`)
@@ -46,9 +54,16 @@ func loadTaskCatalog(ctx context.Context, query string) ([]taskCatalogCategory, 
 	seen := map[string]bool{}
 	for rows.Next() {
 		var e taskCatalogEntry
-		var category string
-		if err := rows.Scan(&e.Slug, &e.DisplayName, &e.Description, &category, &e.IsContainer); err != nil {
+		var category, inputSchema string
+		if err := rows.Scan(&e.Slug, &e.DisplayName, &e.Description, &category, &e.IsContainer, &inputSchema); err != nil {
 			return nil, err
+		}
+		// A malformed schema must not hide the definition: the card still
+		// renders and the error surfaces when someone tries to start it.
+		if fields, err := db.ParseTaskInputSchema(inputSchema); err == nil {
+			e.InputFields = fields
+		} else {
+			log.Printf("task definition %q has an unreadable input schema: %v", e.Slug, err)
 		}
 		if category == "" {
 			category = "general"
@@ -131,7 +146,15 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthenticated", http.StatusUnauthorized)
 		return
 	}
-	rootID, err := runtimeSpawnTaskBySlug(r.Context(), db.Pool, slug, "", userID, nil)
+	inputs, ierr := catalogOrderInputs(r.Context(), slug, r.PostForm)
+	if ierr != nil {
+		log.Printf("catalog order %q by %s rejected: %v", slug, userID, ierr)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_ = catalogOrderInvalidTmpl.Execute(w, map[string]string{"Slug": slug, "Reason": ierr.Error()})
+		return
+	}
+	rootID, err := runtimeSpawnTaskBySlug(r.Context(), db.Pool, slug, "", userID, inputs)
 	if err != nil {
 		// Log the underlying error; the client sees a static message plus the
 		// (escaped) slug. Rendered through html/template so no user-controlled
@@ -150,11 +173,45 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 	_ = catalogOrderDoneTmpl.Execute(w, map[string]string{"TaskID": rootID, "Number": number})
 }
 
+// catalogOrderInputs resolves the requester's form against the definition's
+// declared inputs. A definition that declares nothing collects nothing, which
+// keeps every existing "Start" button working unchanged.
+func catalogOrderInputs(ctx context.Context, slug string, form url.Values) (map[string]any, error) {
+	var raw string
+	err := db.Pool.QueryRow(ctx,
+		`SELECT COALESCE(input_schema_yaml, '') FROM base_task_definition
+		 WHERE slug = $1 AND _deleted_at IS NULL`, slug).Scan(&raw)
+	if err != nil {
+		return nil, nil // spawn reports an unknown definition with its own message
+	}
+	return resolveCatalogInputs(raw, form)
+}
+
+// resolveCatalogInputs is the part that does not touch the database, so the
+// validation rules are testable without a Postgres harness.
+func resolveCatalogInputs(schemaYAML string, form url.Values) (map[string]any, error) {
+	fields, err := db.ParseTaskInputSchema(schemaYAML)
+	if err != nil {
+		return nil, fmt.Errorf("this definition's input form is misconfigured: %w", err)
+	}
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	submitted := make(map[string]string, len(fields))
+	for _, field := range fields {
+		submitted[field.Name] = form.Get(field.Name)
+	}
+	return db.TaskInputValues(fields, submitted)
+}
+
 // catalogOrderErrorTmpl / catalogOrderDoneTmpl render the HTMX swap fragments
 // for the order endpoint. html/template context-encodes every interpolation,
 // which is both the XSS defence and what the code scanner expects.
 var catalogOrderErrorTmpl = template.Must(template.New("catalogOrderError").Parse(
 	`<div class="ui-catalog-order-error">Could not start {{.Slug}}: the definition could not be spawned. See the server log for details.</div>`))
+
+var catalogOrderInvalidTmpl = template.Must(template.New("catalogOrderInvalid").Parse(
+	`<div class="ui-catalog-order-error">Could not start {{.Slug}}: {{.Reason}}</div>`))
 
 var catalogOrderDoneTmpl = template.Must(template.New("catalogOrderDone").Parse(
 	`<div class="ui-catalog-order-done">Started as <a href="/f/base_task/{{.TaskID}}">{{.Number}}</a>. Track it on the <a href="/task">board</a>.</div>`))

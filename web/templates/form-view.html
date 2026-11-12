@@ -112,6 +112,41 @@
 	        <button type="button" class="ui-btn ui-btn-secondary" data-form-live-reload="true">Reload latest</button>
 	      </div>
 
+	      {{with .FormTaskRequest}}{{if or .HasInputs .HasOutputs}}
+	      <section class="ui-card ui-task-request" aria-label="Request">
+	        <header class="ui-task-request-head">
+	          <h2 class="ui-task-request-title">Request</h2>
+	          {{if .DefinitionName}}<span class="ui-task-request-def">{{.DefinitionName}}</span>{{end}}
+	        </header>
+	        {{if .HasInputs}}
+	          <div class="ui-task-request-group">
+	            <h3 class="ui-task-request-group-title">What was asked for</h3>
+	            <dl class="ui-task-request-list">
+	              {{range .Inputs}}
+	                <div class="ui-task-request-item">
+	                  <dt class="ui-task-request-label">{{.Label}}</dt>
+	                  <dd class="ui-task-request-value">{{.Value}}</dd>
+	                </div>
+	              {{end}}
+	            </dl>
+	          </div>
+	        {{end}}
+	        {{if .HasOutputs}}
+	          <div class="ui-task-request-group">
+	            <h3 class="ui-task-request-group-title">Produced by this task</h3>
+	            <dl class="ui-task-request-list">
+	              {{range .Outputs}}
+	                <div class="ui-task-request-item">
+	                  <dt class="ui-task-request-label">{{.Label}}</dt>
+	                  <dd class="ui-task-request-value">{{.Value}}</dd>
+	                </div>
+	              {{end}}
+	            </dl>
+	          </div>
+	        {{end}}
+	      </section>
+	      {{end}}{{end}}
+
 	      <section class="ui-card ui-form-section ui-domain-form">
           <div class="ui-form-grid">
             {{range $x := .FormColumns}}
@@ -631,7 +666,7 @@
                 </div>
                 <time class="ui-record-timeline-time">{{.Timestamp}}</time>
               </div>
-              <p class="ui-record-timeline-summary">{{.Summary}}</p>
+              <p class="ui-record-timeline-summary">{{.Summary}}{{if .CommentScope}} <span class="ui-record-timeline-scope">{{.CommentScope}}</span>{{end}}</p>
               {{if .CommentBody}}
                 <div class="ui-record-timeline-comment">{{.CommentBody}}</div>
               {{end}}

@@ -18,8 +18,12 @@ type formTimelineItem struct {
 	ActorMeta   string
 	Summary     string
 	CommentBody string
-	Changes     []formTimelineChange
-	createdAt   time.Time
+	// CommentScope names the stage a comment was made on, when the thread
+	// spans stages and this comment came from a different one. Empty for a
+	// comment on the record being viewed, so the common case stays quiet.
+	CommentScope string
+	Changes      []formTimelineChange
+	createdAt    time.Time
 }
 
 type formTimelineChange struct {
@@ -39,10 +43,10 @@ func loadFormTimeline(ctx context.Context, tableName, recordID string, columns [
 		log.Printf("failed to load record comments table=%s id=%s err=%v", tableName, recordID, err)
 	}
 
-	return buildFormTimelineItems(changeEntries, commentEntries, timelineColumnLabels(columns))
+	return buildFormTimelineItems(changeEntries, commentEntries, timelineColumnLabels(columns), recordID)
 }
 
-func buildFormTimelineItems(changeEntries []db.RecordChangeEntry, commentEntries []db.RecordCommentEntry, columnLabels map[string]string) []formTimelineItem {
+func buildFormTimelineItems(changeEntries []db.RecordChangeEntry, commentEntries []db.RecordCommentEntry, columnLabels map[string]string, currentRecordID string) []formTimelineItem {
 	items := make([]formTimelineItem, 0, allocHintSum(len(changeEntries), len(commentEntries)))
 
 	for _, entry := range changeEntries {
@@ -74,14 +78,23 @@ func buildFormTimelineItems(changeEntries []db.RecordChangeEntry, commentEntries
 	}
 
 	for _, entry := range commentEntries {
+		summary := "commented on this record"
+		scope := ""
+		if entry.RecordID != "" && currentRecordID != "" && entry.RecordID != currentRecordID {
+			// The chain shares one thread, so say which stage this came from
+			// and that it is not local.
+			summary = "commented on another stage of this request"
+			scope = strings.TrimSpace(entry.RecordLabel)
+		}
 		items = append(items, formTimelineItem{
-			Kind:        "comment",
-			Timestamp:   formatTimelineTimestamp(entry.CreatedAt),
-			Actor:       timelineActor(entry.UserName, entry.UserEmail, entry.UserID),
-			ActorMeta:   timelineActorMeta(entry.UserName, entry.UserEmail, entry.UserID),
-			Summary:     "commented on this record",
-			CommentBody: strings.TrimSpace(entry.Body),
-			createdAt:   entry.CreatedAt,
+			Kind:         "comment",
+			Timestamp:    formatTimelineTimestamp(entry.CreatedAt),
+			Actor:        timelineActor(entry.UserName, entry.UserEmail, entry.UserID),
+			ActorMeta:    timelineActorMeta(entry.UserName, entry.UserEmail, entry.UserID),
+			Summary:      summary,
+			CommentBody:  strings.TrimSpace(entry.Body),
+			CommentScope: scope,
+			createdAt:    entry.CreatedAt,
 		})
 	}
 
