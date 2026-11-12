@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -159,6 +160,89 @@ func TestResolveScopeRefMultiSegment(t *testing.T) {
 	}
 	if _, ok := resolveScopeRef(scope, "$outputs.missing.x"); ok {
 		t.Fatal("unresolvable ref must return ok=false")
+	}
+}
+
+// TestResolveScopeRefStrict covers #217: a reference that cannot bind is an
+// error naming both the ref and its consumer, never a silent nil.
+func TestResolveScopeRefStrict(t *testing.T) {
+	scope := map[string]any{
+		"inputs":  map[string]any{"a": "A"},
+		"locals":  map[string]any{"n": float64(3)},
+		"outputs": map[string]any{"draft": map[string]any{"doc_id": "D-1"}},
+	}
+
+	if v, err := resolveScopeRefStrict(scope, "$outputs.draft.doc_id", "gate"); err != nil || v != "D-1" {
+		t.Fatalf("nested hit = %v, %v; want D-1, nil", v, err)
+	}
+	if v, err := resolveScopeRefStrict(scope, "$inputs.a", "gate"); err != nil || v != "A" {
+		t.Fatalf("$inputs.a = %v, %v; want A, nil", v, err)
+	}
+	if v, err := resolveScopeRefStrict(scope, "$locals.n", "gate"); err != nil || v != float64(3) {
+		t.Fatalf("$locals.n = %v, %v; want 3, nil", v, err)
+	}
+	if v, err := resolveScopeRefStrict(scope, "plain-value", "gate"); err != nil || v != "plain-value" {
+		t.Fatalf("literal passthrough = %v, %v", v, err)
+	}
+	whole, err := resolveScopeRefStrict(scope, "$outputs.draft", "gate")
+	if err != nil {
+		t.Fatalf("$outputs.<slug> = %v; want the whole child output map", err)
+	}
+	if m, ok := whole.(map[string]any); !ok || m["doc_id"] != "D-1" {
+		t.Fatalf("$outputs.<slug> = %v; want the whole child output map", whole)
+	}
+
+	for _, ref := range []string{"$outputs.nothere.doc_id", "$outputs.draft.nope"} {
+		_, err := resolveScopeRefStrict(scope, ref, `spawn rule for "gate"`)
+		if err == nil {
+			t.Fatalf("%s resolved; want an error", ref)
+		}
+		if !strings.Contains(err.Error(), ref) || !strings.Contains(err.Error(), `"gate"`) {
+			t.Fatalf("error %q must name the ref and the consumer definition", err)
+		}
+	}
+}
+
+// TestSpawnRuleUnresolvableMappingFailsClose is the #217 regression: a spawn
+// rule mapping a field the closing task never published must fail the close
+// transaction, leaving no child behind, instead of spawning one short of the
+// input it was promised.
+func TestSpawnRuleUnresolvableMappingFailsClose(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+	targetSlug := "strict-target-" + suffix
+
+	seedDefinitionWithSpawnRules(ctx, t, targetSlug, "target", `[]`)
+	rules := `[{"on":"completed","definition_slug":"` + targetSlug + `",` +
+		`"input_mapping":{"artifact":"$outputs.producer.artifact_id"},"assign":"same"}]`
+	producerDef := seedDefinitionWithSpawnRules(ctx, t, "strict-producer-"+suffix, "producer", rules)
+
+	taskID, err := SpawnTaskInstance(ctx, Pool, producerDef, "", actorID, map[string]any{})
+	if err != nil {
+		t.Fatalf("spawn producer: %v", err)
+	}
+	assignAll(ctx, t, taskID, groupID, actorID)
+
+	err = closeWithReason(ctx, t, taskID, "completed")
+	if err == nil {
+		t.Fatal("close succeeded; an unresolvable input_mapping must fail the spawn")
+	}
+	if !strings.Contains(err.Error(), "$outputs.producer.artifact_id") ||
+		!strings.Contains(err.Error(), targetSlug) {
+		t.Fatalf("error %q must name the ref and the child definition slug", err)
+	}
+	// The close rolled back and no follow-on exists.
+	if got := taskState(ctx, t, taskID); got != taskStateInProgress {
+		t.Fatalf("producer state = %s, want in_progress after a rolled-back close", got)
+	}
+	var n int
+	if err := Pool.QueryRow(ctx, `SELECT count(*) FROM base_task WHERE _id <> $1 AND definition_id =
+		(SELECT _id FROM base_task_definition WHERE slug = $2)`, taskID, targetSlug).Scan(&n); err != nil {
+		t.Fatalf("count follow-ons: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("follow-on spawned despite the unresolvable mapping: %d", n)
 	}
 }
 
