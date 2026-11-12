@@ -176,12 +176,15 @@
 .ui-task-board-grid {
   display: grid;
   gap: 0.7rem;
-  /* Lanes stretch to share the row: each keeps a readable floor (13.5rem),
-   grows equally to fill the viewport, and the whole board tops out at a
-   sensible width so ultra-wide screens don't smear lanes across it. */
-  grid-template-columns: repeat(var(--lane-count, 1), minmax(13.5rem, 1fr));
+  /* Lanes share the available width equally. `1fr` distributes the container
+     only when nothing forces the grid to size to content, so this must not set
+     min-width: max-content: that made every `1fr` resolve against the widest
+     lane's card, letting one long title take 570px and push the last lane off
+     screen. The scroll container covers the case where the floor does not fit. */
+  grid-template-columns: repeat(var(--lane-count, 1), minmax(15rem, 1fr));
   justify-content: start;
-  min-width: max-content;
+  width: 100%;
+  min-width: 0;
   max-width: min(100%, 110rem);
 }
 
@@ -238,6 +241,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+  /* A long unbroken word in a title must wrap inside the lane, never stretch it. */
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 0.6rem 0.65rem;
   transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
@@ -898,10 +904,6 @@
   margin: 0;
 }
 
-.ui-markdown-mode {
-  font-size: 0.78rem;
-}
-
 .ui-markdown-field .ui-markdown-textarea {
   overflow: hidden;
   resize: vertical;
@@ -944,20 +946,36 @@
   display: none;
 }
 
-.ui-markdown-field[data-markdown-readonly="1"] .ui-markdown-mode {
+/* The relationship map is a fixed block: it must not be squeezed.
+   It used to rely on `aspect-ratio: 1/1` for its height, but as a
+   `flex: 0 0 auto` child of this flex column the flex base size came from
+   content, so the ratio was discarded: the box collapsed to the height of its
+   bar and the "Loading related…" status spilled over the timeline heading.
+   A definite height removes the circular dependency, and gives the canvas
+   something to fill so its IntersectionObserver can ever fire. */
+.ui-record-timeline-card > .ui-form-map {
+  flex: 0 0 auto;
+  height: clamp(11rem, 30vh, 18rem);
+  max-height: 42vh;
+}
+
+.ui-form-map-square {
+  aspect-ratio: auto;
+}
+
+/* The status line is a placeholder, not furniture: it holds the canvas's place
+   while loading and leaves the layout entirely once there is nothing to say. */
+.ui-form-map-status {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.ui-form-map-status:empty {
   display: none;
 }
 
-/* The toggle keeps both options visible: hiding the inactive one left a
-   single button and no way back to the editor. */
-.ui-markdown-mode [data-markdown-mode] {
-  cursor: pointer;
-}
-
-/* The relationship map is a fixed-aspect block: it must not be squeezed. */
-.ui-record-timeline-card > .ui-form-map {
-  flex: 0 0 auto;
-  max-height: 42vh;
+.ui-form-map-canvas {
+  min-height: 0;
 }
 
 .ui-record-timeline-card > [data-record-panel-body="true"] {
@@ -1011,4 +1029,14 @@
 
 .ui-markdown-preview p {
   margin: 0.35rem 0;
+}
+
+/* The `hidden` class is the app-wide toggle for "not showing this". Component
+   rules like `.ui-form-live-banner { display: flex }` have the same
+   specificity (0,1,0) and land after Tailwind's `.hidden`, so the element
+   stayed visible however often the JS added the class. That is why the "Updates
+   are available for this record" banner appeared on every record, always.
+   Declared last, in the final manifest entry, so no component can beat it. */
+.hidden {
+  display: none !important;
 }

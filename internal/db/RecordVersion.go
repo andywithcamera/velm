@@ -75,3 +75,49 @@ func GetRecordVersion(ctx context.Context, tableName, id string) (string, bool, 
 
 	return updatedAt.UTC().Format(time.RFC3339Nano), true, nil
 }
+
+// RecordVersionValue returns the value the UI treats as a record's version:
+// the update counter when the record carries one, otherwise the exact update
+// timestamp.
+//
+// Both the GET that renders a form and the save response that reports the
+// committed version call this, so the two cannot drift: if they did, every
+// save would look like someone else's change and the page would claim
+// "updates are available" for a write the reader had just made.
+func RecordVersionValue(snapshot map[string]any) string {
+	if snapshot == nil {
+		return ""
+	}
+	if count, ok := snapshot["_update_count"]; ok && count != nil {
+		if version := strings.TrimSpace(fmt.Sprint(count)); version != "" && version != "<nil>" {
+			return version
+		}
+	}
+	return formatExactRecordTimestamp(snapshot["_updated_at"])
+}
+
+// formatExactRecordTimestamp renders a timestamp without truncation and
+// without normalising its location, so the value round-trips through the
+// client's comparison unchanged.
+func formatExactRecordTimestamp(value any) string {
+	switch stamp := value.(type) {
+	case nil:
+		return ""
+	case time.Time:
+		return stamp.Format(time.RFC3339Nano)
+	case string:
+		trimmed := strings.TrimSpace(stamp)
+		if trimmed == "" {
+			return ""
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
+			return parsed.Format(time.RFC3339Nano)
+		}
+		if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+			return parsed.Format(time.RFC3339Nano)
+		}
+		return trimmed
+	default:
+		return strings.TrimSpace(fmt.Sprint(stamp))
+	}
+}
