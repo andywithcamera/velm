@@ -336,3 +336,100 @@ func TestSpawnAssigneeResolution(t *testing.T) {
 		}
 	})
 }
+
+// TestScriptPublishesEveryReturnedOutput is the #218 acceptance test: a
+// definition script returning an outputs object lands every key in
+// base_task.variables.outputs on StartTask, in the same transaction as the
+// state change, and a mapped child reads all of them.
+func TestScriptPublishesEveryReturnedOutput(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+
+	consumerSlug := "multi-consumer-" + suffix
+	producerDef := seedDefinition(ctx, t, "multi-producer-"+suffix, "Producer", false, "")
+	if _, err := Pool.Exec(ctx, `
+		UPDATE base_task_definition
+		SET default_group_id = $2, default_assignee_id = $3,
+			variables_yaml = $4,
+			script_text = $5,
+			spawn_rules = $6::jsonb
+		WHERE _id = $1`,
+		producerDef, groupID, actorID,
+		"inputs: []\nlocals: []\noutputs:\n  - artifact_version\n  - checksum",
+		"function run(ctx) { return { outputs: { artifact_version: 3, checksum: \"abc123\" } }; }",
+		`[{"on":"completed","definition_slug":"`+consumerSlug+`","assign":"definition",
+		   "input_mapping":{"version":"$outputs.artifact_version","digest":"$outputs.checksum"}}]`); err != nil {
+		t.Fatalf("configure producer: %v", err)
+	}
+	consumerDef := seedDefinition(ctx, t, consumerSlug, "Consumer", false, "")
+	if _, err := Pool.Exec(ctx, `UPDATE base_task_definition SET default_group_id = $2, default_assignee_id = $3 WHERE _id = $1`,
+		consumerDef, groupID, actorID); err != nil {
+		t.Fatalf("configure consumer: %v", err)
+	}
+	rootDef := seedDefinition(ctx, t, "multi-root-"+suffix, "Root", true, "")
+	seedChildLink(ctx, t, rootDef, producerDef, 10, map[string]any{})
+
+	rootID, err := SpawnTaskInstance(ctx, Pool, rootDef, "", actorID, map[string]any{})
+	if err != nil {
+		t.Fatalf("spawn root: %v", err)
+	}
+	producerID := childByDef(ctx, t, rootID, producerDef)
+
+	if err := StartTask(ctx, producerID, actorID); err != nil {
+		t.Fatalf("start producer: %v", err)
+	}
+	outputs, ok := taskVars(ctx, t, producerID)["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("variables.outputs is missing or not an object after StartTask")
+	}
+	if got, _ := json.Marshal(outputs["artifact_version"]); string(got) != "3" {
+		t.Fatalf("artifact_version = %v, want 3 (outputs: %v)", outputs["artifact_version"], outputs)
+	}
+	if got, _ := outputs["checksum"].(string); got != "abc123" {
+		t.Fatalf("checksum = %v, want abc123 (outputs: %v)", outputs["checksum"], outputs)
+	}
+
+	if err := CloseTaskWithReason(ctx, producerID, actorID, "completed"); err != nil {
+		t.Fatalf("close producer: %v", err)
+	}
+	consumerID := childByDef(ctx, t, rootID, consumerDef)
+	inputs, _ := taskVars(ctx, t, consumerID)["inputs"].(map[string]any)
+	if got, _ := json.Marshal(inputs["version"]); string(got) != "3" {
+		t.Fatalf("mapped version = %v, want the published 3 (inputs: %v)", inputs["version"], inputs)
+	}
+	if got, _ := inputs["digest"].(string); got != "abc123" {
+		t.Fatalf("mapped digest = %v, want the published abc123 (inputs: %v)", inputs["digest"], inputs)
+	}
+}
+
+// TestScriptReturningNoOutputsKeepsEmptyMap pins the third #218 acceptance
+// bullet: a script that publishes nothing leaves outputs as an empty object,
+// present rather than absent, so a downstream reference fails predictably
+// instead of on a nil map.
+func TestScriptReturningNoOutputsKeepsEmptyMap(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+
+	defID := seedDefinition(ctx, t, "no-outputs-"+suffix, "No Outputs", false, "")
+	if _, err := Pool.Exec(ctx, `
+		UPDATE base_task_definition SET default_group_id = $2, default_assignee_id = $3, script_text = $4 WHERE _id = $1`,
+		defID, groupID, actorID, "function run(ctx) { return {}; }"); err != nil {
+		t.Fatalf("configure definition: %v", err)
+	}
+	taskID, err := SpawnTaskInstance(ctx, Pool, defID, "", actorID, map[string]any{})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	if err := StartTask(ctx, taskID, actorID); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	outputs, ok := taskVars(ctx, t, taskID)["outputs"].(map[string]any)
+	if !ok {
+		t.Fatalf("variables.outputs is missing or not an object after a script that returned nothing")
+	}
+	if len(outputs) != 0 {
+		t.Fatalf("outputs = %v, want an empty map", outputs)
+	}
+}
