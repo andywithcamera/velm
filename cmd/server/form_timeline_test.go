@@ -28,6 +28,7 @@ func TestBuildFormTimelineItemsMergesAndSortsEntries(t *testing.T) {
 			Body:      "Looks good to me.",
 		}},
 		map[string]string{"email": "Email"},
+		"",
 	)
 
 	if len(items) != 2 {
