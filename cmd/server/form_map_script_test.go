@@ -61,18 +61,18 @@ func TestRealtimeTablesRendersBareTableNames(t *testing.T) {
 
 	var buf bytes.Buffer
 	if err := tmpl.ExecuteTemplate(&buf, "table-view", map[string]any{
-		"TableName":          "base_task",
-		"ListSourceTables":   []string{"base_task", "story"},
-		"TaskBoard":          false,
-		"Rows":               []any{},
-		"QueryColumns":       []any{},
-		"TotalRows":          0,
-		"TotalPages":         0,
-		"PageSize":           25,
-		"Page":               1,
-		"TableCanCreate":     false,
-		"TableRouteName":     "base_task",
-		"TableLabel":         "Tasks",
+		"TableName":            "base_task",
+		"ListSourceTables":     []string{"base_task", "story"},
+		"TaskBoard":            false,
+		"Rows":                 []any{},
+		"QueryColumns":         []any{},
+		"TotalRows":            0,
+		"TotalPages":           0,
+		"PageSize":             25,
+		"Page":                 1,
+		"TableCanCreate":       false,
+		"TableRouteName":       "base_task",
+		"TableLabel":           "Tasks",
 		"PaginationCountExact": true,
 	}); err != nil {
 		t.Fatalf("execute table-view: %v", err)
