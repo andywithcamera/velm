@@ -221,3 +221,117 @@ func setTaskVars(ctx context.Context, t *testing.T, taskID string, vars map[stri
 		t.Fatalf("set vars %s: %v", taskID, err)
 	}
 }
+
+// bulkClose reproduces what POST /api/bulk/update/base_task does on a close:
+// a single-column UPDATE of state, leaving closure_reason to the 085 trigger,
+// then the post-write hook dispatch (#274). Bulk update could close a task
+// without publishing outputs, promoting dependants, or rolling up containers.
+func bulkClose(ctx context.Context, t *testing.T, taskID string) {
+	t.Helper()
+	oldSnapshot := loadRecordSnapshot("base_task", taskID)
+	if _, err := Pool.Exec(ctx, `UPDATE base_task SET state = 'closed' WHERE _id = $1`, taskID); err != nil {
+		t.Fatalf("bulk close %s: %v", taskID, err)
+	}
+	newSnapshot := loadRecordSnapshot("base_task", taskID)
+	if err := RunEngineHooksAfterStateWrite(ctx, "base_task", taskID, oldSnapshot, newSnapshot, actorIDForClose(t)); err != nil {
+		t.Fatalf("bulk close hooks %s: %v", taskID, err)
+	}
+}
+
+// TestBulkCloseRunsCloseHooks is the #274 acceptance test: closing through the
+// bulk endpoint's write shape must behave like a form close.
+func TestBulkCloseRunsCloseHooks(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+
+	childSlug := "bulk-impl-" + suffix
+	implDef := seedDefinition(ctx, t, childSlug, "Impl", false, "")
+	reviewDef := seedDefinition(ctx, t, "bulk-review-"+suffix, "Review", false, "")
+	containerDef := seedDefinition(ctx, t, "bulk-container-"+suffix, "Delivery", true, "")
+	seedChildLinkWithDeps(ctx, t, containerDef, implDef, 0, nil, "")
+	seedChildLinkWithDeps(ctx, t, containerDef, reviewDef, 1, []string{implDef}, "")
+
+	parentID, err := SpawnTaskInstance(ctx, Pool, containerDef, "", actorID, map[string]any{})
+	if err != nil {
+		t.Fatalf("spawn container: %v", err)
+	}
+	assignAll(ctx, t, parentID, groupID, actorID)
+	if err := StartTask(ctx, parentID, actorID); err != nil {
+		t.Fatalf("StartTask: %v", err)
+	}
+
+	implID := childByDef(ctx, t, parentID, implDef)
+	vars := taskVars(ctx, t, implID)
+	vars["outputs"] = map[string]any{"ticket": "VELM-274"}
+	setTaskVars(ctx, t, implID, vars)
+
+	bulkClose(ctx, t, implID)
+
+	// (a) outputs published into the parent's scope.
+	parentVars := taskVars(ctx, t, parentID)
+	outputs, _ := parentVars["outputs"].(map[string]any)
+	producer, _ := outputs[childSlug].(map[string]any)
+	if producer == nil || producer["ticket"] != "VELM-274" {
+		t.Fatalf("bulk close did not publish child outputs: %v", parentVars["outputs"])
+	}
+	// (b) the dependant was promoted out of pending.
+	if got := countState(ctx, t, parentID, "pending"); got != 0 {
+		t.Fatalf("bulk close left %d task(s) pending; the dependant was not promoted", got)
+	}
+	// The trigger, not the payload, supplied the reason.
+	if state, reason := taskStateAndReason(ctx, t, implID); state != taskStateDone || reason != "completed" {
+		t.Fatalf("bulk-closed task = (%q, %q), want (closed, completed)", state, reason)
+	}
+
+	reviewID := childByDef(ctx, t, parentID, reviewDef)
+	if err := StartTask(ctx, reviewID, actorID); err != nil {
+		t.Fatalf("start review: %v", err)
+	}
+	bulkClose(ctx, t, reviewID)
+
+	// (c) the container rolled up once its last child closed.
+	state, reason := taskStateAndReason(ctx, t, parentID)
+	if state != taskStateDone || reason != "completed" {
+		t.Fatalf("container = (%q, %q), want (closed, completed)", state, reason)
+	}
+}
+
+// TestBulkCloseAgainIsNoOp: duplicate ids in one batch, or a second bulk edit
+// of an already-closed row, must not re-run the close engine.
+func TestBulkCloseAgainIsNoOp(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+
+	spawnDef := seedDefinition(ctx, t, "again-spawn-"+suffix, "Again", false, "")
+	containerDef := seedDefinition(ctx, t, "again-container-"+suffix, "Once", true, "")
+	seedChildLinkWithDeps(ctx, t, containerDef, spawnDef, 0, nil, "")
+
+	parentID, err := SpawnTaskInstance(ctx, Pool, containerDef, "", actorID, map[string]any{})
+	if err != nil {
+		t.Fatalf("spawn container: %v", err)
+	}
+	assignAll(ctx, t, parentID, groupID, actorID)
+	if err := StartTask(ctx, parentID, actorID); err != nil {
+		t.Fatalf("StartTask: %v", err)
+	}
+
+	childID := childByDef(ctx, t, parentID, spawnDef)
+	bulkClose(ctx, t, childID)
+	before := len(taskVars(ctx, t, parentID))
+
+	// Second bulk edit of the same id: the old snapshot is already closed, so
+	// the gate must short-circuit without error.
+	oldSnapshot := loadRecordSnapshot("base_task", childID)
+	if _, err := Pool.Exec(ctx, `UPDATE base_task SET state = 'closed' WHERE _id = $1`, childID); err != nil {
+		t.Fatalf("re-close %s: %v", childID, err)
+	}
+	newSnapshot := loadRecordSnapshot("base_task", childID)
+	if err := RunEngineHooksAfterStateWrite(ctx, "base_task", childID, oldSnapshot, newSnapshot, actorIDForClose(t)); err != nil {
+		t.Fatalf("re-close hooks should be a no-op, got %v", err)
+	}
+	if after := len(taskVars(ctx, t, parentID)); after != before {
+		t.Fatalf("re-close changed the parent scope: %d keys, was %d", after, before)
+	}
+}
