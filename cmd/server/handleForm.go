@@ -1045,10 +1045,7 @@ func buildExpectedRecordVersionValue(raw any) string {
 	if !ok {
 		return ""
 	}
-	if version, ok := row["_update_count"]; ok && version != nil {
-		return strings.TrimSpace(fmt.Sprint(version))
-	}
-	return formatExactTimestampValue(row["_updated_at"])
+	return db.RecordVersionValue(row)
 }
 
 func applyFormPrefillValues(r *http.Request, values map[string]string, configs map[string]formFieldConfig) {
@@ -1136,27 +1133,4 @@ func formatStringValue(v string, cfg formFieldConfig) string {
 		}
 	}
 	return v
-}
-
-func formatExactTimestampValue(value any) string {
-	switch v := value.(type) {
-	case nil:
-		return ""
-	case time.Time:
-		return v.Format(time.RFC3339Nano)
-	case string:
-		trimmed := strings.TrimSpace(v)
-		if trimmed == "" {
-			return ""
-		}
-		if t, err := time.Parse(time.RFC3339Nano, trimmed); err == nil {
-			return t.Format(time.RFC3339Nano)
-		}
-		if t, err := time.Parse(time.RFC3339, trimmed); err == nil {
-			return t.Format(time.RFC3339Nano)
-		}
-		return trimmed
-	default:
-		return strings.TrimSpace(fmt.Sprint(v))
-	}
 }

@@ -409,6 +409,15 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 	}
 	realtime.PublishRecordChange(tableName, id, operation, updatedBy, realtimeClientID)
 
+	// The caller's next record.changed event is compared against whatever
+	// version this page holds. Until now the save response carried none, so a
+	// page kept the version it rendered with and every later event looked like
+	// a change -- including ones caused by this save. Reporting the committed
+	// version closes that window without a follow-up read.
+	if version := RecordVersionValue(newSnapshot); version != "" {
+		w.Header().Set("X-Velm-Record-Version", version)
+	}
+
 	http.Redirect(w, r, recordFormRedirectTarget(tableName, id, formName), http.StatusSeeOther)
 }
 

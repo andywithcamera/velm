@@ -1,2 +1,5 @@
 .DS_Store
 ._*
+
+# Local server keys generated on first run; never commit.
+.session-keys.json

@@ -265,11 +265,7 @@
                 data-markdown-readonly="{{if $readonly}}1{{else}}0{{end}}"
               >
                 <div class="ui-markdown-field-bar">
-                  <div class="ui-segmented ui-markdown-mode" role="tablist" aria-label="{{$x.LABEL}} view">
-                    <button type="button" role="tab" data-markdown-mode="write" aria-selected="false"{{if $readonly}} hidden{{end}}>Write</button>
-                    <button type="button" role="tab" data-markdown-mode="preview" aria-selected="true">Preview</button>
-                  </div>
-                  <span class="ui-field-help" data-markdown-status="true">Markdown, rendered</span>
+                  <span class="ui-field-help" data-markdown-status="true">Markdown. Click to edit.</span>
                 </div>
                 <textarea
                   id="{{$x.NAME}}"
@@ -289,6 +285,7 @@
                   id="{{$x.NAME}}-markdown-preview"
                   class="ui-markdown-preview ui-content-prose"
                   data-markdown-preview="true"
+                  {{if not $readonly}}tabindex="0"{{end}}
                   aria-live="polite"
                 ></div>
                 <p class="ui-field-error hidden" data-markdown-error="true">Markdown preview unavailable. The saved text is unchanged.</p>
@@ -1113,16 +1110,12 @@
       // A readonly field has no write affordance, so it stays in preview.
       if (field.getAttribute("data-markdown-readonly") === "1") mode = "preview";
       field.setAttribute("data-markdown-mode", mode);
-      field.querySelectorAll("[data-markdown-mode]").forEach(function (button) {
-        const active = button.getAttribute("data-markdown-mode") === mode;
-        button.setAttribute("aria-selected", active ? "true" : "false");
-        button.classList.toggle("is-active", active);
-      });
+      const status = field.querySelector("[data-markdown-status='true']");
+      if (status) {
+        status.textContent = mode === "write" ? "Markdown. Editing." : "Markdown. Click to edit.";
+      }
       if (mode === "write") {
         expand(input);
-        if (document.activeElement !== input && field.dataset.markdownAutofocus === "1") {
-          input.focus();
-        }
       }
     }
 
@@ -1133,23 +1126,39 @@
       const empty = (input.value || "").trim() === "";
       setMode(field, empty ? "write" : "preview");
 
-      field.querySelectorAll("[data-markdown-mode]").forEach(function (button) {
-        button.addEventListener("click", function () {
-          field.dataset.markdownAutofocus = button.getAttribute("data-markdown-mode") === "write" ? "1" : "0";
-          setMode(field, button.getAttribute("data-markdown-mode"));
-          if (field.dataset.markdownAutofocus === "1") input.focus();
-        });
-      });
+      // No buttons to wire: focus is the affordance. Rendered prose puts the
+      // caret in the source, and leaving the field renders it again -- which is
+      // the round trip an editor makes anyway, without a mode to remember.
 
-      // Clicking the rendered prose is the obvious way to start editing it.
+      // Clicking or tabbing into the rendered prose is the obvious way to
+      // start editing it.
       const preview = field.querySelector("[data-markdown-preview='true']");
       if (preview && field.getAttribute("data-markdown-readonly") !== "1") {
-        preview.addEventListener("click", function (event) {
-          if (event.target.closest("a")) return;
+        const beginEditing = function (event) {
+          if (event && event.target.closest("a")) return;
           setMode(field, "write");
           input.focus();
-        });
+          // Put the caret where the click landed, not at the start of the text.
+          if (event && event.type === "click") {
+            const end = input.value.length;
+            try { input.setSelectionRange(end, end); } catch (_) {}
+          }
+        };
+        preview.addEventListener("click", beginEditing);
+        preview.addEventListener("focus", beginEditing);
       }
+
+      input.addEventListener("focus", function () {
+        setMode(field, "write");
+      });
+      input.addEventListener("blur", function () {
+        // Moving focus to another control in the same field is not leaving it.
+        window.setTimeout(function () {
+          if (field.contains(document.activeElement)) return;
+          refresh(input);
+          setMode(field, (input.value || "").trim() === "" ? "write" : "preview");
+        }, 0);
+      });
 
       if (error) {
         input.addEventListener("markdown-preview-failed", function () { error.classList.remove("hidden"); });
@@ -2927,8 +2936,29 @@
 		      };
 		    }
 
+		    // Versions arrive from three places: the rendered form (update counter
+		    // or exact timestamp), the record-version endpoint, and now the save
+		    // response. They must compare equal when they describe the same write,
+		    // so an integer counter is compared as an integer and a timestamp as an
+		    // instant -- string equality across mixed representations made every
+		    // event look like a change.
+		    function sameRecordVersion(a, b) {
+		      const left = String(a == null ? "" : a).trim();
+		      const right = String(b == null ? "" : b).trim();
+		      if (left === right) return true;
+		      if (left === "" || right === "") return false;
+		      if (/^-?\d+$/.test(left) && /^-?\d+$/.test(right)) {
+		        return Number(left) === Number(right);
+		      }
+		      const leftTime = Date.parse(left);
+		      const rightTime = Date.parse(right);
+		      if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) {
+		        return leftTime === rightTime;
+		      }
+		      return false;
+		    }
+
 		    async function recordVersionHasChanged() {
-		      if (!recordVersion) return true;
 		      if (!recordVersionCheck) {
 		        recordVersionCheck = fetchRecordVersion().finally(() => {
 		          recordVersionCheck = null;
@@ -2936,16 +2966,24 @@
 		      }
 		      try {
 		        const latest = await recordVersionCheck;
-		        if (!latest.found) return true;
-		        if ((latest.updatedAt || "") === recordVersion) {
+		        // A version we cannot read is not evidence of a change. Adopt what
+		        // the server reports and stay quiet: a false "updates available"
+		        // costs more trust than a delayed one.
+		        if (!latest.found || !latest.updatedAt) {
+		          if (latest.updatedAt) setRecordVersion(latest.updatedAt);
 		          return false;
 		        }
-		        if (latest.updatedAt) {
+		        if (!recordVersion) {
 		          setRecordVersion(latest.updatedAt);
+		          return false;
 		        }
+		        if (sameRecordVersion(latest.updatedAt, recordVersion)) {
+		          return false;
+		        }
+		        setRecordVersion(latest.updatedAt);
 		        return true;
 		      } catch (_) {
-		        return true;
+		        return false;
 		      }
 		    }
 
@@ -3102,6 +3140,13 @@
 		      const responseVersion = responseRecordVersion(event.detail.xhr);
 		      if (responseVersion) {
 		        setRecordVersion(responseVersion);
+		      } else {
+		        // Older responses and redirect-followed renders may not carry the
+		        // header. Ask once rather than keeping a version the save just
+		        // invalidated, which would flag every later event as a change.
+		        fetchRecordVersion().then((latest) => {
+		          if (latest && latest.found && latest.updatedAt) setRecordVersion(latest.updatedAt);
+		        }).catch(() => {});
 		      }
 		      baseline = snapshotForm(form);
 		      formDirty = false;
@@ -3140,7 +3185,6 @@
   var table = wrap.getAttribute('data-form-map-table') || '';
   var recordID = wrap.getAttribute('data-form-map-id') || '';
   if (!recordID || recordID === 'new') { if (status) status.textContent = 'Save this record first.'; return; }
-
   var searchWrap = document.createElement('div');
   searchWrap.hidden = true;
   searchWrap.style.cssText = 'margin:0.4rem 0;';
@@ -3159,26 +3203,36 @@
       if (entries.some(function (en) { return en.isIntersecting; })) { io.disconnect(); if (!loaded) loadMap(); }
     }, { rootMargin: '120px' });
     io.observe(wrap);
+    // A box with no area never reports as intersecting in some engines, and a
+    // pane that is never scrolled into view never reports at all. Deferring is
+    // an optimisation, not a prerequisite: the placeholder must not outlive it.
+    window.setTimeout(function () { if (!loaded) loadMap(); }, 1200);
   } else if (!loaded) loadMap();
+
+  function setStatus(text) {
+    if (!status) return;
+    status.textContent = text || '';
+    status.classList.toggle('hidden', !text);
+  }
 
   function loadMap() {
     loaded = true;
     fetch('/f/graph/' + encodeURIComponent(table) + '/' + encodeURIComponent(recordID) + '?depth=2', { credentials: 'same-origin' })
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (g) { graph = g; layout(); })
-      .catch(function () { if (status) status.textContent = 'Could not load related items.'; });
+      .catch(function () { setStatus('Could not load related items.'); });
   }
 
   // Place nodes on a sphere: root front-centre, hop-1 mid band, hop-2 outer band.
   function layout() {
     nodes = [];
     if (!graph || !graph.nodes || !graph.nodes.length) {
-      if (status) status.textContent = 'Nothing related yet. Use + to link something.';
+      setStatus('Nothing related yet. Use + to link something.');
       if (countEl) countEl.textContent = '';
       draw();
       return;
     }
-    if (status) status.textContent = '';
+    setStatus('');
     var root = null, hop1 = [], hop2 = [];
     graph.nodes.forEach(function (n) {
       if (n.depth === 0) root = n;
