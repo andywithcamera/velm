@@ -9,7 +9,6 @@ import (
 )
 
 func registerRoutes() {
-	fs := http.FileServer(http.Dir("./web/static"))
 	withAuth := func(permission authz.Permission, handler http.Handler) http.Handler {
 		return auth.RequireAuth(
 			requireFreshSession(
@@ -81,7 +80,8 @@ func registerRoutes() {
 	http.Handle("/healthz", security.RequestLog(http.HandlerFunc(handleHealth)))
 	http.Handle("/version", security.RequestLog(http.HandlerFunc(handleVersion)))
 	http.Handle("/p/", withAuth(authz.PermissionView, http.HandlerFunc(handlePage)))
-	http.Handle("/static/", security.RequestLog(http.StripPrefix("/static/", fs)))
+	// See newStaticAssetHandler: /static/ sets its own Cache-Control (issue #188).
+	http.Handle("/static/", security.RequestLog(http.StripPrefix("/static/", newStaticAssetHandler("./web/static"))))
 	// PWA: the service worker must be served from the root scope it controls.
 	http.Handle("/sw.js", security.RequestLog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
