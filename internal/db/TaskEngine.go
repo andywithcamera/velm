@@ -1033,15 +1033,33 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 			slug = resolved
 		}
 		// A spawn rule fires because the closing task just published its
-		// scope, so by now every reference it can make has resolved. A
-		// mapping that still resolves to nothing is a template bug, not an
-		// ordering accident: fail the close transaction rather than spawn a
-		// child that silently runs without the input it was promised (#217).
+		// scope, so by now every cross-task reference it can make has
+		// resolved. A mapping that still resolves to nothing there is a
+		// template bug, not an ordering accident: fail the close transaction
+		// rather than spawn a child that silently runs without the input it
+		// was promised (#217).
+		//
+		// The one exception is the closing task's OWN output namespace. A
+		// human may reject a gate without writing a comment, or complete a
+		// task whose script returned only some of its declared outputs; the
+		// definition is then fine and the value is simply absent. Losing the
+		// whole rejection over an unwritten optional field is worse than the
+		// old silent drop, so that input alone is omitted and logged.
+		//
+		// The two are distinguishable by shape: "$outputs.<slug>.<field>"
+		// (three or more segments) walks into a published child scope and
+		// must bind; "$outputs.<name>" (two segments) names an output of the
+		// closing task itself. Only the latter is lenient.
 		inputs := map[string]any{}
 		for childInput, source := range rule.InputMapping {
 			val, err := resolveScopeRefStrict(vars, source,
 				fmt.Sprintf("spawn rule for %q on task %s", slug, taskID))
 			if err != nil {
+				if name, own := ownOutputRefName(source); own {
+					log.Printf("task engine: spawn rule for %q on task %s (definition %q) omitted input %q: own output %q was not published; spawn continues",
+						slug, taskID, def.Slug, childInput, name)
+					continue
+				}
 				return err
 			}
 			inputs[childInput] = val
@@ -1192,6 +1210,22 @@ func resolveScopeRef(scope map[string]any, ref any) (any, bool) {
 		}
 	}
 	return cur, true
+}
+
+// ownOutputRefName reports whether ref addresses the closing task's own
+// output namespace, "$outputs.<name>", rather than a child scope
+// ("$outputs.<slug>.<field>"). Used to tell an optional output a worker left
+// blank from a cross-task reference the engine failed to publish.
+func ownOutputRefName(ref any) (string, bool) {
+	s, ok := ref.(string)
+	if !ok || !strings.HasPrefix(s, "$") {
+		return "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(s, "$"), ".")
+	if len(parts) != 2 || parts[0] != "outputs" || parts[1] == "" {
+		return "", false
+	}
+	return parts[1], true
 }
 
 // resolveScopeRefStrict resolves ref like resolveScopeRef but turns a

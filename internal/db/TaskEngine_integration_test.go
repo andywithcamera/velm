@@ -246,6 +246,73 @@ func TestSpawnRuleUnresolvableMappingFailsClose(t *testing.T) {
 	}
 }
 
+// TestSpawnRuleOptionalOwnOutputOmitted is the counterpart to the strict case:
+// a rule that maps one of the closing task's OWN outputs which the worker
+// never published (a gate rejected without a comment) must omit that input
+// and still spawn. Failing the close here would lose the rejection.
+func TestSpawnRuleOptionalOwnOutputOmitted(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actorID, groupID := seedActorAndGroup(ctx, t)
+	targetSlug := "opt-target-" + suffix
+
+	targetDef := seedDefinitionWithSpawnRules(ctx, t, targetSlug, "target", `[]`)
+	rules := `[{"on":"rejected","definition_slug":"` + targetSlug + `",` +
+		`"input_mapping":{"feedback":"$outputs.comment","note":"$inputs.note"},"assign":"same"}]`
+	gateDef := seedDefinitionWithSpawnRules(ctx, t, "opt-gate-"+suffix, "gate", rules)
+
+	taskID, err := SpawnTaskInstance(ctx, Pool, gateDef, "", actorID, map[string]any{"note": "kept"})
+	if err != nil {
+		t.Fatalf("spawn gate: %v", err)
+	}
+	assignAll(ctx, t, taskID, groupID, actorID)
+
+	// Rejected with no comment supplied: $outputs.comment was never published.
+	if err := closeWithReason(ctx, t, taskID, "rejected"); err != nil {
+		t.Fatalf("close rejected: %v", err)
+	}
+	// A root task's follow-on inherits its (absent) parent, so find it by
+	// definition rather than by parent_task_id.
+	rows, err := Pool.Query(ctx,
+		`SELECT _id::text FROM base_task WHERE definition_id = $1 AND _deleted_at IS NULL`, targetDef)
+	if err != nil {
+		t.Fatalf("query follow-ons: %v", err)
+	}
+	var followOns []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		followOns = append(followOns, id)
+	}
+	rows.Close()
+	if len(followOns) != 1 {
+		t.Fatalf("follow-on = %d, want 1 (the rejection must survive a blank optional output)", len(followOns))
+	}
+	inputs, _ := taskVars(ctx, t, followOns[0])["inputs"].(map[string]any)
+	if _, present := inputs["feedback"]; present {
+		t.Fatalf("unpublished own output must be omitted, got feedback = %v", inputs["feedback"])
+	}
+	if inputs["note"] != "kept" {
+		t.Fatalf("the bound inputs must survive alongside the omitted one: %v", inputs)
+	}
+}
+
+// TestOwnOutputRefName pins the shape test that separates the two cases: a
+// two-segment "$outputs.<name>" is the closing task's own output, anything
+// deeper addresses a published child scope and is strict.
+func TestOwnOutputRefName(t *testing.T) {
+	if name, ok := ownOutputRefName("$outputs.comment"); !ok || name != "comment" {
+		t.Fatalf("own output = %q %v; want comment true", name, ok)
+	}
+	for _, ref := range []string{"$outputs.write_requirement.requirement_artifact_id", "$outputs", "$inputs.x", "plain"} {
+		if _, ok := ownOutputRefName(ref); ok {
+			t.Fatalf("%s treated as an own output ref; child-scope refs must stay strict", ref)
+		}
+	}
+}
+
 // seedActorAndGroup creates a user, a group, and the membership linking
 // them, satisfying the 055/077 assignment invariants for engine tests.
 func seedActorAndGroup(ctx context.Context, t *testing.T) (string, string) {
