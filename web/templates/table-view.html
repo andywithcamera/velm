@@ -434,7 +434,7 @@
 	    }
 
 	    const realtimeTables = [
-	      {{range $index, $tableName := .ListSourceTables}}{{if $index}},{{end}}{{printf "%q" $tableName}}{{end}}
+	      {{range $index, $tableName := .ListSourceTables}}{{if $index}},{{end}}{{printf "%s" $tableName}}{{end}}
 	    ].filter(Boolean);
 	    if (window.EventSource && realtimeTables.length > 0) {
 	      const sources = realtimeTables.map((tableName) => new EventSource(`/api/realtime/stream?table=${encodeURIComponent(tableName)}`));
@@ -1044,7 +1044,7 @@
     });
 
     const realtimeTables = [
-      {{range $index, $tableName := .TaskBoardSourceTables}}{{if $index}},{{end}}{{printf "%q" $tableName}}{{end}}
+      {{range $index, $tableName := .TaskBoardSourceTables}}{{if $index}},{{end}}{{printf "%s" $tableName}}{{end}}
     ].filter(Boolean);
     if (window.EventSource && realtimeTables.length > 0) {
       const sources = realtimeTables.map((tableName) => new EventSource(`/api/realtime/stream?table=${encodeURIComponent(tableName)}`));
