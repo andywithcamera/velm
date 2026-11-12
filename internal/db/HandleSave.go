@@ -286,6 +286,17 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 			writeSaveDatabaseError(w, err)
 			return
 		}
+		if strings.EqualFold(tableName, UserTableName) {
+			// A user with no role can sign in and do nothing at all, every page
+			// redirecting to /forbidden (issue #196). Give the new account a
+			// role in the same transaction as the row, so no committed user is
+			// ever inert.
+			if err := AssignDefaultUserRoleTx(context.Background(), tx, id); err != nil {
+				log.Printf("failed to assign default role table=%s id=%s err=%v", tableName, id, err)
+				http.Error(w, "Failed to assign a role to the new user", http.StatusInternalServerError)
+				return
+			}
+		}
 	} else {
 		operation = "update"
 		columnNames := make([]string, 0, len(formData))
@@ -367,6 +378,12 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	applyAuthzSaveSideEffects(context.Background(), tableName, oldSnapshot, newSnapshot)
+	if strings.EqualFold(tableName, UserTableName) {
+		// A new user's roles come from a membership written inside the
+		// transaction, and the authz cache may already hold a negative for
+		// this id from the redirect that follows sign-in.
+		InvalidateAuthzCacheForUser(id)
+	}
 	if passwordChanged {
 		// A new password invalidates every other session for that user, so
 		// a password reset also evicts whoever was already signed in.
