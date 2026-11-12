@@ -38,6 +38,21 @@ func EnsureAdministratorsGroupTx(ctx context.Context, tx pgx.Tx) (string, error)
 		return "", err
 	}
 
+	// Reconcile before granting (issue #216). A grant carrying a non-empty
+	// app_id resolves to nothing in the global-admin queries, which filter
+	// gr.app_id = ''. Two rows can coexist because the unique key includes
+	// app_id, so one stray scoped row does not prevent the global one and used
+	// to leave the group silently powerless. Only the global grant is valid on
+	// this system group, so drop any scoped admin grants.
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM _group_role
+		WHERE group_id = $1
+		  AND role_id = $2
+		  AND app_id <> ''
+	`, groupID, adminRoleID); err != nil {
+		return "", fmt.Errorf("reconcile scoped admin grants on %s: %w", AdministratorsGroupName, err)
+	}
+
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO _group_role (group_id, role_id, app_id)
 		VALUES ($1, $2, '')
