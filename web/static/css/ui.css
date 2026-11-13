@@ -2,6 +2,7 @@
  * Shared UI stylesheet manifest.
  * Keep import order stable because the active theme still relies on legacy-to-restyle overrides.
  */
+@import url("./ui/01-fonts.css?v=20261113a");
 @import url("./ui/05-detail-hero-and-reference.css?v=20260323i");
 @import url("./ui/05-detail-map.css?v=20260401b");
 @import url("./ui/05-detail-editor-and-timeline.css?v=20260323i");
