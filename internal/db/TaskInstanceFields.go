@@ -113,3 +113,44 @@ func inputStringValue(inputs map[string]any, key string) string {
 	}
 	return ""
 }
+
+// taskAskLabels is the human wording for each ask value. A card showing
+// "approval" instead of "Approve" still makes the reader translate.
+var taskAskLabels = map[string]string{
+	"validate":    "Validate",
+	"requirement": "Write requirements",
+	"approval":    "Approve",
+	"design":      "Design",
+	"code":        "Code",
+	"review":      "Review",
+	"test":        "Test",
+	"deploy":      "Deploy",
+	"decide":      "Decide",
+	"other":       "Other",
+}
+
+// DefaultTaskAsk is what a task asks when nothing says otherwise: the
+// intake path asks someone to check that the request itself is sound.
+const DefaultTaskAsk = "validate"
+
+// InstanceAsk resolves what the spawned task asks of its doer. An explicit
+// input wins (the requester may know the ask), then the definition's own
+// ask, then the intake default. Unknown values fall back rather than
+// violating chk_base_task_ask and failing the whole spawn.
+func InstanceAsk(def *TaskDefinition, inputs map[string]any) string {
+	if ask := strings.TrimSpace(inputStringValue(inputs, "ask")); taskAskLabels[ask] != "" {
+		return ask
+	}
+	if def != nil {
+		if ask := strings.TrimSpace(def.Ask); taskAskLabels[ask] != "" {
+			return ask
+		}
+	}
+	return DefaultTaskAsk
+}
+
+// TaskAskLabel is the display label for an ask value, empty when unknown so
+// a caller can fall back to something else.
+func TaskAskLabel(ask string) string {
+	return taskAskLabels[strings.TrimSpace(ask)]
+}

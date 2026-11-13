@@ -254,6 +254,37 @@ func taskBoardURL() string {
 	return "/task"
 }
 
+// columnsPresentInAllSources reports which of cols exist on every source
+// table, so the board's UNION never selects a column some descendant lacks.
+func columnsPresentInAllSources(ctx context.Context, cols []string, sourceTables []string) map[string]bool {
+	present := make(map[string]bool, len(cols))
+	for _, col := range cols {
+		present[col] = true
+	}
+	for _, table := range sourceTables {
+		rows, err := db.Pool.Query(ctx, `
+			SELECT attname FROM pg_attribute
+			WHERE attrelid = to_regclass($1) AND attnum > 0 AND NOT attisdropped`, table)
+		if err != nil {
+			return present
+		}
+		have := map[string]bool{}
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err == nil {
+				have[name] = true
+			}
+		}
+		rows.Close()
+		for col := range present {
+			if !have[col] {
+				delete(present, col)
+			}
+		}
+	}
+	return present
+}
+
 func taskBoardResetURL(scope string) string {
 	if normalizeTaskBoardScope(scope) == taskBoardScopeGroups {
 		return taskBoardURL() + "?scope=" + taskBoardScopeGroups
@@ -292,6 +323,19 @@ func loadTaskBoardQueryContext(ctx context.Context, tableName string) (taskBoard
 	if len(sourceTables) == 0 {
 		sourceTables = []string{tableName}
 	}
+	// A descendant table created before a column was added to base_task does
+	// not have it, and buildTableListSourceQuery selects every schema column
+	// from every source table, so one absent column 500s the whole board
+	// (the first ask-type attempt died here). Keep only columns every source
+	// carries.
+	common := columnsPresentInAllSources(ctx, schemaCols, sourceTables)
+	kept := make([]string, 0, len(schemaCols))
+	for _, col := range schemaCols {
+		if common[col] {
+			kept = append(kept, col)
+		}
+	}
+	schemaCols = kept
 	sourceQuery, err := buildTableListSourceQuery(schemaCols, baseQuotedColMap, sourceTables)
 	if err != nil {
 		return taskBoardQueryContext{}, err
@@ -912,42 +956,83 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 	return items, nil
 }
 
-// applyTaskBoardAskLabels fills each card's AskLabel from base_task_definition
-// in one batched lookup. Deliberately not a JOIN on the board source query:
-// the source is a UNION ALL over a table and its descendants, and joining
-// against an inherited column set broke the board query (ask-type work).
+// applyTaskBoardAskLabels fills each card's AskLabel with what the task is
+// asking of its doer (#225), from base_task.ask, falling back to the
+// definition's ask and then to the definition's name. Batched, and not a
+// JOIN on the board source query: the source is a UNION ALL over a table and
+// its descendants, and joining against an inherited column set broke the
+// board query (ask-type work).
 func applyTaskBoardAskLabels(ctx context.Context, items []taskBoardItem) {
+	cardIDs := make([]string, 0, len(items))
 	defIDs := make([]string, 0, len(items))
-	seen := map[string]bool{}
+	seenCards := map[string]bool{}
+	seenDefs := map[string]bool{}
 	for _, item := range items {
-		defID := item.Card.AskDefinitionID
-		if defID == "" || seen[defID] {
-			continue
+		if id := strings.TrimSpace(item.Card.ID); id != "" && !seenCards[id] {
+			seenCards[id] = true
+			cardIDs = append(cardIDs, id)
 		}
-		seen[defID] = true
-		defIDs = append(defIDs, defID)
-	}
-	if len(defIDs) == 0 {
-		return
-	}
-	rows, err := db.Pool.Query(ctx,
-		`SELECT _id::text, COALESCE(NULLIF(BTRIM(display_name), ''), slug)
-		 FROM base_task_definition
-		 WHERE _id::text = ANY($1) AND _deleted_at IS NULL`, defIDs)
-	if err != nil {
-		return // ask type is decorative; a failed lookup must not kill the board
-	}
-	defer rows.Close()
-	labels := map[string]string{}
-	for rows.Next() {
-		var defID, name string
-		if err := rows.Scan(&defID, &name); err == nil {
-			labels[defID] = name
+		if defID := item.Card.AskDefinitionID; defID != "" && !seenDefs[defID] {
+			seenDefs[defID] = true
+			defIDs = append(defIDs, defID)
 		}
 	}
+
+	taskAsks := map[string]string{}
+	if len(cardIDs) > 0 {
+		rows, err := db.Pool.Query(ctx,
+			`SELECT _id::text, COALESCE(ask, '') FROM base_task WHERE _id::text = ANY($1)`, cardIDs)
+		if err == nil {
+			for rows.Next() {
+				var cardID, ask string
+				if err := rows.Scan(&cardID, &ask); err == nil {
+					taskAsks[cardID] = ask
+				}
+			}
+			rows.Close()
+		}
+	}
+
+	type definitionAsk struct {
+		ask  string
+		name string
+	}
+	defs := map[string]definitionAsk{}
+	if len(defIDs) > 0 {
+		rows, err := db.Pool.Query(ctx,
+			`SELECT _id::text, COALESCE(ask, ''), COALESCE(NULLIF(BTRIM(display_name), ''), slug)
+			 FROM base_task_definition
+			 WHERE _id::text = ANY($1) AND _deleted_at IS NULL`, defIDs)
+		if err == nil {
+			for rows.Next() {
+				var defID string
+				var d definitionAsk
+				if err := rows.Scan(&defID, &d.ask, &d.name); err == nil {
+					defs[defID] = d
+				}
+			}
+			rows.Close()
+		}
+	}
+
 	for i := range items {
-		items[i].Card.AskLabel = labels[items[i].Card.AskDefinitionID]
+		d := defs[items[i].Card.AskDefinitionID]
+		items[i].Card.AskLabel = taskBoardAskLabel(taskAsks[items[i].Card.ID], d.ask, d.name)
 	}
+}
+
+// taskBoardAskLabel picks the badge text. The task's own ask wins; the
+// definition's ask covers rows created before the column existed; the
+// definition name is the last resort so a definition-spawned card is never
+// unlabelled. A flat task with no ask at all has no badge.
+func taskBoardAskLabel(taskAsk, definitionAsk, definitionName string) string {
+	if label := db.TaskAskLabel(taskAsk); label != "" {
+		return label
+	}
+	if label := db.TaskAskLabel(definitionAsk); label != "" {
+		return label
+	}
+	return strings.TrimSpace(definitionName)
 }
 
 // laneHasChoice reports whether stateChoices already carries value.
