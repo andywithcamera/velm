@@ -1,0 +1,37 @@
+/*
+ * Self-hosted webfonts.
+ *
+ * These were previously loaded from fonts.googleapis.com in layout.html, which
+ * production CSP (style-src 'self', font-src 'self' data:) blocked outright, so
+ * every Syne/DM Sans/JetBrains Mono rule silently fell back to the system font.
+ * Serving from origin satisfies the existing policy; no CSP change is needed and
+ * the page makes no third-party request.
+ *
+ * One variable file per family: the wght axis covers every weight the stylesheets
+ * use (Syne 600-800, DM Sans 300-700, JetBrains Mono 400-500), 103 KB in total.
+ * Files are latin-subset only, which is what the Google CSS served us before.
+ */
+
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url("../../fonts/dm-sans.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Syne";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("../../fonts/syne.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("../../fonts/jetbrains-mono.woff2") format("woff2");
+}
