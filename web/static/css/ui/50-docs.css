@@ -123,98 +123,7 @@
   color: var(--docs-ghost);
 }
 
-/* Writing surface */
-.docs-editor-body {
-  min-height: 65vh;
-  padding: 1.75rem 1.75rem 2rem;
-  font-size: var(--docs-prose-size);
-  line-height: var(--docs-prose-line);
-  color: var(--docs-muted);
-  background: var(--docs-paper);
-  border-bottom-color: var(--docs-border);
-  caret-color: var(--docs-link);
-}
 
-.docs-editor-body:focus {
-  background: var(--docs-paper-warm);
-}
-
-.docs-editor-body:empty::before {
-  content: attr(data-placeholder);
-  color: var(--docs-ghost);
-  pointer-events: none;
-  display: block;
-}
-
-
-/* ─── Per-line markdown styling (contenteditable editor) ──────────────────── */
-
-#docs-article-body [data-md="h1"] {
-  font-family: "Syne", sans-serif;
-  font-size: var(--docs-h1);
-  font-weight: 800;
-  letter-spacing: -0.04em;
-  line-height: 1.15;
-  color: var(--docs-ink);
-  padding-top: 1.4em;
-  padding-bottom: 0.35em;
-  border-bottom: 1px solid var(--docs-border);
-  margin-bottom: 0.2em;
-}
-
-#docs-article-body > div:first-child[data-md="h1"],
-#docs-article-body > div:first-child[data-md="h2"],
-#docs-article-body > div:first-child[data-md="h3"] {
-  padding-top: 0;
-}
-
-#docs-article-body [data-md="h2"] {
-  font-family: "Syne", sans-serif;
-  font-size: var(--docs-h2);
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  line-height: 1.25;
-  color: var(--docs-ink);
-  padding-top: 1.2em;
-}
-
-#docs-article-body [data-md="h3"] {
-  font-size: var(--docs-h3);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--docs-muted);
-  padding-top: 0.9em;
-}
-
-#docs-article-body [data-md="li"] {
-  padding-left: 1.6rem;
-  position: relative;
-  color: var(--docs-muted);
-}
-
-#docs-article-body [data-md="li"]::before {
-  content: "·";
-  position: absolute;
-  left: 0.55rem;
-  color: var(--docs-link);
-  font-size: 1.3em;
-  line-height: 1;
-  top: 0.3em;
-}
-
-#docs-article-body [data-md="ol"] {
-  padding-left: 1.6rem;
-  color: var(--docs-muted);
-}
-
-#docs-article-body [data-md="empty"] {
-  min-height: 0.6em;
-}
-
-#docs-article-body [data-md="p"] {
-  color: var(--docs-muted);
-  padding-bottom: 0.15em;
-}
 
 
 /* ─── Reader prose ────────────────────────────────────────────────────────── */
@@ -867,7 +776,6 @@ a.ui-docs-tag:hover {
 @media (max-width: 640px) {
   .ui-docs-reader-page { padding: 1rem; }
   .ui-docs-reader-title { font-size: 2rem; }
-  .docs-editor-body { padding: 1.25rem; }
   .docs-editor-title-input { font-size: 1.4rem; }
   .ui-docs-reader-nav { grid-template-columns: 1fr; }
 }

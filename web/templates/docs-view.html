@@ -108,9 +108,6 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="library_slug" value="{{.DocsLibrarySelected.Slug}}">
         <input type="hidden" name="original_slug" value="{{.DocsArticleSelected.Slug}}">
-        {{/* Hidden textarea keeps the raw markdown for form submission */}}
-        <textarea name="markdown_body" id="docs-markdown-source" class="docs-editor-source-hidden">{{.DocsArticleSelected.MarkdownBody}}</textarea>
-
         <input id="docs-article-title"
                class="docs-editor-title-input"
                name="title"
@@ -130,16 +127,10 @@
                  placeholder="Tags: ops, onboarding…">
         </div>
 
-        {{/* The writing area — contenteditable, raw markdown with per-line visual styling */}}
-        <div id="docs-article-body"
-             class="docs-editor-body"
-             contenteditable="true"
-             role="textbox"
-             aria-label="Article body"
-             aria-multiline="true"
-             data-docs-markdown-input="true"
-             data-placeholder="Start writing… (type [[ to link any record)"
-             spellcheck="true"></div>
+        {{/* The body is the same markdown field used for task and entity
+             descriptions: textarea source, server-rendered preview, shared
+             [[wikilink]] autocomplete. */}}
+        {{template "markdown-field" .DocsArticleField}}
 
         <details class="docs-editor-advanced" {{if not .DocsArticleSelected.Slug}}open{{end}}>
           <summary class="docs-editor-advanced-toggle">⚙ Settings</summary>
@@ -288,210 +279,12 @@
 
 <script nonce="{{.CSPNonce}}">
   (function () {
-    var editor = document.getElementById('docs-article-body');
-    var hidden = document.getElementById('docs-markdown-source');
+    // The body field itself is handled by /static/js/markdown-field.js. What is
+    // left here belongs to this page, not to the field: the slug, the word
+    // count, and saving an article without a full reload.
     var form   = document.getElementById('docs-article-form');
-    if (!editor || !hidden || !form) return;
-
-    // --- Init: populate contenteditable from raw markdown ---
-
-    function escHtml(s) {
-      return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
-
-    function initEditor(markdown) {
-      var lines = markdown.split('\n');
-      editor.innerHTML = lines.map(function (line) {
-        return '<div>' + (line.length ? escHtml(line) : '<br>') + '</div>';
-      }).join('');
-      applyLineStyling();
-    }
-
-    // --- Per-line visual styling (no innerHTML change — attribute-only) ---
-
-    function applyLineStyling() {
-      Array.from(editor.children).forEach(function (child) {
-        var t = child.textContent || '';
-        var type = 'p';
-        if (/^### /.test(t))      type = 'h3';
-        else if (/^## /.test(t))  type = 'h2';
-        else if (/^# /.test(t))   type = 'h1';
-        else if (/^[-*] /.test(t)) type = 'li';
-        else if (/^\d+\. /.test(t)) type = 'ol';
-        else if (!t.trim())        type = 'empty';
-        if (child.dataset.md !== type) child.dataset.md = type;
-      });
-    }
-
-    // --- Sync contenteditable text to hidden textarea ---
-
-    function syncMarkdown() {
-      var lines = [];
-      editor.childNodes.forEach(function (node) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          lines.push(node.textContent);
-        } else if (node.nodeName === 'DIV' || node.nodeName === 'P') {
-          var text = node.innerText !== undefined ? node.innerText : node.textContent;
-          // innerText on a div with just <br> returns '' or '\n'
-          lines.push(text.replace(/\n$/, ''));
-        } else if (node.nodeName === 'BR') {
-          lines.push('');
-        }
-      });
-      hidden.value = lines.join('\n');
-    }
-
-    // --- Wikilink autocomplete ---
-
-    var dropdown = document.createElement('div');
-    dropdown.className = 'docs-wikilink-dropdown';
-    dropdown.style.display = 'none';
-    dropdown.style.position = 'fixed';
-    document.body.appendChild(dropdown);
-
-    var currentResults = [];
-    var activeIndex = -1;
-    var searchTimer = null;
-
-    function getWikilinkContext() {
-      var sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return null;
-      var range = sel.getRangeAt(0);
-      var node = range.startContainer;
-      if (node.nodeType !== Node.TEXT_NODE) return null;
-      var before = node.textContent.substring(0, range.startOffset);
-      var m = before.match(/\[\[([^\]\n]*)$/);
-      if (!m) return null;
-      return {
-        query: m[1],
-        textNode: node,
-        openAt: before.lastIndexOf('[['),
-        cursor: range.startOffset
-      };
-    }
-
-    function hideDropdown() {
-      dropdown.style.display = 'none';
-      dropdown.innerHTML = '';
-      currentResults = [];
-      activeIndex = -1;
-    }
-
-    function positionDropdown() {
-      var sel = window.getSelection();
-      if (sel && sel.rangeCount) {
-        var cr = sel.getRangeAt(0).getBoundingClientRect();
-        if (cr && cr.top > 0) {
-          var below = window.innerHeight - cr.bottom;
-          dropdown.style.left = cr.left + 'px';
-          dropdown.style.width = '380px';
-          if (below > 160) {
-            dropdown.style.top = (cr.bottom + 4) + 'px';
-            dropdown.style.bottom = 'auto';
-          } else {
-            dropdown.style.top = 'auto';
-            dropdown.style.bottom = (window.innerHeight - cr.top + 4) + 'px';
-          }
-          return;
-        }
-      }
-      var er = editor.getBoundingClientRect();
-      dropdown.style.left = er.left + 'px';
-      dropdown.style.width = '380px';
-      dropdown.style.top = (er.bottom + 4) + 'px';
-      dropdown.style.bottom = 'auto';
-    }
-
-    function renderDropdown(results) {
-      currentResults = results;
-      activeIndex = -1;
-      if (!results || !results.length) {
-        dropdown.innerHTML = '<div class="docs-wikilink-empty">No matching records found</div>';
-      } else {
-        dropdown.innerHTML = results.map(function (r, i) {
-          return '<div class="docs-wikilink-item" data-index="' + i + '">' +
-            '<span class="docs-wikilink-item-type">' + r.type + '</span>' +
-            '<span>' + escHtml(r.label) + '</span>' +
-            '</div>';
-        }).join('');
-        dropdown.querySelectorAll('.docs-wikilink-item').forEach(function (item) {
-          item.addEventListener('mousedown', function (e) {
-            e.preventDefault();
-            var i = parseInt(item.getAttribute('data-index'), 10);
-            if (currentResults[i]) insertWikilink(currentResults[i].title);
-          });
-        });
-      }
-      dropdown.style.display = 'block';
-      positionDropdown();
-    }
-
-    function setActive(idx) {
-      activeIndex = idx;
-      dropdown.querySelectorAll('.docs-wikilink-item').forEach(function (el, i) {
-        el.classList.toggle('is-active', i === activeIndex);
-      });
-    }
-
-    function insertWikilink(title) {
-      var ctx = getWikilinkContext();
-      if (!ctx) { hideDropdown(); return; }
-      var range = document.createRange();
-      range.setStart(ctx.textNode, ctx.openAt);
-      range.setEnd(ctx.textNode, ctx.cursor);
-      range.deleteContents();
-      var tn = document.createTextNode('[[' + title + ']]');
-      range.insertNode(tn);
-      var sel = window.getSelection();
-      var nr = document.createRange();
-      nr.setStartAfter(tn);
-      nr.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(nr);
-      hideDropdown();
-      syncMarkdown();
-      applyLineStyling();
-    }
-
-    function searchWikilinks(query) {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(function () {
-        fetch('/api/docs/wikilink-search?q=' + encodeURIComponent(query), {
-          credentials: 'same-origin',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        }).then(function (r) { return r.ok ? r.json() : []; })
-          .then(renderDropdown)
-          .catch(hideDropdown);
-      }, 150);
-    }
-
-    // --- Events ---
-
-    editor.addEventListener('input', function () {
-      applyLineStyling();
-      syncMarkdown();
-      var ctx = getWikilinkContext();
-      if (ctx) {
-        searchWikilinks(ctx.query);
-      } else {
-        hideDropdown();
-      }
-    });
-
-    editor.addEventListener('keydown', function (e) {
-      if (dropdown.style.display === 'none') return;
-      var items = dropdown.querySelectorAll('.docs-wikilink-item');
-      if (e.key === 'Escape') { e.preventDefault(); hideDropdown(); }
-      else if (e.key === 'ArrowDown') { e.preventDefault(); setActive(Math.min(activeIndex + 1, items.length - 1)); }
-      else if (e.key === 'ArrowUp')   { e.preventDefault(); setActive(Math.max(activeIndex - 1, 0)); }
-      else if ((e.key === 'Enter' || e.key === 'Tab') && activeIndex >= 0 && currentResults[activeIndex]) {
-        e.preventDefault();
-        insertWikilink(currentResults[activeIndex].title);
-      }
-    });
-
-    editor.addEventListener('blur', function () { setTimeout(hideDropdown, 150); });
-    window.addEventListener('resize', function () { if (dropdown.style.display !== 'none') positionDropdown(); });
+    var source = document.getElementById('docs-markdown-source');
+    if (!form || !source) return;
 
     // --- Word count ---
 
@@ -499,12 +292,14 @@
 
     function updateWordCount() {
       if (!wcEl) return;
-      var text = (hidden.value || '').trim();
+      var text = (source.value || '').trim();
       if (!text) { wcEl.textContent = ''; return; }
       var words = text.split(/\s+/).filter(Boolean).length;
       var mins = Math.max(1, Math.round(words / 200));
       wcEl.textContent = words + ' words · ~' + mins + ' min read';
     }
+
+    source.addEventListener('input', updateWordCount);
 
     // --- AJAX save ---
 
@@ -512,23 +307,20 @@
     var saveBadge = document.getElementById('docs-save-badge');
     var isSaving = false;
 
-    function showBadge(text, isError) {
+    function showBadge(label, isError) {
       if (!saveBadge) return;
-      saveBadge.textContent = text;
+      saveBadge.textContent = label;
       saveBadge.style.display = '';
       saveBadge.style.opacity = '1';
       saveBadge.className = 'ui-badge docs-editor-saved-badge' + (isError ? ' docs-editor-save-error' : '');
       if (!isError) {
         clearTimeout(saveBadge._fadeTimer);
-        saveBadge._fadeTimer = setTimeout(function () {
-          saveBadge.style.opacity = '0';
-        }, 2500);
+        saveBadge._fadeTimer = setTimeout(function () { saveBadge.style.opacity = '0'; }, 2500);
       }
     }
 
     function ajaxSave() {
       if (isSaving) return;
-      syncMarkdown();
       isSaving = true;
       if (saveBtn) saveBtn.disabled = true;
       showBadge('Saving…', false);
@@ -540,24 +332,18 @@
         method: 'POST',
         body: new FormData(form),
         credentials: 'same-origin',
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          'X-CSRF-Token': csrfToken
-        }
+        headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': csrfToken }
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
           if (data.ok) {
             showBadge('Saved', false);
-            // Keep original_slug in sync so subsequent saves patch the same article
+            // Keep original_slug in sync so later saves patch the same article.
             var origSlug = form.querySelector('[name="original_slug"]');
             if (origSlug && data.slug) origSlug.value = data.slug;
-            // Update slug input to reflect server-assigned slug
             var slugInput = document.getElementById('docs-article-slug');
             if (slugInput && data.slug) slugInput.value = data.slug;
-            // Update browser URL without reload
             if (data.href) history.replaceState({}, '', data.href);
-            // Flip save button label from "Create" to "Save"
             if (saveBtn && saveBtn.textContent.trim() === 'Create Article') {
               saveBtn.textContent = 'Save Article';
             }
@@ -572,13 +358,11 @@
         });
     }
 
-    // Intercept form submit to use AJAX
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       ajaxSave();
     });
 
-    // Cmd+S / Ctrl+S
     document.addEventListener('keydown', function (e) {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
@@ -600,14 +384,6 @@
       });
     }
 
-    // --- Wire up word count to input events ---
-
-    editor.addEventListener('input', function () {
-      updateWordCount();
-    });
-
-    // Boot
-    initEditor(hidden.value || '');
     updateWordCount();
   })();
 </script>

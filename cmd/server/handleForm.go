@@ -305,6 +305,7 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 		w.Header().Set("X-Velm-Record-Version", version)
 	}
 	viewData["FormReadOnly"] = formReadOnly
+	viewData["FormMarkdownFields"] = buildFormMarkdownFields(formColumns, formFieldConfigs, formFieldValues, formReadOnly)
 	viewData["FormIsDeleted"] = formFieldValues["_deleted_at"] != ""
 	viewData["FormPasswordFieldName"] = db.UserPasswordField
 	viewData["FormPasswordState"] = loadFormPasswordState(ctx, tableName, id)
