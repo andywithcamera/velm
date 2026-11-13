@@ -286,6 +286,15 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 	viewData["XData"] = xData
 	viewData["FormTableLabel"] = formTableLabel(xData.View, tableName)
 	viewData["FormTableDescription"] = formTableDescription(xData.View, tableName)
+	// What this record is asking of its reader (#225). The board carries the
+	// same badge; the record page used to show only the word "Task".
+	if recordValues, ok := xData.Data.(map[string]any); ok {
+		viewData["FormAskLabel"] = db.TaskAskLabel(fmt.Sprint(recordValues["ask"]))
+		viewData["FormAskContext"] = strings.TrimSpace(fmt.Sprint(recordValues["context_note"]))
+		if viewData["FormAskContext"] == "<nil>" {
+			viewData["FormAskContext"] = ""
+		}
+	}
 	viewData["FormColumns"] = formColumns
 	viewData["FormFieldConfigs"] = formFieldConfigs
 	viewData["FormFieldValues"] = formFieldValues
