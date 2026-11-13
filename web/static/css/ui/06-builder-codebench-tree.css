@@ -33,7 +33,7 @@
   color: var(--text-primary);
   font-size: clamp(1.45rem, 2.2vw, 2rem);
   line-height: 1.05;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .ui-editor-topbar-copy {
@@ -198,7 +198,7 @@
 .ui-file-group-label {
   color: rgba(148, 163, 184, 0.86);
   font-size: 0.76rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -434,7 +434,7 @@
   padding: 0.22rem 0;
   color: rgba(219, 228, 240, 0.82);
   font-size: 0.75rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
@@ -461,13 +461,13 @@
   justify-content: center;
   min-width: 1rem;
   font-size: 1rem;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1;
 }
 
 .ui-tree-summary::before {
   content: ">";
-  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-family: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
   font-size: 0.72rem;
   color: rgba(148, 163, 184, 0.88);
   transition: transform 0.14s ease;
@@ -505,7 +505,7 @@
   background: rgba(94, 234, 212, 0.14);
   color: #ccfbf1;
   font-size: 0.62rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }

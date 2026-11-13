@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Changed
+
+- Type stack replaced: Instrument Sans for UI, prose and headings, Monaspace Neon for code, identifiers and figures, replacing Syne, DM Sans and JetBrains Mono. The deciding measurement was digit alignment: DM Sans carries no `tnum` feature at all, so equal-length figures rendered 24px apart at 13px (`111,111` at half the width of `888,888`) and no numeric column in the app could ever line up. Instrument Sans has `tnum` and a higher x-height. Instrument Sans' wght axis stops at 700, so 19 `font-weight: 800` declarations became 700 (requesting an unavailable weight on a variable font is clamped silently, not an error) and the two `300`s became 400; the wordmark moved to Monaspace Neon 800, which the mono can carry. Two faces, 177 KB, still self-hosted — no CSP change. (#323)
+- The header fades into the body instead of ending at a hard edge: a 22px gradient below the bar, with `.ui-main-shell` offset by the same `--header-fade` so the gradient never covers the first line of a page at rest. The two monochrome themes invert the bar against the page — black on white for `light`, white on black for `dark` — while `yellow`, `purple`, `crimson` and `mint` keep their own colour. Every colour in the bar now reads a `--header-*` token rather than `--text-*`, so the inversion is a palette change; panels floating inside the bar (nav drawer, user menu, search results) stay page surfaces and do not invert. (#323)
+
 ### Added
 
 - `GET /version` reports `schema`, the highest applied migration. A deploy that half-migrated, or a database restored from an older backup, is now visible from outside instead of discovered at request time. (#161, #175)

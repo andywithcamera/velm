@@ -88,9 +88,9 @@
 
 /* Title input */
 .docs-editor-title-input {
-  font-family: "Syne", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 1.75rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--docs-ink);
   background: transparent;
@@ -143,7 +143,7 @@
 .ui-content-prose.ui-docs-reader-prose h2,
 .ui-content-prose.ui-docs-reader-prose h3,
 .ui-content-prose.ui-docs-reader-prose h4 {
-  font-family: "Syne", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   color: var(--docs-ink);
   margin: 2em 0 0.6em;
   line-height: 1.15;
@@ -151,7 +151,7 @@
 
 .ui-content-prose.ui-docs-reader-prose h1 {
   font-size: var(--docs-h1);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.04em;
   padding-bottom: 0.4em;
   border-bottom: 1px solid var(--docs-border);
@@ -213,7 +213,7 @@
 
 /* Inline code */
 .ui-docs-reader-prose code {
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   font-size: 0.85em;
   background: var(--docs-code-bg) !important;
   border: 1px solid var(--docs-code-border) !important;
@@ -348,7 +348,7 @@
   background: var(--surface-soft, rgba(0,0,0,0.04));
   color: var(--docs-link);
   font-size: 0.82rem;
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
 }
 
 
@@ -399,7 +399,7 @@
 }
 
 .ui-docs-backlink-number {
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   font-size: 0.75rem;
   color: var(--docs-link);
   letter-spacing: 0.03em;
@@ -476,7 +476,7 @@
 }
 
 .docs-wikilink-item-type {
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -610,7 +610,7 @@
 .ui-docs-backlinks-title,
 .ui-docs-backlink-title {
   margin: 0;
-  font-family: "Syne", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   letter-spacing: -0.03em;
 }
 
@@ -703,7 +703,7 @@
 .ui-docs-reader-nav-label {
   font-size: 0.75rem;
   color: var(--docs-ghost);
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   letter-spacing: 0.03em;
   display: block;
 }
@@ -722,7 +722,7 @@
   margin-left: auto;
   font-size: 0.78rem;
   color: var(--docs-ghost);
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   letter-spacing: 0.02em;
 }
 

@@ -331,7 +331,7 @@ func TestSelfHostedFontsAreServedByTheStaticHandler(t *testing.T) {
 	t.Chdir("../..")
 	handler := newStaticAssetHandler("./web/static")
 
-	for _, name := range []string{"dm-sans.woff2", "syne.woff2", "jetbrains-mono.woff2"} {
+	for _, name := range []string{"instrument-sans.woff2", "monaspace-neon.woff2"} {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/fonts/"+name, nil))
 		if rec.Code != http.StatusOK {

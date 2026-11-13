@@ -2,17 +2,17 @@
  * Shared UI stylesheet manifest.
  * Keep import order stable because the active theme still relies on legacy-to-restyle overrides.
  */
-@import url("./ui/01-fonts.css?v=20261113a");
+@import url("./ui/01-fonts.css?v=20261113b");
 @import url("./ui/05-detail-hero-and-reference.css?v=20260323i");
 @import url("./ui/05-detail-map.css?v=20260401b");
 @import url("./ui/05-detail-editor-and-timeline.css?v=20260323i");
 @import url("./ui/06-builder-codebench-tree.css?v=20260323i");
 @import url("./ui/06-builder-editor-surfaces.css?v=20260323i");
 @import url("./ui/06-builder-object-and-code-editor.css?v=20260323i");
-@import url("./ui/10-core.css?v=20260323i");
-@import url("./ui/20-shell-and-workspaces.css?v=20260323i");
+@import url("./ui/10-core.css?v=20261113a");
+@import url("./ui/20-shell-and-workspaces.css?v=20261113a");
 @import url("./ui/30-responsive-and-overrides.css?v=20260323i");
-@import url("./ui/40-velm-monochrome.css?v=20261110a");
+@import url("./ui/40-velm-monochrome.css?v=20261113a");
 @import url("./ui/50-docs.css?v=20260511d");
 @import url("./ui/45-overlays.css?v=20261110a");
 @import url("./ui/55-ui-refinements.css?v=20261111c");
