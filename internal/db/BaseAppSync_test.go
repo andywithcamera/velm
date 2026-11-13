@@ -440,3 +440,38 @@ func TestSimplifyBaseTaskDescriptionRendersMarkdown(t *testing.T) {
 		t.Fatalf("notes data type = %q, want long_text (only description is markdown)", got)
 	}
 }
+
+func TestSimplifyBaseEntityDescriptionRendersMarkdown(t *testing.T) {
+	// #304: 069's regex never matched base_entity, so the column stayed
+	// long_text and every entity description rendered as raw markdown —
+	// hardware tables, runbooks and ownership notes unreadable in the form.
+	table := AppDefinitionTable{
+		Name: "base_entity",
+		Columns: []AppDefinitionColumn{
+			{Name: "name", DataType: "text"},
+			{Name: "description", DataType: "long_text"},
+			{Name: "notes", DataType: "long_text"},
+			{Name: "criticality", DataType: "choice"},
+		},
+	}
+
+	simplifyBaseEntityTable(&table)
+
+	if got := requireDefinitionColumn(t, table, "description").DataType; got != "markdown" {
+		t.Fatalf("description data type = %q, want markdown", got)
+	}
+	// Idempotent: this runs on every boot.
+	before := requireDefinitionColumn(t, table, "description").DataType
+	simplifyBaseEntityTable(&table)
+	if got := requireDefinitionColumn(t, table, "description").DataType; got != before {
+		t.Fatalf("second pass changed description from %q to %q", before, got)
+	}
+	// Only description is prose; other long_text columns keep their kind.
+	if got := requireDefinitionColumn(t, table, "notes").DataType; got != "long_text" {
+		t.Fatalf("notes data type = %q, want long_text", got)
+	}
+	// Existing normalisation must still run alongside it.
+	if got := requireDefinitionColumn(t, table, "criticality").DefaultValue; got != "p3" {
+		t.Fatalf("criticality default = %q, want p3", got)
+	}
+}

@@ -3233,7 +3233,10 @@
 
   var loaded = false, graph = null;
   // 3D state: unit sphere positions, yaw/pitch rotation
-  var nodes = [], yaw = -0.6, pitch = 0.35, dragging = false, lastX = 0, lastY = 0, moved = 0;
+  // Start unrotated: the record being viewed is the subject of the map and
+  // belongs in the centre, not pushed off to a corner by an arbitrary
+  // initial rotation. Dragging still rotates the sphere.
+  var nodes = [], yaw = 0, pitch = 0, dragging = false, lastX = 0, lastY = 0, moved = 0;
 
   if ('IntersectionObserver' in window) {
     var io = new IntersectionObserver(function (entries) {
@@ -3250,6 +3253,15 @@
     if (!status) return;
     status.textContent = text || '';
     status.classList.toggle('hidden', !text);
+  }
+
+  // Graph nodes carry no `kind` field: tasks arrive as "task:<id>" and entities
+  // as bare ids, with root_kind describing the centre node. Without this the
+  // task/entity colour test was always false and tasks drew as entities.
+  function nodeKind(n) {
+    if (n.kind) return n.kind;
+    if (graph && graph.root_kind && n.id === graph.root_id) return graph.root_kind;
+    return String(n.id || '').indexOf('task:') === 0 ? 'task' : 'entity';
   }
 
   function loadMap() {
@@ -3272,11 +3284,21 @@
     setStatus('');
     var root = null, hop1 = [], hop2 = [];
     graph.nodes.forEach(function (n) {
-      if (n.depth === 0) root = n;
-      else if (n.depth === 1) hop1.push(n);
+      // The graph endpoint reports hop distance as level/distance, never depth.
+      // Reading the wrong key made every node look like a hop-2 leaf: no root
+      // was found, so the centre node was never drawn as the centre and the
+      // map read as a scatter of unconnected dots.
+      var hop = (typeof n.level === 'number') ? n.level
+              : (typeof n.distance === 'number') ? n.distance
+              : (typeof n.depth === 'number') ? n.depth : null;
+      if (hop === 0 || n.id === graph.root_id) root = n;
+      else if (hop === 1) hop1.push(n);
       else hop2.push(n);
     });
-    if (root) nodes.push({ n: root, theta: 0, phi: Math.PI / 2, root: true });
+    // phi=PI/2, theta=PI/2 puts the centre node at x=0,z=1: front-centre of the
+    // sphere. theta=0 put it at x=1, which drew the subject of the map hard
+    // against the right edge.
+    if (root) nodes.push({ n: root, theta: Math.PI / 2, phi: Math.PI / 2, root: true });
     var spread = Math.PI * 2 / Math.max(hop1.length, 1);
     for (var i = 0; i < hop1.length; i++) nodes.push({ n: hop1[i], theta: i * spread, phi: Math.PI / 2 + 0.5 * ((i % 2) ? 1 : -1) });
     var spread2 = Math.PI * 2 / Math.max(hop2.length, 1);
@@ -3295,26 +3317,52 @@
     return { x: x * f, y: y * f, z: z, f: f };
   }
 
-  var R = 120;
+  // Hit-test surface from the last draw, so a click resolves against exactly
+  // the pixels the user saw rather than a second, independently computed layout.
+  var screen = [];
+  var frame = 0;
+
+  function scheduleDraw() {
+    if (frame) return;
+    frame = window.requestAnimationFrame(function () { frame = 0; draw(); });
+  }
+
   function draw() {
     var dpr = window.devicePixelRatio || 1;
-    var w = canvas.clientWidth || 240, h = w; // square
-    if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.height = h + 'px'; }
+    // Fill the CSS box in both axes. The map lives in a sidebar that is narrow on
+    // a phone and widens with the record layout, so assuming a square made the
+    // bitmap overflow a short container on desktop and left the sphere centred
+    // outside the visible area. The canvas has no intrinsic size of its own: the
+    // container decides, and the drawing follows.
+    var w = Math.max(canvas.clientWidth, 1);
+    var h = Math.max(canvas.clientHeight, 1);
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
+    }
     var ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
+    screen = [];
     if (!nodes.length) return;
-    R = Math.min(w, h) * 0.34;
+    // Elliptical spread rather than a circle: a wide, short box should use its
+    // width instead of wasting it on empty margins.
+    var rx = w * 0.38, ry = h * 0.38;
     var cx = w / 2, cy = h / 2;
     var proj = nodes.map(function (nd) {
       var p = project({ x: Math.sin(nd.phi) * Math.cos(nd.theta), y: Math.cos(nd.phi), z: Math.sin(nd.phi) * Math.sin(nd.theta) });
-      return { nd: nd, sx: cx + p.x * R, sy: cy - p.y * R, z: p.z, f: p.f };
+      return { nd: nd, sx: cx + p.x * rx, sy: cy - p.y * ry, z: p.z, f: p.f };
     });
     proj.sort(function (a, b) { return a.z - b.z; });
     // edges first (behind), then nodes front-to-back
     var byId = {}; proj.forEach(function (p) { byId[p.nd.n.id] = p; });
     (graph.edges || []).forEach(function (e) {
-      var a = byId[e.source], b = byId[e.target];
+      // Edges name their ends source_entity_id / target_entity_id; the old
+      // code read e.source and e.target, so every lookup missed and the map
+      // drew no lines at all.
+      var from = e.source_entity_id || e.source || e.from;
+      var to = e.target_entity_id || e.target || e.to;
+      var a = byId[from], b = byId[to];
       if (!a || !b) return;
       ctx.strokeStyle = 'rgba(100,116,139,0.55)';
       ctx.lineWidth = 1.2;
@@ -3324,24 +3372,72 @@
     var accent = cs.getPropertyValue('--accent').trim() || '#4f46e5';
     proj.forEach(function (p) {
       var n = p.nd.n;
-      var r = (p.nd.root ? 13 : 7) * p.f;
+      var r = (p.nd.root ? 11 : 6) * p.f;
+      p.rad = Math.max(r, 3);
       ctx.beginPath();
-      ctx.arc(p.sx, p.sy, Math.max(r, 3), 0, Math.PI * 2);
-      ctx.fillStyle = p.nd.root ? accent : (n.kind === 'task' ? '#d97706' : '#64748b');
+      ctx.arc(p.sx, p.sy, p.rad, 0, Math.PI * 2);
+      ctx.fillStyle = p.nd.root ? accent : (nodeKind(n) === 'task' ? '#d97706' : '#64748b');
       ctx.globalAlpha = 0.45 + 0.55 * ((p.z + 1) / 2);
       ctx.fill();
       ctx.globalAlpha = 1;
       if (p.nd.root) { ctx.strokeStyle = accent; ctx.lineWidth = 2; ctx.stroke(); }
-      // label, always visible
-      var label = n.name || n.number || n.id;
-      ctx.font = (p.nd.root ? '600 11px' : '10px') + ' system-ui,sans-serif';
-      ctx.textAlign = 'center';
-      var ty = p.sy + Math.max(r, 3) + 11;
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      screen.push({ id: n.id, node: n, sx: p.sx, sy: p.sy, rad: p.rad, root: !!p.nd.root });
+    });
+    drawLabels(ctx, proj, w, h, accent);
+  }
+
+  // Labels are placed after every node is drawn, and each one claims a box that
+  // the next must avoid. Drawing them in node order meant a hop-1 label sat on
+  // top of whatever happened to be behind it, which is what made the map
+  // illegible. Front-most nodes choose first, so the ones nearest the camera win.
+  function drawLabels(ctx, proj, w, h, accent) {
+    var taken = [];
+    var pad = 2;
+    // A label must clear the nodes as well as the other labels. Without the
+    // circles in this list a label was placed at its preferred offset even
+    // when a front node sat there, so text landed on top of the subject. Each
+    // box carries the node it came from: a label is not blocked by its own dot.
+    proj.forEach(function (p) {
+      taken.push({ x: p.sx - p.rad - 2, y: p.sy - p.rad - 2, w: p.rad * 2 + 4, h: p.rad * 2 + 4, own: p.nd });
+    });
+    function free(r, own) {
+      if (r.x < 0 || r.y < 0 || r.x + r.w > w || r.y + r.h > h) return false;
+      for (var i = 0; i < taken.length; i++) {
+        var t = taken[i];
+        if (own && t.own === own) continue;
+        if (r.x < t.x + t.w && r.x + r.w > t.x && r.y < t.y + t.h && r.y + r.h > t.y) return false;
+      }
+      return true;
+    }
+    var ordered = proj.slice().sort(function (a, b) { return b.z - a.z; });
+    ordered.forEach(function (p) {
+      var label = p.nd.n.name || p.nd.n.number || p.nd.n.id;
+      var size = p.nd.root ? 11 : 10;
+      ctx.font = (p.nd.root ? '600 ' : '') + size + 'px system-ui,sans-serif';
       var tw = ctx.measureText(label).width;
-      ctx.fillRect(p.sx - tw / 2 - 3, ty - 9, tw + 6, 13);
-      ctx.fillStyle = '#1f2937';
-      ctx.fillText(label, p.sx, ty);
+      var bw = tw + 6, bh = size + 4;
+      var gap = p.rad + 5;
+      // Preferred order: under, over, right, left. A short box runs out of
+      // vertical room quickly, so the horizontal options earn their place.
+      var candidates = [
+        { x: p.sx - bw / 2, y: p.sy + gap, align: 'center', tx: p.sx, ty: p.sy + gap + size },
+        { x: p.sx - bw / 2, y: p.sy - gap - bh, align: 'center', tx: p.sx, ty: p.sy - gap - 4 },
+        { x: p.sx + gap, y: p.sy - bh / 2, align: 'left', tx: p.sx + gap + 3, ty: p.sy + size / 2 - 1 },
+        { x: p.sx - gap - bw, y: p.sy - bh / 2, align: 'left', tx: p.sx - gap - 3 - tw, ty: p.sy + size / 2 - 1 }
+      ];
+      var chosen = null;
+      for (var i = 0; i < candidates.length; i++) {
+        var c = candidates[i];
+        var rect = { x: c.x - pad, y: c.y - pad, w: bw + pad * 2, h: bh + pad * 2 };
+        if (free(rect, p.nd)) { chosen = c; taken.push(rect); break; }
+      }
+      if (!chosen) return; // no room without overlapping: leave the dot readable
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillRect(chosen.x - 1, chosen.y, bw, bh);
+      ctx.textAlign = chosen.align;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = p.nd.root ? accent : '#1f2937';
+      ctx.fillText(label, chosen.tx, chosen.ty);
     });
   }
 
@@ -3365,20 +3461,29 @@
     var rect = canvas.getBoundingClientRect();
     var px = e.clientX - rect.left, py = e.clientY - rect.top;
     var best = null, bestD = 18;
-    nodes.forEach(function (nd) {
-      var p = project({ x: Math.sin(nd.phi) * Math.cos(nd.theta), y: Math.cos(nd.phi), z: Math.sin(nd.phi) * Math.sin(nd.theta) });
-      var sx = rect.width / 2 + p.x * R, sy = rect.height / 2 - p.y * R;
-      var d = Math.hypot(px - sx, py - sy);
-      if (d < bestD) { bestD = d; best = nd; }
+    screen.forEach(function (s) {
+      var d = Math.hypot(px - s.sx, py - s.sy);
+      if (d < Math.max(bestD, s.rad + 4) && (!best || d < bestD)) { bestD = d; best = s; }
     });
     if (best && !best.root) {
-      var n = best.n;
-      if (n.kind === 'task') window.location.href = '/f/base_task/' + n.id.replace('task:', '');
+      var n = best.node;
+      // The endpoint hands back the record's own URL, so navigation does not
+      // have to re-derive it from the id shape.
+      if (n.record_url) { window.location.href = n.record_url; return; }
+      if (nodeKind(n) === 'task') window.location.href = '/f/base_task/' + String(n.id).replace('task:', '');
       else window.location.href = '/f/base_entity/' + n.id;
     }
   });
 
-  window.addEventListener('resize', draw);
+  // Redraw on any change to the box, not just a window resize: the record
+  // layout resizes this sidebar when the window crosses a breakpoint, when the
+  // pane is shown, and when surrounding panels change height.
+  if ('ResizeObserver' in window) {
+    var ro = new ResizeObserver(function () { scheduleDraw(); });
+    ro.observe(wrap);
+    ro.observe(canvas);
+  }
+  window.addEventListener('resize', scheduleDraw);
 
   function buildSearch() {
     searchWrap.innerHTML = '';

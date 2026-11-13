@@ -948,15 +948,25 @@ func fetchReferenceOptionsFiltered(ctx context.Context, tableName, query string,
 		return nil
 	}
 
+	// Soft-deleted records must not be offerable as a brand-new choice: the
+	// pickers are the only door into a reference column, and a deleted row that
+	// stays in the list can be picked again forever, producing references to
+	// records the UI no longer shows. The row already stored in the field is
+	// kept, so opening an older record does not silently blank its value.
+	whereClause := `WHERE ($1 = '' OR CAST(` + quotedLabel + ` AS text) ILIKE $2 OR _id::text ILIKE $2 OR $3 = _id::text)`
+	if tableHasColumn(tableName, "_deleted_at") {
+		whereClause += ` AND (_deleted_at IS NULL OR _id::text = $3)`
+	}
+
 	sqlQuery := fmt.Sprintf(
 		`SELECT _id::text, COALESCE(CAST(%s AS text), _id::text) AS label
 		 FROM %s
-		 WHERE ($1 = '' OR CAST(%s AS text) ILIKE $2 OR _id::text ILIKE $2 OR $3 = _id::text)
+		 %s
 		 ORDER BY label
 		 LIMIT $4`,
 		quotedLabel,
 		quotedTable,
-		quotedLabel,
+		whereClause,
 	)
 	search := strings.TrimSpace(query)
 	selected = strings.TrimSpace(selected)

@@ -402,6 +402,13 @@ func simplifyBaseEntityTable(table *AppDefinitionTable) {
 			table.Columns[i].DefaultValue = "operational"
 		case "criticality":
 			table.Columns[i].DefaultValue = "p3"
+		case "description":
+			// Entity descriptions are markdown in practice: a hardware table,
+			// a runbook, an ownership note. Migration 069 meant to convert this
+			// column but its regex never matched, so it stayed long_text and the
+			// form rendered raw pipes and asterisks (#304). Declared here so it
+			// applies on every boot and cannot silently no-op again.
+			table.Columns[i].DataType = "markdown"
 		}
 	}
 }
