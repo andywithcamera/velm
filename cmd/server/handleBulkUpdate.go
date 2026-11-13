@@ -197,6 +197,15 @@ func handleBulkUpdate(w http.ResponseWriter, r *http.Request) {
 
 		updated++
 		newSnapshot := loadSnapshotSafe(tableName, id)
+		// A bulk edit can close a task without going through the record form or
+		// the engine (the board's closed lane is droppable, and agent tokens hit
+		// this endpoint directly). Run the post-close hooks, after the standalone
+		// Exec below: RunEngineHooksAfterClose opens its own transaction and must
+		// see the committed row. Uses the snapshots, not the payload, because the
+		// 085 trigger supplies the closure reason. (#274)
+		if err := db.RunEngineHooksAfterStateWrite(context.Background(), tableName, id, oldSnapshot, newSnapshot, userID); err != nil {
+			log.Printf("failed to run task engine hooks after bulk state write table=%s id=%s err=%v", tableName, id, err)
+		}
 		_ = db.CaptureDataChange(context.Background(), userID, tableName, id, "bulk_update", oldSnapshot, newSnapshot)
 		if err := db.EmitTaskNotifications(r.Context(), tableName, id, "bulk_update", userID, oldSnapshot, newSnapshot); err != nil {
 			log.Printf("failed to emit task notifications table=%s id=%s err=%v", tableName, id, err)

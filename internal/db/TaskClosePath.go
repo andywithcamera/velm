@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -179,4 +180,38 @@ func loadChildStates(ctx context.Context, tx pgx.Tx, parentTaskID string) ([]chi
 		children = append(children, child)
 	}
 	return children, rows.Err()
+}
+
+// taskStateWriteCloses reports whether a direct state write took a task from
+// open to closed. The gate is both directions on purpose: re-closing an
+// already-closed row (duplicate ids in one batch, or a container rolled up
+// before its child's turn) must not fire the engine twice, and every other
+// board move (pending→ready, ready→in_progress) is not a close at all.
+func taskStateWriteCloses(oldSnapshot, newSnapshot map[string]any) bool {
+	oldState := snapshotState(oldSnapshot)
+	// An unreadable pre-update snapshot is not evidence of a close: firing
+	// blindly would re-run spawn rules for a row that was already closed.
+	if oldState == "" {
+		return false
+	}
+	return oldState != taskStateDone && snapshotState(newSnapshot) == taskStateDone
+}
+
+// RunEngineHooksAfterStateWrite is the post-write half of a close for any
+// surface that sets the state column directly instead of going through
+// CloseTask: the record form (#264, #265) and bulk update (#274). The row is
+// already written and the caller's transaction, if any, is committed — the
+// hooks open their own.
+//
+// The state and reason are read from the snapshots, never from the submitted
+// payload: the 085 trigger defaults closure_reason and rewrites state, so only
+// the re-read row shows what the database actually decided.
+func RunEngineHooksAfterStateWrite(ctx context.Context, tableName, id string, oldSnapshot, newSnapshot map[string]any, actorUserID string) error {
+	if !strings.EqualFold(tableName, "base_task") {
+		return nil
+	}
+	if !taskStateWriteCloses(oldSnapshot, newSnapshot) {
+		return nil
+	}
+	return RunEngineHooksAfterClose(ctx, id, actorUserID, snapshotStringValue(newSnapshot, "closure_reason"))
 }
