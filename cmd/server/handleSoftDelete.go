@@ -64,8 +64,11 @@ func handleSoftDeleteRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := fmt.Sprintf(`UPDATE %s SET _deleted_at = NOW(), _deleted_by = NULLIF($1, '')::uuid, _updated_at = NOW() WHERE _id = $2`, quotedTable)
-	ct, err := db.Pool.Exec(context.Background(), query, userID, id)
+	setClauses, args := softDeleteSetClauses(func(c string) bool { return tableHasColumn(tableName, c) }, false, userID)
+	args = append(args, id)
+
+	query := fmt.Sprintf(`UPDATE %s SET %s WHERE _id = $%d`, quotedTable, strings.Join(setClauses, ", "), len(args))
+	ct, err := db.Pool.Exec(context.Background(), query, args...)
 	if err != nil {
 		http.Error(w, "Failed to delete record", http.StatusInternalServerError)
 		return
@@ -137,7 +140,8 @@ func handleRestoreRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := fmt.Sprintf(`UPDATE %s SET _deleted_at = NULL, _deleted_by = NULL, _updated_at = NOW() WHERE _id = $1`, quotedTable)
+	setClauses, _ := softDeleteSetClauses(func(c string) bool { return tableHasColumn(tableName, c) }, true, "")
+	query := fmt.Sprintf(`UPDATE %s SET %s WHERE _id = $1`, quotedTable, strings.Join(setClauses, ", "))
 	ct, err := db.Pool.Exec(context.Background(), query, id)
 	if err != nil {
 		http.Error(w, "Failed to restore record", http.StatusInternalServerError)
@@ -156,6 +160,38 @@ func handleRestoreRecord(w http.ResponseWriter, r *http.Request) {
 	realtime.PublishRecordChange(tableName, id, "restore", userID, realtimeClientID)
 
 	http.Redirect(w, r, recordFormHref(tableName, id, formName), http.StatusSeeOther)
+}
+
+// softDeleteSetClauses builds the SET list for a soft delete or restore.
+//
+// Not every soft-deletable table carries every bookkeeping column: the base
+// tables all have _deleted_at, _deleted_by and _updated_at, but
+// base_task_definition only ever got _deleted_at, so the single fixed UPDATE
+// this handler used to build referenced a column that does not exist and every
+// definition delete returned 500 "Failed to delete record" (#301). Emit only
+// the clauses the table can accept, and return the arguments they bind so the
+// caller can append the record id at the right placeholder.
+func softDeleteSetClauses(hasColumn func(string) bool, restoring bool, userID string) ([]string, []any) {
+	var clauses []string
+	var args []any
+
+	if restoring {
+		clauses = append(clauses, "_deleted_at = NULL")
+		if hasColumn("_deleted_by") {
+			clauses = append(clauses, "_deleted_by = NULL")
+		}
+	} else {
+		clauses = append(clauses, "_deleted_at = NOW()")
+		if hasColumn("_deleted_by") {
+			args = append(args, userID)
+			clauses = append(clauses, fmt.Sprintf("_deleted_by = NULLIF($%d, '')::uuid", len(args)))
+		}
+	}
+
+	if hasColumn("_updated_at") {
+		clauses = append(clauses, "_updated_at = NOW()")
+	}
+	return clauses, args
 }
 
 func tableHasColumn(tableName, columnName string) bool {
