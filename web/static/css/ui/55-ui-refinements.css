@@ -946,6 +946,25 @@
   display: none;
 }
 
+/* A document body is the whole page's content, not one field among many, so it
+   gets the height of a writing surface. Both modes share the floor so switching
+   between source and prose does not jump the page. */
+.ui-markdown-field-editor {
+  gap: 0.6rem;
+}
+
+.ui-markdown-field-editor .ui-markdown-textarea {
+  min-height: 60vh;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+.ui-markdown-field-editor .ui-markdown-preview {
+  min-height: 60vh;
+  padding: 1.5rem 1.75rem;
+}
+
 /* The relationship map is a fixed block: it must not be squeezed.
    It used to rely on `aspect-ratio: 1/1` for its height, but as a
    `flex: 0 0 auto` child of this flex column the flex base size came from

@@ -494,6 +494,7 @@ func handleDocsManage(w http.ResponseWriter, r *http.Request) {
 	viewData["DocsLibrarySelected"] = selectedLibrary
 	viewData["DocsArticles"] = pagedArticles
 	viewData["DocsArticleSelected"] = selectedArticle
+	viewData["DocsArticleField"] = docsArticleMarkdownField(selectedArticle.MarkdownBody)
 	viewData["DocsPreviewArticle"] = previewArticle
 	viewData["DocsPreviewRendered"] = renderMarkdownToSafeHTMLResolved(previewArticle.MarkdownBody, newWikilinkResolver(ctx))
 	viewData["DocsSearch"] = search

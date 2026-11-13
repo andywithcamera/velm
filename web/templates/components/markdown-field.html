@@ -1,0 +1,59 @@
+{{define "markdown-field"}}
+{{/*
+  One markdown field, used everywhere a markdown column or body is edited:
+  task/entity descriptions, page content, docs articles.
+
+  Behaviour lives in /static/js/markdown-field.js, keyed off the data
+  attributes below, so every surface gets the same source box, the same
+  server-rendered preview, and the same [[wikilink]] autocomplete.
+
+  Data:
+    ID           element id for the textarea (the preview is ID + "-preview")
+    Name         form field name
+    Value        raw markdown
+    Placeholder  placeholder text
+    Readonly     renders as prose and cannot be switched to source
+    Required     textarea is required (empty is invalid)
+    Hidden       textarea is hidden, value still submits
+    AutoExpand   grow the textarea to fit its content
+    Size         "" for a form field, "editor" for a full-page writing surface
+    DefaultMode  "" auto (empty opens in source, content opens as prose),
+                 "write" or "preview" to force one
+    FieldName    data-field-name, used by form validation
+    BaseRequired data-base-required, form validation baseline
+*/}}
+<div
+  class="ui-markdown-field{{if eq .Size "editor"}} ui-markdown-field-editor{{end}}"
+  data-markdown-field="true"
+  data-markdown-readonly="{{if .Readonly}}1{{else}}0{{end}}"
+  data-markdown-mode="{{.InitialMode}}"
+  data-markdown-default-mode="{{.DefaultMode}}"
+>
+  <div class="ui-markdown-field-bar">
+    <span class="ui-field-help" data-markdown-status="true">{{.StatusText}}</span>
+  </div>
+  <textarea
+    id="{{.ID}}"
+    name="{{.Name}}"
+    data-markdown-input="true"
+    data-markdown-preview-id="{{.ID}}-preview"
+    {{if .FieldName}}data-field-name="{{.FieldName}}"{{end}}
+    data-base-required="{{if .BaseRequired}}1{{else}}0{{end}}"
+    {{if .Hidden}}hidden{{end}}
+    {{if .Readonly}}readonly{{end}}
+    {{if .Required}}required{{end}}
+    {{if .AutoExpand}}data-autoexpand="true"{{end}}
+    rows="10"
+    placeholder="{{.Placeholder}}"
+    class="ui-textarea ui-markdown-textarea"
+  >{{.Value}}</textarea>
+  <div
+    id="{{.ID}}-preview"
+    class="ui-markdown-preview ui-content-prose"
+    data-markdown-preview="true"
+    {{if not .Readonly}}tabindex="0"{{end}}
+    aria-live="polite"
+  ></div>
+  <p class="ui-field-error hidden" data-markdown-error="true">Markdown preview unavailable. The saved text is unchanged.</p>
+</div>
+{{end}}
