@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -522,12 +523,25 @@ func handleLegacyDocsRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }
 
+// parseDocsForm reads a form body whether it arrived urlencoded or as multipart
+// FormData. r.ParseForm() alone is wrong here: it does not parse a multipart
+// body, but it does leave r.Form non-nil, so the r.FormValue() calls that follow
+// never fall through to ParseMultipartForm and every field reads as empty. The
+// docs page saves through FormData, so that turned every save into a request
+// with no fields at all.
+func parseDocsForm(r *http.Request) error {
+	if err := r.ParseMultipartForm(8 << 20); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		return err
+	}
+	return nil
+}
+
 func handleDocsPreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseDocsForm(r); err != nil {
 		http.Error(w, "Invalid form", http.StatusBadRequest)
 		return
 	}
@@ -549,7 +563,7 @@ func handleSaveDocsLibrary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseDocsForm(r); err != nil {
 		http.Error(w, "Invalid form", http.StatusBadRequest)
 		return
 	}
@@ -583,7 +597,7 @@ func handleSaveDocsArticle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseDocsForm(r); err != nil {
 		http.Error(w, "Invalid form", http.StatusBadRequest)
 		return
 	}
@@ -639,7 +653,7 @@ func handleArchiveDocsLibrary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseDocsForm(r); err != nil {
 		http.Error(w, "Invalid form", http.StatusBadRequest)
 		return
 	}
@@ -662,7 +676,7 @@ func handleArchiveDocsArticle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseDocsForm(r); err != nil {
 		http.Error(w, "Invalid form", http.StatusBadRequest)
 		return
 	}
@@ -1514,8 +1528,8 @@ func saveDocsLibrary(ctx context.Context, userID string, library docsLibrary, or
 		&existing.EditRolesText,
 		&existing.DeleteRolesText,
 	)
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		existing.CreateRoles = parseDocsRolesJSON(existing.CreateRolesText)
 		existing.ReadRoles = parseDocsRolesJSON(existing.ReadRolesText)
 		existing.EditRoles = parseDocsRolesJSON(existing.EditRolesText)
@@ -1544,7 +1558,7 @@ func saveDocsLibrary(ctx context.Context, userID string, library docsLibrary, or
 		if err != nil {
 			return "", err
 		}
-	case sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 		_, err = tx.Exec(ctx, `
 			INSERT INTO _docs_library (slug, name, description, visibility, owner_user_id, status, app_name, is_default, create_roles, read_roles, edit_roles, delete_roles)
 			VALUES ($1, $2, $3, $4, $5, 'active', $6, FALSE, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb)
@@ -1626,8 +1640,8 @@ func saveDocsArticle(ctx context.Context, userID, librarySlug string, article do
 		  AND a.slug = $2
 		LIMIT 1
 	`, librarySlug, firstNonEmpty(originalSlug, article.Slug)))
-	switch err {
-	case nil:
+	switch {
+	case err == nil:
 		if !access.canEditArticle(library, existing) {
 			return "", fmt.Errorf("you do not have permission to edit this article")
 		}
@@ -1658,7 +1672,7 @@ func saveDocsArticle(ctx context.Context, userID, librarySlug string, article do
 		`, existing.ID, nextVersion, article.MarkdownBody, rendered, article.Status, userID); err != nil {
 			return "", err
 		}
-	case sql.ErrNoRows:
+	case errors.Is(err, sql.ErrNoRows):
 		if !access.canCreateInLibrary(library) {
 			return "", fmt.Errorf("you do not have permission to create articles in this library")
 		}
