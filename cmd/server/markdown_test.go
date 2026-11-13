@@ -177,3 +177,100 @@ func TestRenderMarkdownOrderedListsAndQuotes(t *testing.T) {
 		t.Fatalf("blockquote not rendered: %s", rendered)
 	}
 }
+
+// A hardware sheet is naturally tabular, and a piped GFM table used to fall
+// through to the paragraph case: the pipes rendered as text, so the reader got
+// a wall of syntax where a table belonged. These assert the table is a table.
+func TestRenderMarkdownTables(t *testing.T) {
+	rendered := string(renderMarkdownToSafeHTML("| Host | vCPU | RAM |\n| --- | ---: | --- |\n| lb-01 | 2 | 4 GiB |\n| db-01 | 8 | 32 GiB |"))
+
+	if !strings.Contains(rendered, "<table") || !strings.Contains(rendered, "</table>") {
+		t.Fatalf("table not rendered as <table>: %s", rendered)
+	}
+	for _, want := range []string{
+		"<th>Host</th>",
+		">vCPU</th>",
+		"<td>lb-01</td>",
+		"<td>db-01</td>",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("table is missing %q: %s", want, rendered)
+		}
+	}
+	// The delimiter row is structure, not content.
+	if strings.Contains(rendered, "---") {
+		t.Fatalf("delimiter row leaked into the output: %s", rendered)
+	}
+	// Pipes must not survive as literal characters.
+	if strings.Contains(rendered, "| Host") {
+		t.Fatalf("pipes rendered as text: %s", rendered)
+	}
+}
+
+func TestRenderMarkdownTableAlignmentAndInlineMarkup(t *testing.T) {
+	rendered := string(renderMarkdownToSafeHTML("| Name | Note |\n|:--|:-:|:--:|\n| **web-01** | `10.0.2.11` |\n| [db](https://example.com/db) | ok |"))
+
+	if !strings.Contains(rendered, `<th style="text-align:left">Name</th>`) {
+		t.Fatalf("left alignment not applied: %s", rendered)
+	}
+	if !strings.Contains(rendered, `<th style="text-align:center">Note</th>`) {
+		t.Fatalf("center alignment not applied: %s", rendered)
+	}
+	if !strings.Contains(rendered, "<strong>web-01</strong>") {
+		t.Fatalf("bold inside a cell not rendered: %s", rendered)
+	}
+	if !strings.Contains(rendered, "<code>10.0.2.11</code>") {
+		t.Fatalf("code inside a cell not rendered: %s", rendered)
+	}
+	if !strings.Contains(rendered, `<a href="https://example.com/db" target="_blank" rel="noopener noreferrer">db</a>`) {
+		t.Fatalf("link inside a cell not rendered: %s", rendered)
+	}
+}
+
+// The renderer escapes first and adds tags second; a table cell must not open a
+// hole in that order.
+func TestRenderMarkdownTableEscapesCellContent(t *testing.T) {
+	rendered := string(renderMarkdownToSafeHTML("| A | B |\n| --- | --- |\n| <script>alert(1)</script> | <img src=x onerror=alert(1)> |"))
+	if strings.Contains(rendered, "<script>") || strings.Contains(rendered, "<img") {
+		t.Fatalf("cell content was not escaped: %s", rendered)
+	}
+	if !strings.Contains(rendered, "&lt;script&gt;") {
+		t.Fatalf("expected escaped script text in the cell: %s", rendered)
+	}
+}
+
+// An escaped pipe belongs to the cell, not to the structure.
+func TestRenderMarkdownTableEscapedPipe(t *testing.T) {
+	rendered := string(renderMarkdownToSafeHTML("| Cmd | Note |\n| --- | --- |\n| `a \\| b` | pipe |"))
+	if !strings.Contains(rendered, "<td>") {
+		t.Fatalf("row not rendered: %s", rendered)
+	}
+	if strings.Count(rendered, "<td") != 2 {
+		t.Fatalf("escaped pipe split the row into %d cells, want 2: %s", strings.Count(rendered, "<td"), rendered)
+	}
+}
+
+// Pipes without a delimiter row are prose, not a table.
+func TestRenderMarkdownPipeWithoutDelimiterIsProse(t *testing.T) {
+	rendered := string(renderMarkdownToSafeHTML("a | b\nc | d"))
+	if strings.Contains(rendered, "<table") {
+		t.Fatalf("pipes without a delimiter row were treated as a table: %s", rendered)
+	}
+	if !strings.Contains(rendered, "<p>a | b</p>") {
+		t.Fatalf("expected the line to remain a paragraph: %s", rendered)
+	}
+}
+
+// A table surrounded by prose stays in document order.
+func TestRenderMarkdownTableKeepsSurroundingProse(t *testing.T) {
+	rendered := string(renderMarkdownToSafeHTML("## Hosts\n\n| Host | Role |\n| --- | --- |\n| lb-01 | edge |\n\n- after the table"))
+	heading := strings.Index(rendered, "<h2>Hosts</h2>")
+	table := strings.Index(rendered, "<table")
+	list := strings.Index(rendered, "<ul><li>after the table</li></ul>")
+	if heading < 0 || table < 0 || list < 0 {
+		t.Fatalf("expected heading, table and list: %s", rendered)
+	}
+	if !(heading < table && table < list) {
+		t.Fatalf("document order lost: %s", rendered)
+	}
+}

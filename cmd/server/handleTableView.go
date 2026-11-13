@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"velm/internal/auth"
 	"velm/internal/db"
 	"velm/internal/utils"
@@ -395,7 +396,18 @@ func decorateTableRows(ctx context.Context, columns []tableQueryColumn, rows []m
 			}
 		default:
 			for _, row := range rows {
-				row[column.Name] = truncateListCellValue(fmt.Sprint(row[column.Name]), column.DataType)
+				// A timestamp column arrives as time.Time; format it before the
+				// generic stringification below flattens it to Go's own syntax.
+				if stamp, ok := row[column.Name].(time.Time); ok {
+					row[column.Name] = formatListCellTimestamp(stamp)
+					continue
+				}
+				text := fmt.Sprint(row[column.Name])
+				if stamp, ok := reformatListCellTimestamp(text); ok {
+					row[column.Name] = stamp
+					continue
+				}
+				row[column.Name] = truncateListCellValue(text, column.DataType)
 			}
 		}
 	}
@@ -494,6 +506,38 @@ func truncateListCellValue(value, dataType string) string {
 		}
 	}
 	return value
+}
+
+// listCellTimestampLayout is how a timestamp reads inside a list cell. The
+// database hands back a time.Time, and fmt prints it as
+// "2026-11-13 10:44:29.999357 +0000 UTC": microseconds, a redundant numeric
+// offset and Go's zone name, wrapping over three lines in a narrow column and
+// telling the reader nothing the date does not. Date and time to the minute is
+// what a list is scanned for; the record itself shows the exact value.
+const listCellTimestampLayout = "02 Jan 2006, 15:04"
+
+func formatListCellTimestamp(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.Local().Format(listCellTimestampLayout)
+}
+
+// reformatListCellTimestamp rewrites a value that was already stringified by
+// fmt, for the paths that hand over text rather than a time.Time.
+func reformatListCellTimestamp(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) < 19 || trimmed[4] != '-' || trimmed[7] != '-' || (trimmed[10] != ' ' && trimmed[10] != 'T') {
+		return value, false
+	}
+	for _, layout := range timelineValueLayouts {
+		parsed, err := time.Parse(layout, trimmed)
+		if err != nil {
+			continue
+		}
+		return formatListCellTimestamp(parsed), true
+	}
+	return value, false
 }
 
 func orderedListColumns(ctx context.Context, tableName string, columns []string) []string {
