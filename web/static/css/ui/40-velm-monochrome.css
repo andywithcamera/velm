@@ -14,6 +14,7 @@ html {
   --header-line-strong: var(--border-bright);
   --header-hover: var(--surface-soft);
   --header-field: transparent;
+  --header-focus-ring: var(--focus-ring);
 }
 
 html[data-theme="light"] {
@@ -31,6 +32,7 @@ html[data-theme="light"] {
   --header-line-strong: rgba(255, 255, 255, 0.44);
   --header-hover: rgba(255, 255, 255, 0.1);
   --header-field: rgba(255, 255, 255, 0.07);
+  --header-focus-ring: rgba(255, 255, 255, 0.28);
   --bg-base: #fff;
   --bg-surface: #fff;
   --bg-elevated: #fff;
@@ -73,6 +75,7 @@ html[data-theme="dark"] {
   --header-line-strong: rgba(0, 0, 0, 0.42);
   --header-hover: rgba(0, 0, 0, 0.08);
   --header-field: rgba(0, 0, 0, 0.05);
+  --header-focus-ring: rgba(0, 0, 0, 0.28);
   --bg-base: #000;
   --bg-surface: #000;
   --bg-elevated: #000;
@@ -160,6 +163,16 @@ body,
 .ui-explorer-link:focus-visible {
   border-color: var(--text-primary) !important;
   box-shadow: 0 0 0 3px var(--focus-ring) !important;
+}
+
+/* Header controls sit on the inverted bar, where --text-primary and --focus-ring
+   are black-on-black in the light theme. Same guarantee, the bar's palette. */
+.ui-topnav-search:focus-visible,
+.ui-topnav-icon:focus-visible,
+.ui-topnav-user-trigger:focus-visible,
+.ui-topnav-mobile-search:focus-visible {
+  border-color: var(--header-fg) !important;
+  box-shadow: 0 0 0 3px var(--header-focus-ring) !important;
 }
 
 .ui-topnav {
@@ -272,29 +285,34 @@ body,
   color: var(--header-fg);
 }
 
-.ui-topnav-search::placeholder {
-  color: var(--header-fg-ghost);
-}
-
-.ui-topnav-search:focus {
-  border-color: var(--header-fg);
-  box-shadow: none;
-}
-
-.ui-topnav-search::placeholder,
+/* Page surfaces only. .ui-topnav-search is excluded deliberately: it sits on the
+   header, which is inverted in the monochrome themes, so --text-ghost there is
+   black-on-black. Its own rules read --header-* and are declared below. */
 .ui-input::placeholder,
 .ui-textarea::placeholder {
   color: var(--text-ghost);
   font-style: normal;
 }
 
-.ui-topnav-search:focus,
 .ui-input:focus,
 .ui-select:focus,
 .ui-textarea:focus,
 .ui-toolbar-search:focus {
   border-color: var(--text-primary);
   box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Header search, declared after the page rules above so the header tokens win.
+   This ordering is load-bearing: an earlier version had the placeholder in the
+   group above and the field was invisible against an inverted bar. */
+.ui-topnav-search::placeholder {
+  color: var(--header-fg-ghost);
+  font-style: normal;
+}
+
+.ui-topnav-search:focus {
+  border-color: var(--header-fg);
+  box-shadow: none;
 }
 
 .ui-domain-form .ui-field-card,

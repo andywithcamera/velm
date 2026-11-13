@@ -232,3 +232,104 @@ func TestContentClearsTheHeaderFade(t *testing.T) {
 		t.Error("the fade must not swallow clicks in the strip below the bar")
 	}
 }
+
+// TestHeaderChromeIsNeverTheLastWordOfASharedRule closes the hole the previous
+// test leaves open, and it is how a real bug got through: a shared group
+//
+//	.ui-topnav-search::placeholder,
+//	.ui-input::placeholder { color: var(--text-ghost); }
+//
+// parsed cleanly, because sharedSelector skipped it, and it was declared *after*
+// the chrome-only rule that set --header-fg-ghost. The placeholder therefore
+// resolved to --text-ghost, which in the light theme is black — on a black bar.
+// The field looked empty in production and still passed every other test.
+//
+// The invariant: whatever a shared group sets on a header selector must be
+// overridden later by a rule that is chrome-only and reads --header-*. Cascade
+// order is the thing being pinned, so the test has to keep it.
+func TestHeaderChromeIsNeverTheLastWordOfASharedRule(t *testing.T) {
+	source := stripCSSComments(monochromeCSS(t))
+
+	// Panels that float inside the bar are page surfaces by design (nav drawer,
+	// user menu, search results), so their page tokens are correct, not a bug.
+	pageSurface := func(sel string) bool {
+		for _, panel := range []string{"search-results", "drawer", "user-menu", "nav-panel", "menu"} {
+			if strings.Contains(sel, panel) {
+				return true
+			}
+		}
+		return false
+	}
+	headerSelector := func(sel string) bool {
+		if pageSurface(sel) {
+			return false
+		}
+		for _, chrome := range []string{".ui-topnav", "progress-bar", ".ui-theme-select"} {
+			if strings.Contains(sel, chrome) {
+				return true
+			}
+		}
+		return false
+	}
+	// Properties whose value is a palette decision. Geometry and layout are
+	// free to share a rule; colours are not.
+	colourProp := regexp.MustCompile(`(?im)^\s*(color|background|background-color|border|border-color|border-top-color|border-bottom-color|box-shadow|fill|stroke|caret-color|outline-color)\s*:\s*([^;]+);`)
+
+	type lastDecl struct {
+		value  string
+		shared bool
+	}
+	// One pass, in document order: the last declaration for a selector/property
+	// pair is the one the cascade resolves to, so it is the only one that
+	// matters. Two passes let an earlier chrome-only rule overwrite a later
+	// shared one and the test went quiet.
+	last := map[string]lastDecl{}
+
+	for _, block := range cssBlock.FindAllStringSubmatch(source, -1) {
+		selectorText, body := strings.TrimSpace(block[1]), block[2]
+		if strings.HasPrefix(selectorText, "@") {
+			continue
+		}
+		var selectors []string
+		shared := false
+		for _, raw := range strings.Split(selectorText, ",") {
+			raw = strings.Join(strings.Fields(raw), " ")
+			if raw == "" {
+				continue
+			}
+			selectors = append(selectors, raw)
+			if !headerSelector(raw) {
+				shared = true
+			}
+		}
+		for _, sel := range selectors {
+			if !headerSelector(sel) {
+				continue
+			}
+			for _, decl := range colourProp.FindAllStringSubmatch(body, -1) {
+				last[sel+"|"+strings.ToLower(decl[1])] = lastDecl{value: strings.TrimSpace(decl[2]), shared: shared}
+			}
+		}
+	}
+
+	for key, decl := range last {
+		if !decl.shared {
+			continue
+		}
+		// transparent and none are palette-neutral: they show the bar through,
+		// which is what we want, so they are not overrides that must be undone.
+		if decl.value == "transparent" || decl.value == "none" {
+			continue
+		}
+		parts := strings.SplitN(key, "|", 2)
+		t.Errorf("selector %q property %q: last declaration is %q, from a rule shared with page surfaces; a shared rule must be overridden later by a chrome-only rule reading --header-*",
+			parts[0], parts[1], decl.value)
+	}
+}
+
+// stripCSSComments removes /* ... */ blocks. A comment sitting immediately
+// before a rule lands inside the captured selector text, which silently splits
+// one selector into a "shared" list and hides the rule from these tests.
+func stripCSSComments(source string) string {
+	return regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(source, "")
+}
