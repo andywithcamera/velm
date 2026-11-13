@@ -1031,9 +1031,20 @@ func normalizeScriptColumnValue(column Column, value any) (string, bool, error) 
 		return "", true, nil
 	}
 
-	raw, err := scriptAnyToString(value)
-	if err != nil {
-		return "", false, err
+	// Timestamps come back from Postgres as time.Time. Format per column type
+	// rather than rejecting the type: the trigger-record round trip re-reads
+	// every column of the row, so a single non-null timestamptz column made
+	// every update to that table fail with "unsupported script value type
+	// time.Time" (issue #314).
+	var raw string
+	if timestamp, ok := value.(time.Time); ok {
+		raw = formatTimeForColumn(column, timestamp)
+	} else {
+		var err error
+		raw, err = scriptAnyToString(value)
+		if err != nil {
+			return "", false, err
+		}
 	}
 	normalized, err := NormalizeSubmittedValue(column.DATA_TYPE, strings.TrimSpace(raw))
 	if err != nil {

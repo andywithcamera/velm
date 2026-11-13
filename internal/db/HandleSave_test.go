@@ -138,3 +138,71 @@ func TestSnapshotState(t *testing.T) {
 		t.Fatalf("nil snapshot = %q", got)
 	}
 }
+
+// A timestamp read back from Postgres arrives as time.Time. The trigger-record
+// round trip walks every non-underscore column of the row, so one non-null
+// timestamptz column used to reject the whole save with
+// "unsupported script value type time.Time" — every update to an existing task
+// failed on velm.dev (issue #314).
+func TestApplyRuntimeTriggerRecordAcceptsTimestampFromSnapshot(t *testing.T) {
+	view := View{Columns: []Column{
+		{NAME: "title", DATA_TYPE: "text"},
+		{NAME: "state", DATA_TYPE: "text"},
+		{NAME: "state_changed_at", DATA_TYPE: "timestamptz", IS_NULLABLE: true},
+	}}
+	stateChangedAt := time.Date(2026, 11, 13, 18, 1, 0, 0, time.UTC)
+	previous := map[string]any{
+		"title":            "Replace Web Node",
+		"state":            "ready",
+		"state_changed_at": stateChangedAt,
+	}
+	current := map[string]any{
+		"title":            "Replace Web Node",
+		"state":            "in_progress",
+		"state_changed_at": stateChangedAt,
+	}
+	formData := map[string]string{}
+	nullColumns := map[string]bool{}
+
+	if err := applyRuntimeTriggerRecordToFormData(view, current, previous, false, formData, nullColumns); err != nil {
+		t.Fatalf("applyRuntimeTriggerRecordToFormData() error = %v, want nil", err)
+	}
+	if _, present := formData["state_changed_at"]; present {
+		t.Fatalf("unchanged timestamp was submitted for write: %q", formData["state_changed_at"])
+	}
+	if got := formData["state"]; got != "in_progress" {
+		t.Fatalf("state = %q, want in_progress", got)
+	}
+}
+
+func TestApplyRuntimeTriggerRecordSubmitsChangedTimestamp(t *testing.T) {
+	view := View{Columns: []Column{
+		{NAME: "closed_at", DATA_TYPE: "timestamptz", IS_NULLABLE: true},
+	}}
+	previous := map[string]any{"closed_at": time.Date(2026, 11, 13, 18, 1, 0, 0, time.UTC)}
+	current := map[string]any{"closed_at": time.Date(2026, 11, 13, 18, 42, 7, 0, time.UTC)}
+	formData := map[string]string{}
+	nullColumns := map[string]bool{}
+
+	if err := applyRuntimeTriggerRecordToFormData(view, current, previous, false, formData, nullColumns); err != nil {
+		t.Fatalf("applyRuntimeTriggerRecordToFormData() error = %v, want nil", err)
+	}
+	if got, want := formData["closed_at"], "2026-11-13T18:42"; got != want {
+		t.Fatalf("closed_at = %q, want %q", got, want)
+	}
+}
+
+// A date column keeps day precision, so a same-day value is not an edit.
+func TestApplyRuntimeTriggerRecordFormatsDateColumnsByDay(t *testing.T) {
+	view := View{Columns: []Column{{NAME: "due_on", DATA_TYPE: "date", IS_NULLABLE: true}}}
+	previous := map[string]any{"due_on": time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)}
+	current := map[string]any{"due_on": time.Date(2026, 11, 13, 17, 30, 0, 0, time.UTC)}
+	formData := map[string]string{}
+
+	if err := applyRuntimeTriggerRecordToFormData(view, current, previous, false, formData, map[string]bool{}); err != nil {
+		t.Fatalf("applyRuntimeTriggerRecordToFormData() error = %v, want nil", err)
+	}
+	if _, present := formData["due_on"]; present {
+		t.Fatalf("same-day date was treated as changed: %q", formData["due_on"])
+	}
+}
