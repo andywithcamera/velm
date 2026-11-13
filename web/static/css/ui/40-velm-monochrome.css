@@ -1,7 +1,38 @@
 /* Velm draft overrides: monochrome, light-first, and intentionally minimal. */
 
+/* Header chrome defaults. The chromatic themes keep their own colour, so the bar
+   is the same colour as the page and only the fade beneath it is visible; the two
+   monochrome themes override every one of these above to invert it. */
+html {
+  --header-h: 64px;
+  --header-fade: 22px;
+  --header-bg: var(--bg-base);
+  --header-fg: var(--text-primary);
+  --header-fg-dim: var(--text-dim);
+  --header-fg-ghost: var(--text-ghost);
+  --header-line: var(--border);
+  --header-line-strong: var(--border-bright);
+  --header-hover: var(--surface-soft);
+  --header-field: transparent;
+  --header-focus-ring: var(--focus-ring);
+}
+
 html[data-theme="light"] {
   color-scheme: light;
+  /* Header chrome. The monochrome themes invert the bar against the page: a
+     black header on white, a white header on black. Every header rule reads
+     --header-*, never --text-*, so this is a palette change and not a rule
+     rewrite. Panels that float inside the header (nav drawer, user menu, search
+     results) are page surfaces and deliberately do not use these. */
+  --header-bg: #000;
+  --header-fg: #fff;
+  --header-fg-dim: rgba(255, 255, 255, 0.72);
+  --header-fg-ghost: rgba(255, 255, 255, 0.52);
+  --header-line: rgba(255, 255, 255, 0.22);
+  --header-line-strong: rgba(255, 255, 255, 0.44);
+  --header-hover: rgba(255, 255, 255, 0.1);
+  --header-field: rgba(255, 255, 255, 0.07);
+  --header-focus-ring: rgba(255, 255, 255, 0.28);
   --bg-base: #fff;
   --bg-surface: #fff;
   --bg-elevated: #fff;
@@ -36,6 +67,15 @@ html[data-theme="light"] {
 
 html[data-theme="dark"] {
   color-scheme: dark;
+  --header-bg: #fff;
+  --header-fg: #000;
+  --header-fg-dim: rgba(0, 0, 0, 0.72);
+  --header-fg-ghost: rgba(0, 0, 0, 0.5);
+  --header-line: rgba(0, 0, 0, 0.2);
+  --header-line-strong: rgba(0, 0, 0, 0.42);
+  --header-hover: rgba(0, 0, 0, 0.08);
+  --header-field: rgba(0, 0, 0, 0.05);
+  --header-focus-ring: rgba(0, 0, 0, 0.28);
   --bg-base: #000;
   --bg-surface: #000;
   --bg-elevated: #000;
@@ -89,9 +129,12 @@ body,
 }
 
 #progress-bar {
-  top: 0;
-  height: 1px;
-  background: var(--text-primary);
+  /* On the bar's bottom edge, above the bar itself: the fade would otherwise
+     paint over it. */
+  top: calc(var(--header-h) - 2px);
+  height: 2px;
+  z-index: 1200;
+  background: var(--header-fg);
   box-shadow: none;
 }
 
@@ -122,17 +165,55 @@ body,
   box-shadow: 0 0 0 3px var(--focus-ring) !important;
 }
 
+/* Header controls sit on the inverted bar, where --text-primary and --focus-ring
+   are black-on-black in the light theme. Same guarantee, the bar's palette. */
+.ui-topnav-search:focus-visible,
+.ui-topnav-icon:focus-visible,
+.ui-topnav-user-trigger:focus-visible,
+.ui-topnav-mobile-search:focus-visible {
+  border-color: var(--header-fg) !important;
+  box-shadow: 0 0 0 3px var(--header-focus-ring) !important;
+}
+
 .ui-topnav {
   gap: var(--sp-3);
   padding: 0 24px;
-  background: var(--bg-base);
+  background: var(--header-bg);
+  color: var(--header-fg);
   border-bottom: 0;
 }
 
+/* The bar does not end at a line: it fades into the page. Content is offset by
+   --header-fade (see .ui-main-shell) so nothing is hidden at rest, and anything
+   scrolling up dissolves instead of being cut off at a hard edge. */
+.ui-topnav::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--header-fade);
+  background: linear-gradient(to bottom, var(--header-bg), transparent);
+  pointer-events: none;
+}
+
+/* The theme and overlay pickers live in the bar, so they follow its inversion
+   rather than the page's. */
+.ui-theme-select {
+  width: auto;
+  background: transparent;
+  border-color: var(--header-line);
+  color: var(--header-fg);
+}
+
 .ui-topnav-brand {
-  font-size: 20px;
+  /* The wordmark is the one place the mono takes brand weight: Instrument Sans
+     stops at 700, Monaspace Neon reaches 800, and "velm.dev" is a hostname. */
+  font-family: "Monaspace Neon", ui-monospace, monospace;
+  font-size: 19px;
   font-weight: 800;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.05em;
+  color: var(--header-fg);
 }
 
 .ui-topnav-icon,
@@ -147,6 +228,14 @@ body,
   color: var(--text-secondary);
 }
 
+/* Header-only chrome: these three live in the bar and follow its inversion. The
+   .ui-icon-btn / .ui-link-button siblings above are page controls, not chrome. */
+.ui-topnav-icon,
+.ui-topnav-user-trigger,
+.ui-topnav-mobile-search {
+  color: var(--header-fg-dim);
+}
+
 .ui-topnav-icon:hover,
 .ui-topnav-user-trigger:hover,
 .ui-topnav-mobile-search:hover,
@@ -156,6 +245,13 @@ body,
   background: var(--surface-soft);
   border-color: transparent;
   color: var(--text-primary);
+}
+
+.ui-topnav-icon:hover,
+.ui-topnav-user-trigger:hover,
+.ui-topnav-mobile-search:hover {
+  background: var(--header-hover);
+  color: var(--header-fg);
 }
 
 .ui-topnav-user-name {
@@ -179,24 +275,44 @@ body,
 
 .ui-topnav-search,
 .ui-toolbar-search {
-  font-family: "DM Sans", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 13px;
 }
 
-.ui-topnav-search::placeholder,
+.ui-topnav-search {
+  background: var(--header-field);
+  border-color: var(--header-line);
+  color: var(--header-fg);
+}
+
+/* Page surfaces only. .ui-topnav-search is excluded deliberately: it sits on the
+   header, which is inverted in the monochrome themes, so --text-ghost there is
+   black-on-black. Its own rules read --header-* and are declared below. */
 .ui-input::placeholder,
 .ui-textarea::placeholder {
   color: var(--text-ghost);
   font-style: normal;
 }
 
-.ui-topnav-search:focus,
 .ui-input:focus,
 .ui-select:focus,
 .ui-textarea:focus,
 .ui-toolbar-search:focus {
   border-color: var(--text-primary);
   box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Header search, declared after the page rules above so the header tokens win.
+   This ordering is load-bearing: an earlier version had the placeholder in the
+   group above and the field was invisible against an inverted bar. */
+.ui-topnav-search::placeholder {
+  color: var(--header-fg-ghost);
+  font-style: normal;
+}
+
+.ui-topnav-search:focus {
+  border-color: var(--header-fg);
+  box-shadow: none;
 }
 
 .ui-domain-form .ui-field-card,

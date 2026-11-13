@@ -303,7 +303,7 @@
 
 .ui-task-board-card-number {
   color: var(--text-ghost);
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   font-size: 0.68rem;
   letter-spacing: 0.06em;
   overflow: hidden;
@@ -955,7 +955,7 @@
 
 .ui-markdown-field-editor .ui-markdown-textarea {
   min-height: 60vh;
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   font-size: 0.92rem;
   line-height: 1.7;
 }

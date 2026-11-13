@@ -68,7 +68,7 @@ body {
   margin: 0;
   background: var(--bg-base);
   color: var(--text-secondary);
-  font-family: "DM Sans", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 14px;
   line-height: 1.6;
 }
@@ -103,7 +103,7 @@ body.ui-reference-modal-open {
 
 #progress-bar {
   position: fixed;
-  top: 64px;
+  top: var(--header-h);
   left: 0;
   width: 0;
   height: 2px;
@@ -162,7 +162,7 @@ body.ui-reference-modal-open {
 
 .ui-global-banner {
   position: fixed;
-  top: calc(64px + var(--sp-4));
+  top: calc(var(--header-h) + var(--header-fade) + var(--sp-4));
   right: var(--sp-6);
   z-index: 1150;
   max-width: 24rem;
@@ -184,7 +184,7 @@ a {
 code,
 pre,
 .font-mono {
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
 }
 
 .ui-sr-only {
@@ -215,7 +215,7 @@ h4,
 .ui-page-article h2,
 .ui-page-article h3,
 .ui-page-article h4 {
-  font-family: "Syne", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   color: var(--text-primary);
   line-height: 1.1;
 }
@@ -228,8 +228,10 @@ h4,
 }
 
 .ui-main-shell {
-  margin-top: 64px;
-  min-height: calc(100vh - 64px);
+  /* Clears the bar and the fade beneath it, so the gradient never covers the
+     first line of the page at rest. */
+  margin-top: calc(var(--header-h) + var(--header-fade));
+  min-height: calc(100vh - var(--header-h) - var(--header-fade));
   padding: 0 0 var(--sp-8);
 }
 
@@ -292,7 +294,7 @@ h4,
   margin: 0;
   color: var(--text-dim);
   font-size: 13px;
-  font-weight: 300;
+  font-weight: 400;
   line-height: 1.6;
 }
 
@@ -309,7 +311,7 @@ h4,
 .ui-field-meta,
 .ui-stat-label,
 .ui-form-stat-label {
-  font-family: "DM Sans", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.16em;
@@ -438,7 +440,7 @@ h4,
   padding: 9px 18px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
-  font-family: "DM Sans", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
@@ -527,7 +529,7 @@ h4,
   padding: 10px 14px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-family: "DM Sans", sans-serif;
+  font-family: "Instrument Sans", sans-serif;
   font-size: 14px;
 }
 
@@ -586,7 +588,7 @@ h4,
 
 .ui-toolbar-search {
   min-width: min(100%, 34rem);
-  font-family: "JetBrains Mono", monospace;
+  font-family: "Monaspace Neon", ui-monospace, monospace;
   font-size: 12px;
 }
 

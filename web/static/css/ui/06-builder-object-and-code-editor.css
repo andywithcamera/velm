@@ -67,7 +67,7 @@
 .ui-code-editor-label {
   color: rgba(226, 232, 240, 0.96);
   font-size: 0.76rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -96,7 +96,7 @@
   border-right: 1px solid rgba(100, 116, 139, 0.36);
   background: rgba(11, 18, 32, 0.98);
   color: rgba(148, 163, 184, 0.96);
-  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-family: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
   font-size: 0.84rem;
   text-align: right;
 }
@@ -196,7 +196,7 @@
 }
 
 .ui-script-complete-main {
-  font-family: "IBM Plex Mono", "SFMono-Regular", "Consolas", monospace;
+  font-family: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
   font-size: 0.86rem;
   font-weight: 700;
 }
