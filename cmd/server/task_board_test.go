@@ -625,3 +625,27 @@ func TestNormalizeTaskBoardAssignedToAcceptsMeSpelling(t *testing.T) {
 		})
 	}
 }
+
+func TestTaskBoardAskLabel(t *testing.T) {
+	cases := []struct {
+		name           string
+		taskAsk        string
+		definitionAsk  string
+		definitionName string
+		want           string
+	}{
+		{"the task's own ask wins", "approval", "code", "Coding", "Approve"},
+		{"definition ask covers rows created before the column", "", "test", "Run Tests", "Test"},
+		{"definition name is the last resort", "", "", "Coding", "Coding"},
+		{"a flat task with nothing has no badge", "", "", "", ""},
+		{"an unknown ask value is ignored", "nonsense", "design", "Write Design", "Design"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := taskBoardAskLabel(tc.taskAsk, tc.definitionAsk, tc.definitionName); got != tc.want {
+				t.Fatalf("taskBoardAskLabel(%q, %q, %q) = %q, want %q",
+					tc.taskAsk, tc.definitionAsk, tc.definitionName, got, tc.want)
+			}
+		})
+	}
+}

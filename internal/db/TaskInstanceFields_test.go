@@ -105,3 +105,35 @@ func TestNonNilInputs(t *testing.T) {
 		t.Fatalf("existing inputs should pass through, got %#v", got)
 	}
 }
+
+func TestInstanceAsk(t *testing.T) {
+	cases := []struct {
+		name   string
+		def    *TaskDefinition
+		inputs map[string]any
+		want   string
+	}{
+		{"no definition and no input is the intake default", nil, nil, "validate"},
+		{"definition ask is inherited", &TaskDefinition{Ask: "test"}, nil, "test"},
+		{"explicit input wins over the definition", &TaskDefinition{Ask: "code"}, map[string]any{"ask": "review"}, "review"},
+		{"unknown input falls back to the definition", &TaskDefinition{Ask: "code"}, map[string]any{"ask": "nonsense"}, "code"},
+		{"unknown definition ask falls back to the default", &TaskDefinition{Ask: "nonsense"}, nil, "validate"},
+		{"blank input falls back to the definition", &TaskDefinition{Ask: "design"}, map[string]any{"ask": "  "}, "design"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := InstanceAsk(tc.def, tc.inputs); got != tc.want {
+				t.Fatalf("InstanceAsk() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTaskAskLabel(t *testing.T) {
+	if got := TaskAskLabel("approval"); got != "Approve" {
+		t.Fatalf("TaskAskLabel(approval) = %q, want %q", got, "Approve")
+	}
+	if got := TaskAskLabel("nonsense"); got != "" {
+		t.Fatalf("TaskAskLabel(nonsense) = %q, want empty", got)
+	}
+}

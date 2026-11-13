@@ -66,8 +66,12 @@ type TaskDefinition struct {
 	// in_progress without an assignee, so every spawned task needed a
 	// dispatcher click before anyone could start it.
 	DefaultAssigneeID string
-	SpawnRules        []TaskSpawnRule
-	IsActive          bool
+	// Ask is what this definition asks of its doer (#225), inherited by
+	// every instance it spawns. Empty when the definition predates the
+	// column or has no verb; the spawn then falls back to the intake default.
+	Ask        string
+	SpawnRules []TaskSpawnRule
+	IsActive   bool
 }
 
 type TaskSpawnRule struct {
@@ -86,10 +90,10 @@ func getTaskDefinition(ctx context.Context, q scriptQuerier, id string) (*TaskDe
 	err := q.QueryRow(ctx, `
 		SELECT _id::text, slug, display_name, COALESCE(description, ''), is_container,
 			script_text, run_if_script, default_group_id::text, spawn_rules, is_active,
-			COALESCE(default_assignee_id::text, '')
+			COALESCE(default_assignee_id::text, ''), COALESCE(ask, '')
 		FROM base_task_definition WHERE _id = $1 AND _deleted_at IS NULL`, id).Scan(
 		&d.ID, &d.Slug, &d.DisplayName, &d.Description, &d.IsContainer, &d.ScriptText, &d.RunIfScript,
-		&groupID, &spawnRulesJSON, &d.IsActive, &d.DefaultAssigneeID)
+		&groupID, &spawnRulesJSON, &d.IsActive, &d.DefaultAssigneeID, &d.Ask)
 	if err != nil {
 		return nil, fmt.Errorf("load task definition: %w", err)
 	}
@@ -249,20 +253,21 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	description := nullable(instanceDescription(def, inputs))
 	priority := instancePriority(inputs)
 	plannedStart := instancePlannedStart(inputs)
+	ask := InstanceAsk(def, inputs)
 	err = q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, priority, parent_task_id,
 			assignment_group_id, assigned_user_id, requested_by_user_id, definition_id, variables,
-			description, planned_start_at)
+			description, planned_start_at, ask)
 		VALUES (
 			'', -- assigned by the autonumber trigger (051); base_task_number_seq was dropped there
 			$1, 'TASK',
 			$2,
 			$3, $4, $5, $6, $7, $8, $9::jsonb,
-			$10, $11)
+			$10, $11, $12)
 		RETURNING _id, number`,
 		title, state, priority, nullable(parentTaskID), nullable(groupID),
 		nullable(assigneeID), nullable(requestedBy), def.ID, string(varsJSON),
-		description, plannedStart).Scan(&taskID, &taskNumber)
+		description, plannedStart, ask).Scan(&taskID, &taskNumber)
 	if err != nil {
 		return "", fmt.Errorf("spawn task: %w", err)
 	}
