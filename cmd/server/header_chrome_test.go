@@ -18,11 +18,11 @@ import (
 // the top of the page.
 
 var (
-	themeBlock   = regexp.MustCompile(`(?is)html\[data-theme="([a-z-]+)"\]\s*\{([^}]*)\}`)
-	customProp   = regexp.MustCompile(`(?m)^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);`)
-	cssBlock     = regexp.MustCompile(`(?is)([^{}]+)\{([^}]*)\}`)
+	themeBlock         = regexp.MustCompile(`(?is)html\[data-theme="([a-z-]+)"\]\s*\{([^}]*)\}`)
+	customProp         = regexp.MustCompile(`(?m)^\s*(--[a-z0-9-]+)\s*:\s*([^;]+);`)
+	cssBlock           = regexp.MustCompile(`(?is)([^{}]+)\{([^}]*)\}`)
 	defaultHeaderBlock = regexp.MustCompile(`(?im)^html\s*\{\s*((?:--header-[a-z-]+\s*:[^;]+;\s*)+)\}`)
-	colourDeclRe = regexp.MustCompile(`(?im)^\s*(?:color|background|background-color|border-color|border-top-color|border-bottom-color|fill|stroke)\s*:\s*([^;]+);`)
+	colourDeclRe       = regexp.MustCompile(`(?im)^\s*(?:color|background|background-color|border-color|border-top-color|border-bottom-color|fill|stroke)\s*:\s*([^;]+);`)
 )
 
 func monochromeCSS(t *testing.T) string {
