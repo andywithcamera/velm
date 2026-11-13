@@ -633,6 +633,22 @@ func comparableSnapshotValues(columns []Column, snapshot map[string]any) map[str
 	return out
 }
 
+// formatTimeForColumn renders a timestamp the way its column type is stored and
+// compared. Shared by comparableSnapshotValue and the trigger-record path so a
+// value read back from Postgres and the same value submitted by a form compare
+// equal; if they disagreed, every save would look like a timestamp edit and
+// overwrite what the DB trigger sets.
+func formatTimeForColumn(column Column, value time.Time) string {
+	switch normalizeDataType(column.DATA_TYPE) {
+	case "date":
+		return value.Format("2006-01-02")
+	case "timestamp", "timestamptz", "datetime":
+		return value.Format("2006-01-02T15:04")
+	default:
+		return value.Format(time.RFC3339)
+	}
+}
+
 func comparableSnapshotValue(column Column, value any) string {
 	dataType := normalizeDataType(column.DATA_TYPE)
 	switch v := value.(type) {
@@ -669,14 +685,7 @@ func comparableSnapshotValue(column Column, value any) string {
 	case float64:
 		return strconv.FormatFloat(v, 'f', -1, 64)
 	case time.Time:
-		switch dataType {
-		case "date":
-			return v.Format("2006-01-02")
-		case "timestamp", "timestamptz", "datetime":
-			return v.Format("2006-01-02T15:04")
-		default:
-			return v.Format(time.RFC3339)
-		}
+		return formatTimeForColumn(column, v)
 	default:
 		return fmt.Sprint(v)
 	}
