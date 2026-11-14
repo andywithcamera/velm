@@ -58,10 +58,9 @@
 
 }
 
-/* The theme background is painted by <html> alone. body must stay
-   transparent: the ambient overlay canvas is a fixed layer at z-index -1
-   appended to <body>, and an opaque body background paints straight over it
-   (#326). */
+/* The theme background is painted by <html> alone, so there is exactly one
+   place the page colour comes from, and a short page never shows a white band
+   below the content. */
 html {
   color-scheme: dark;
   background: var(--bg-base);

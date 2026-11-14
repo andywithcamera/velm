@@ -1,14 +1,19 @@
 /* Ambient overlays: decorative, independent of colour theme. Opt-in via
-   html[data-overlay]. The canvas sits behind all app content; panels stay
-   mostly opaque so text contrast is untouched. prefers-reduced-motion gets a
-   static, non-animating layer. */
+   html[data-overlay]. The canvas is a fixed layer ABOVE all app content, so the
+   effect shows over panels and the header rather than only in the gaps between
+   them (Andy, 2026-11-14: "I meant it should be on top of all other elements").
+   It stays pointer-events: none, so nothing becomes unclickable.
+   prefers-reduced-motion gets a static, non-animating layer. */
 
 .ui-overlay-canvas {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
-  z-index: -1;
+  /* Above the highest app layer (modals/toasts at 1200). Paint order is the
+     whole point of this layer; TestOverlayCanvasPaintsAboveAllContent fails if
+     any other sheet grows a larger z-index. */
+  z-index: 2000;
   pointer-events: none;
   display: none;
 }
@@ -26,7 +31,11 @@ html[data-overlay="matrix"] .ui-overlay-canvas { opacity: 0.55; }
 html[data-overlay="nature"] .ui-overlay-canvas { opacity: 0.6; }
 html[data-overlay="rainfall"] .ui-overlay-canvas { opacity: 0.5; }
 html[data-overlay="fireflies"] .ui-overlay-canvas { opacity: 0.75; }
-html[data-overlay="aurora"] .ui-overlay-canvas { opacity: 0.8; }
+/* Aurora is the only effect that paints the whole viewport rather than sparse
+   particles, so it is the only one that measurably costs text contrast now that
+   the canvas is above content. Measured on #332 body copy: 0.8 dropped purple
+   5.66 -> 4.90, uncomfortably near AA 4.5; 0.45 holds 5.4. */
+html[data-overlay="aurora"] .ui-overlay-canvas { opacity: 0.45; }
 
 @media (prefers-reduced-motion: reduce) {
   /* Draw one static frame; the script checks the same query and never rAFs. */
