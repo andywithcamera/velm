@@ -62,6 +62,38 @@ func handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
+// GET /api/push/status — the current user's push subscription state.
+//
+// The client could previously only guess whether it was subscribed, from
+// localStorage and the browser's own subscription, so a subscription that was
+// never stored (or was pruned as stale) still rendered "Disable push" and the
+// user had no way to tell opt-in had not taken effect (#344). This is the
+// authoritative answer: it reads the rows the sender will actually use.
+func handlePushStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+		return
+	}
+	userID := strings.TrimSpace(auth.UserIDFromRequest(r))
+	if userID == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	subs, err := db.ListPushSubscriptions(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "Failed to read subscriptions", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"enabled":    push.Enabled(),
+		"subscribed": len(subs) > 0,
+		"count":      len(subs),
+	}); err != nil {
+		http.Error(w, "Encode failed", http.StatusInternalServerError)
+	}
+}
+
 // POST /api/push/unsubscribe — remove an endpoint for the current user.
 func handlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
