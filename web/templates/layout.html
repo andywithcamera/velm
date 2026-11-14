@@ -170,9 +170,17 @@
                 }
 
                 function persistOverlay(overlay) {
+                    // CSRF: /api state-changing requests are validated server-side, and a
+                    // request without the header is refused with 403. Omitting it here is
+                    // what made the overlay revert to "none" on every reload (#329).
+                    const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
                     fetch("/api/preferences/overlay", {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        keepalive: true,
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": csrf
+                        },
                         credentials: "same-origin",
                         body: JSON.stringify({ value: overlay })
                     }).catch(function () {
