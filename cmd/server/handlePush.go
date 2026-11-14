@@ -108,12 +108,25 @@ func handlePushStatus(w http.ResponseWriter, r *http.Request) {
 		subs = append(subs, entry)
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]any{
+	body := map[string]any{
 		"enabled":       push.Enabled(),
 		"subscribed":    len(states) > 0,
 		"count":         len(states),
 		"subscriptions": subs,
-	}); err != nil {
+		"subject":       push.Subject(),
+	}
+	// A keypair mismatch is otherwise undetectable from outside: the public
+	// key is advertised and accepted, browsers subscribe against it, and
+	// every send fails with a JWT error from the push service that points at
+	// the token rather than the configuration. Report it here so a 403
+	// BadJwtToken has a visible cause.
+	if err := push.KeypairError(); err != nil {
+		body["keypairOk"] = false
+		body["keypairError"] = err.Error()
+	} else {
+		body["keypairOk"] = true
+	}
+	if err := json.NewEncoder(w).Encode(body); err != nil {
 		http.Error(w, "Encode failed", http.StatusInternalServerError)
 	}
 }

@@ -5,12 +5,14 @@
 package push
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -38,10 +40,56 @@ var (
 func loadKeys() {
 	vapidPublic = strings.TrimSpace(getenv("VAPID_PUBLIC_KEY"))
 	vapidPriv = strings.TrimSpace(getenv("VAPID_PRIVATE_KEY"))
-	contact = strings.TrimSpace(getenv("VAPID_CONTACT"))
+	contact = normalizeSubscriber(getenv("VAPID_CONTACT"))
 	if contact == "" {
-		contact = "mailto:admin@velm.dev"
+		contact = "admin@velm.dev"
 	}
+}
+
+// normalizeSubscriber returns the contact in the form webpush-go expects: a
+// bare e-mail address or an https: URL.
+//
+// The library prepends "mailto:" to anything that does not start with
+// "https:", so passing an already-correct "mailto:" value (the conventional
+// way to write a VAPID subject, and what every Web Push guide shows) produces
+// the invalid claim sub="mailto:mailto:user@example.com". APNs answers that
+// with 403 BadJwtToken — an error that names the token, not the cause, and
+// that no amount of key rotation fixes.
+func normalizeSubscriber(contact string) string {
+	contact = strings.TrimSpace(contact)
+	for strings.HasPrefix(strings.ToLower(contact), "mailto:") {
+		contact = strings.TrimSpace(contact[len("mailto:"):])
+	}
+	return contact
+}
+
+// KeypairError reports whether VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY are a
+// matching pair. A mismatch is otherwise silent: /api/push/config advertises
+// the public key, browsers subscribe against it, and every send is rejected
+// because the JWT is signed with a private key that does not belong to the k=
+// parameter carried alongside it.
+func KeypairError() error {
+	keysOnce.Do(loadKeys)
+	if vapidPublic == "" || vapidPriv == "" {
+		return nil
+	}
+	priv, err := base64.RawURLEncoding.DecodeString(vapidPriv)
+	if err != nil {
+		return fmt.Errorf("VAPID_PRIVATE_KEY is not valid base64url: %w", err)
+	}
+	pub, err := base64.RawURLEncoding.DecodeString(vapidPublic)
+	if err != nil {
+		return fmt.Errorf("VAPID_PUBLIC_KEY is not valid base64url: %w", err)
+	}
+	curve := ecdh.P256()
+	key, err := curve.NewPrivateKey(priv)
+	if err != nil {
+		return fmt.Errorf("VAPID_PRIVATE_KEY is not a P-256 scalar: %w", err)
+	}
+	if !bytes.Equal(key.PublicKey().Bytes(), pub) {
+		return fmt.Errorf("VAPID_PUBLIC_KEY does not match VAPID_PRIVATE_KEY")
+	}
+	return nil
 }
 
 func getenv(name string) string {
@@ -58,6 +106,21 @@ func Enabled() bool {
 func PublicKey() string {
 	keysOnce.Do(loadKeys)
 	return vapidPublic
+}
+
+// Subject returns the JWT sub claim the sender will use, in the exact form
+// webpush-go transmits it (a bare contact becomes mailto:<contact>). Exposed so
+// a push service rejection naming the token can be traced to the configured
+// contact without reading environment variables off the host.
+func Subject() string {
+	keysOnce.Do(loadKeys)
+	if contact == "" {
+		return ""
+	}
+	if !strings.HasPrefix(contact, "https:") {
+		return "mailto:" + contact
+	}
+	return contact
 }
 
 // GenerateVapidKeys creates a new base64url key pair (used by tooling/tests).

@@ -137,3 +137,29 @@ func TestPushStatusReportsDeliveryOutcome(t *testing.T) {
 		t.Fatal("push-client.js never calls /api/push/test")
 	}
 }
+
+// APNs answered 403 BadJwtToken for every send while /api/push/config happily
+// advertised the public key: the JWT's sub claim was "mailto:mailto:..."
+// because webpush-go prepends "mailto:" to any contact that does not start
+// "https:", and the configured contact was already written that way. The push
+// sender now normalises the contact, and the status endpoint reports whether
+// the keypair itself is sound, so a JWT rejection has a visible cause.
+func TestPushStatusReportsKeypairValidity(t *testing.T) {
+	t.Chdir("../..")
+	handler := readRepoFile(t, "cmd", "server", "handlePush.go")
+	body := regexp.MustCompile(`(?s)func handlePushStatus\(.*?\n\}`).FindString(handler)
+	if body == "" {
+		t.Fatal("handlePushStatus does not exist")
+	}
+	if !strings.Contains(body, "push.KeypairError()") {
+		t.Fatalf("handlePushStatus must report keypair validity:\n%s", body)
+	}
+	if !strings.Contains(body, `"keypairOk"`) {
+		t.Fatalf("handlePushStatus does not emit keypairOk:\n%s", body)
+	}
+
+	main := readRepoFile(t, "cmd", "server", "main.go")
+	if !strings.Contains(main, "push.KeypairError()") {
+		t.Fatalf("main must warn at boot when the keypair is unusable:\n%s", main)
+	}
+}
