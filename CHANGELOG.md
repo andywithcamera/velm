@@ -6,6 +6,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Fixed
+
+- The ambient overlay never painted. `velm-overlay.js` appends `.ui-overlay-canvas` to `<body>` as a fixed layer at `z-index: -1`, but both `10-core.css` and `40-velm-monochrome.css` painted `background: var(--bg-base)` on `body`, and an opaque background on body paints over a negative-z-index child. Measured in production: 0 differing pixels between overlay off and on; 1748 once `body` was made transparent in the live DOM. The theme background now lives on `<html>`, which negative-z children paint above, and `body` stays transparent. Three tests pin the pairing, each verified to fail against the unfixed CSS. Cache keys for the changed sheets are bumped, and so is the outer `ui.css` link, which #324 left at its old value. (#326)
+
 ### Changed
 
 - Type stack replaced: Instrument Sans for UI, prose and headings, Monaspace Neon for code, identifiers and figures, replacing Syne, DM Sans and JetBrains Mono. The deciding measurement was digit alignment: DM Sans carries no `tnum` feature at all, so equal-length figures rendered 24px apart at 13px (`111,111` at half the width of `888,888`) and no numeric column in the app could ever line up. Instrument Sans has `tnum` and a higher x-height. Instrument Sans' wght axis stops at 700, so 19 `font-weight: 800` declarations became 700 (requesting an unavailable weight on a variable font is clamped silently, not an error) and the two `300`s became 400; the wordmark moved to Monaspace Neon 800, which the mono can carry. Two faces, 177 KB, still self-hosted — no CSP change. (#323)

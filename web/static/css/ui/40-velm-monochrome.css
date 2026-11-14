@@ -109,10 +109,16 @@ html[data-theme="dark"] {
 }
 
 html,
-body,
 .ui-view-page-builder,
 .ui-view-page-builder body {
   background: var(--bg-base);
+  color: var(--text-secondary);
+}
+
+/* body carries no background so the z-index:-1 overlay canvas stays visible
+   (#326). The theme colour is painted by <html> above. */
+body {
+  background: transparent;
   color: var(--text-secondary);
 }
 
