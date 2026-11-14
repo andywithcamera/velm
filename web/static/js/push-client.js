@@ -4,8 +4,11 @@
   'use strict';
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
-  const btn = document.getElementById('pushToggle');
-  if (!btn) return;
+  // The toggle lives in the notification menu, which htmx fetches when the
+  // bell is clicked (#337). It is NOT in the DOM at script load, so it must be
+  // resolved on demand: binding here and returning when it is absent meant
+  // revealIfAvailable() never ran at all.
+  const currentBtn = () => document.getElementById('pushToggle');
 
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
   const LS_KEY = 'velm-push-endpoint';
@@ -35,7 +38,11 @@
   }
 
   function setLabel(on) {
+    const btn = currentBtn();
+    if (!btn) return;
     btn.textContent = on ? 'Disable push notifications' : 'Enable push notifications';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.hidden = false;
   }
 
   // The toggle ships hidden in the template so an instance without VAPID keys
@@ -43,9 +50,12 @@
   // a configured instance had no way to subscribe: the button existed, was
   // hidden, and stayed hidden (#332).
   async function revealIfAvailable() {
+    if (!currentBtn()) return;
     try {
       const config = await fetch('/api/push/config', { credentials: 'same-origin' }).then((r) => r.json());
       if (!config || !config.enabled) return;
+      const btn = currentBtn();
+      if (!btn) return;
       btn.hidden = false;
       refreshState();
     } catch (_) {
@@ -65,10 +75,11 @@
   }
 
   async function enable() {
+    const btn = currentBtn();
     const config = await fetch('/api/push/config', { credentials: 'same-origin' }).then((r) => r.json());
     if (!config.enabled) {
-      btn.textContent = 'Push not available';
-      btn.disabled = true;
+      if (btn) btn.textContent = 'Push not available';
+      if (btn) btn.disabled = true;
       return;
     }
     const permission = await Notification.requestPermission();
@@ -101,7 +112,11 @@
     setLabel(false);
   }
 
-  btn.addEventListener('click', async () => {
+  // Delegated: the panel is swapped in after this script runs, so a direct
+  // listener on the button would never be attached.
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest && e.target.closest('#pushToggle');
+    if (!btn) return;
     btn.disabled = true;
     try {
       if (btn.textContent.startsWith('Disable')) await disable();
@@ -114,5 +129,9 @@
     }
   });
 
-  revealIfAvailable();
+  // htmx swaps the panel in on bell click; re-reveal after every settle so the
+  // toggle appears the first time the menu opens, not only on a full reload.
+  document.addEventListener('htmx:afterSettle', revealIfAvailable);
+  document.addEventListener('DOMContentLoaded', revealIfAvailable);
+
 })();
