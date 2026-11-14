@@ -43,13 +43,21 @@ func TestRecreateGitHubIssueTasks(t *testing.T) {
 	rootDef := seedDefinition(ctx, t, "gh-feature-request-"+suffix, "Feature Request", true, "")
 	seedChildLink(ctx, t, rootDef, intakeDef, 10, nil)
 
-	flatID := seedFlatGHIssueTask(ctx, t, "GH-1 Flat thing")
+	// Issue numbers are matched by title across the whole database (that is
+	// the point: the flat rows are the live population), so a test run must
+	// not collide with another run's rows. Derive numbers that no GitHub
+	// issue will have.
+	issueNumber := int(time.Now().UnixNano()%1_000_000) + 500000
+	otherNumber := issueNumber + 1
 
+	flatID := seedFlatGHIssueTask(ctx, t, fmt.Sprintf("GH-%d Flat thing", issueNumber))
+
+	issueURL := fmt.Sprintf("https://github.com/andywithcamera/velm/issues/%d", issueNumber)
 	issues := []GitHubIssue{{
-		Number: 1,
+		Number: issueNumber,
 		Title:  "Flat thing",
 		Body:   "It is flat and it should not be.",
-		URL:    "https://github.com/andywithcamera/velm/issues/1",
+		URL:    issueURL,
 	}}
 
 	results, err := RecreateGitHubIssueTasks(ctx, issues, "gh-feature-request-"+suffix, intakeUser)
@@ -66,30 +74,32 @@ func TestRecreateGitHubIssueTasks(t *testing.T) {
 		Scan(&title, &vars); err != nil {
 		t.Fatalf("read replacement: %v", err)
 	}
-	if !strings.HasPrefix(title, "GH-1 Flat thing (TASK-") {
-		t.Fatalf("replacement title = %q, want it to start \"GH-1 Flat thing (TASK-\"", title)
+	if want := fmt.Sprintf("GH-%d Flat thing (TASK-", issueNumber); !strings.HasPrefix(title, want) {
+		t.Fatalf("replacement title = %q, want it to start %q", title, want)
 	}
 	inputs, ok := vars["inputs"].(map[string]any)
 	if !ok {
 		t.Fatalf("replacement variables.inputs = %#v, want an object", vars["inputs"])
 	}
-	if inputs["github_url"] != issues[0].URL {
-		t.Fatalf("inputs.github_url = %#v, want %q", inputs["github_url"], issues[0].URL)
+	if inputs["github_url"] != issueURL {
+		t.Fatalf("inputs.github_url = %#v, want %q", inputs["github_url"], issueURL)
 	}
 	if inputs["body"] != issues[0].Body {
 		t.Fatalf("inputs.body = %#v, want the issue body", inputs["body"])
 	}
 
 	// The intake child is assigned per the definition's routing.
-	var intakeAssignee, intakeState string
+	var intakeAssignee, intakeState, intakeDefID, intakeGroupGot string
 	if err := Pool.QueryRow(ctx, `
-		SELECT COALESCE(assigned_user_id::text, ''), state FROM base_task
+		SELECT COALESCE(assigned_user_id::text, ''), state,
+		       COALESCE(definition_id::text, ''), COALESCE(assignment_group_id::text, '')
+		FROM base_task
 		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, results[0].ReplacementID).
-		Scan(&intakeAssignee, &intakeState); err != nil {
+		Scan(&intakeAssignee, &intakeState, &intakeDefID, &intakeGroupGot); err != nil {
 		t.Fatalf("read intake child: %v", err)
 	}
 	if intakeAssignee != intakeUser {
-		t.Fatalf("intake assignee = %q, want %q", intakeAssignee, intakeUser)
+		t.Fatalf("intake assignee = %q, want %q (def %s, group %s, state %s)", intakeAssignee, intakeUser, intakeDefID, intakeGroupGot, intakeState)
 	}
 
 	// The flat twin is closed, not deleted, and points at its replacement.
@@ -123,7 +133,7 @@ func TestRecreateGitHubIssueTasks(t *testing.T) {
 	}
 	var count int
 	if err := Pool.QueryRow(ctx, `SELECT count(*) FROM base_task
-		WHERE _deleted_at IS NULL AND title LIKE $1`, fmt.Sprintf("GH-1 %%%%")).Scan(&count); err != nil {
+		WHERE _deleted_at IS NULL AND title LIKE $1`, fmt.Sprintf("GH-%d %%%%", issueNumber)).Scan(&count); err != nil {
 		t.Fatalf("count GH-1 tasks: %v", err)
 	}
 	if count != 2 { // the closed flat twin and the one replacement
@@ -132,7 +142,10 @@ func TestRecreateGitHubIssueTasks(t *testing.T) {
 
 	// An issue with no flat twin and no replacement spawns one and closes
 	// nothing: the population has drifted since the rows were made.
-	only := []GitHubIssue{{Number: 2, Title: "Never had a twin", Body: "b", URL: "https://example.test/2"}}
+	only := []GitHubIssue{{
+		Number: otherNumber, Title: "Never had a twin", Body: "b",
+		URL: fmt.Sprintf("https://example.test/%d", otherNumber),
+	}}
 	fresh, err := RecreateGitHubIssueTasks(ctx, only, "gh-feature-request-"+suffix, intakeUser)
 	if err != nil {
 		t.Fatalf("recreate without twin: %v", err)
