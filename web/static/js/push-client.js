@@ -38,6 +38,21 @@
     btn.textContent = on ? 'Disable push notifications' : 'Enable push notifications';
   }
 
+  // The toggle ships hidden in the template so an instance without VAPID keys
+  // never shows a control that cannot work. Nothing used to reveal it, so even
+  // a configured instance had no way to subscribe: the button existed, was
+  // hidden, and stayed hidden (#332).
+  async function revealIfAvailable() {
+    try {
+      const config = await fetch('/api/push/config', { credentials: 'same-origin' }).then((r) => r.json());
+      if (!config || !config.enabled) return;
+      btn.hidden = false;
+      refreshState();
+    } catch (_) {
+      // Leave it hidden: no config endpoint means no push.
+    }
+  }
+
   async function refreshState() {
     try {
       const reg = await navigator.serviceWorker.getRegistration();
@@ -99,5 +114,5 @@
     }
   });
 
-  refreshState();
+  revealIfAvailable();
 })();
