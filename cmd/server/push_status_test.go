@@ -33,7 +33,7 @@ func TestPushStatusIsAuthoritative(t *testing.T) {
 	if body == "" {
 		t.Fatal("handlePushStatus does not exist")
 	}
-	if !strings.Contains(body, "ListPushSubscriptions") {
+	if !strings.Contains(body, "ListPushSubscription") {
 		t.Fatalf("handlePushStatus must read the subscription rows, not infer state:\n%s", body)
 	}
 	if !strings.Contains(body, `"subscribed"`) {
@@ -91,5 +91,49 @@ func TestPushFailuresAreVisible(t *testing.T) {
 	}
 	if !strings.Contains(enable, "return false") || !strings.Contains(enable, "return true") {
 		t.Fatalf("enable() must return true only when a subscription is stored:\n%s", enable)
+	}
+}
+
+// TestPushStatusReportsDeliveryOutcome pins the rest of #344. "Subscribed"
+// and "delivers" are different facts, and a rejected send used to look
+// identical to a delivered one — webpush-go returns the HTTP response
+// unchanged and Go's client reports no error for a 403, so Send counted it as
+// sent. The status route must therefore surface the push service's answer, and
+// the user must be able to ask for a test send and see that answer.
+func TestPushStatusReportsDeliveryOutcome(t *testing.T) {
+	t.Chdir("../..")
+	handler := readRepoFile(t, "cmd", "server", "handlePush.go")
+	routes := readRepoFile(t, "cmd", "server", "routes.go")
+	menu := readRepoFile(t, "web", "templates", "components", "notification-menu.html")
+	client := readRepoFile(t, "web", "static", "js", "push-client.js")
+
+	// The status answer must carry the last delivery outcome, not just a count.
+	body := regexp.MustCompile(`(?s)func handlePushStatus\(.*?\n\}`).FindString(handler)
+	for _, field := range []string{"lastStatus", "lastError", "failureCount"} {
+		if !strings.Contains(body, field) {
+			t.Fatalf("handlePushStatus does not report %q, so a silent device is undiagnosable:\n%s", field, body)
+		}
+	}
+
+	// A test send must exist, be authenticated, and be CSRF-protected like the
+	// other state-changing push routes.
+	testRoute := regexp.MustCompile(`(?m)^\s*http\.Handle\("/api/push/test".*$`).FindString(routes)
+	if testRoute == "" {
+		t.Fatal("/api/push/test is not registered")
+	}
+	if !strings.Contains(testRoute, "withAuth") || !strings.Contains(testRoute, "RequireCSRF") {
+		t.Fatalf("/api/push/test must be authenticated and CSRF-protected: %q", testRoute)
+	}
+
+	// The endpoint is a capability URL: only the host may leave the server.
+	if regexp.MustCompile(`"endpoint":\s*s\.Endpoint`).MatchString(body) {
+		t.Fatal("handlePushStatus leaks the full push endpoint, which can be used to push to the device")
+	}
+
+	if !strings.Contains(menu, `id="pushTest"`) {
+		t.Fatal("the notification menu has no test-send control")
+	}
+	if !strings.Contains(client, "/api/push/test") {
+		t.Fatal("push-client.js never calls /api/push/test")
 	}
 }

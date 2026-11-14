@@ -6,7 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Fixed
+
+- **Push delivery reported success when the push service had rejected it.** `push.Send` only inspected the error from `webpush.SendNotification`, but that returns the `*http.Response` unchanged and Go's HTTP client reports no error for an HTTP error status. A 403 (VAPID key mismatch) or a 410 (dead endpoint) was therefore counted as delivered, closed, and never logged: the subscription row said "subscribed", the notification reached the in-app bell, and the device stayed silent with nothing anywhere recording why. Delivery is now classified from the response status, rejections are counted as failures with the service's own error text, and 404/410 still mark the endpoint stale for cleanup. `_user_push_subscription` also gains `last_status`, `last_error`, `last_failure` and `failure_count` (migration 096) so the last outcome is readable instead of living only in server logs. (#346)
+
 ### Added
+
+- `POST /api/push/test` sends a test notification to the caller's own endpoints and returns the push service's status code and error text synchronously, plus a *Send test notification* control in the notification menu. Diagnosing a silent device previously required assigning a task and then reading Railway logs; the answer is now in the app. (#346)
+- `GET /api/push/status` now also reports the outcome of the last send to each endpoint, with only the endpoint's host — the full URL is a capability that lets anyone holding it push to the device. (#346)
 
 - `GET /api/push/status` reports whether the signed-in user actually has a push subscription, read from the rows the sender uses. Nothing exposed this before: a browser that asked for permission but whose POST never stored a row still rendered *Disable push notifications*, so a notification that reached the bell but not the phone was undiagnosable from outside. The client now prefers this answer and falls back to local state only if the endpoint is unreachable. (#344)
 

@@ -49,6 +49,8 @@
 
         <div class="ui-notification-menu-body">
             <button type="button" id="pushToggle" class="ui-menu-link ui-menu-link-inline" data-push-toggle hidden>Enable push notifications</button>
+            <button type="button" id="pushTest" class="ui-menu-link ui-menu-link-inline" data-push-test hidden>Send test notification</button>
+            <p id="pushTestResult" class="ui-menu-hint" hidden></p>
             {{range .Items}}
             <div class="ui-notification-item{{if .IsUnread}} is-unread{{end}}">
                 <div class="ui-notification-item-row">
