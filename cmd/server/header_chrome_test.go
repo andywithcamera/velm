@@ -59,54 +59,43 @@ func themeTokens(t *testing.T, source, theme string) map[string]string {
 	return nil
 }
 
-// TestMonochromeHeaderInvertsAgainstThePage is the decision Andy asked for:
-// black and white themes invert the bar, the chromatic ones keep their colour.
-func TestMonochromeHeaderInvertsAgainstThePage(t *testing.T) {
-	source := monochromeCSS(t)
+// TestHeaderIsNotInvertedOrFaded pins the revert (#331). The bar is the page
+// colour with a hairline under it; the black/white inversion and the gradient
+// fade were tried in #324 and Andy called them a mistake. Both are cheap to
+// reintroduce by accident, so they are asserted against.
+func TestHeaderIsNotInvertedOrFaded(t *testing.T) {
+	source := monochromeCSS(t) // chdirs to the repo root
+	chrome := source
 
 	for _, theme := range []string{"light", "dark"} {
 		tokens := themeTokens(t, source, theme)
-		page, header := tokens["--bg-base"], tokens["--header-bg"]
-		if page == "" || header == "" {
-			t.Fatalf("%s: --bg-base=%q --header-bg=%q, both must be declared", theme, page, header)
+		matched, want := tokens["--header-bg"], tokens["--bg-base"]
+		if matched != "var(--bg-base)" && matched != want {
+			t.Errorf("theme %q sets --header-bg %q; the bar must match the page (%q)", theme, matched, want)
 		}
-		if page == header {
-			t.Errorf("%s: header background %q matches the page; the monochrome themes must invert it", theme, header)
-		}
-		// Inverted means opposite ends of the scale, not merely different.
-		if !((theme == "light" && header == "#000" && page == "#fff") ||
-			(theme == "dark" && header == "#fff" && page == "#000")) {
-			t.Errorf("%s: expected the bar inverted against the page, got header %q on page %q", theme, header, page)
-		}
-		ink := tokens["--header-fg"]
-		if ink == "" || ink == header {
-			t.Errorf("%s: --header-fg %q must contrast with --header-bg %q", theme, ink, header)
+		matchedFg, wantFg := tokens["--header-fg"], tokens["--text-primary"]
+		if matchedFg != "var(--text-primary)" && matchedFg != wantFg {
+			t.Errorf("theme %q sets --header-fg %q; the bar must not invert (%q)", theme, matchedFg, wantFg)
 		}
 	}
 
-	// The chromatic themes keep their own colour in the bar: they must not
-	// override the header palette at all, so they inherit the page's.
-	for _, theme := range []string{"yellow", "purple", "crimson", "mint"} {
-		for _, m := range themeBlock.FindAllStringSubmatch(source, -1) {
-			if m[1] != theme {
-				continue
-			}
-			if strings.Contains(m[2], "--header-") {
-				t.Errorf("%s: declares a --header-* token; the chromatic themes must keep the bar the colour of the page", theme)
-			}
+	if !strings.Contains(source, "--header-fade: 0px") {
+		t.Error("--header-fade is not 0; the fade was reverted in #331")
+	}
+	if regexp.MustCompile(`(?s)\.ui-topnav::after`).MatchString(chrome) {
+		t.Error(".ui-topnav::after still draws the fade gradient")
+	}
+	bar := ""
+	for _, block := range cssBlock.FindAllStringSubmatch(chrome, -1) {
+		if strings.TrimSpace(block[1]) == ".ui-topnav" {
+			bar = block[2]
 		}
 	}
-
-	// The default is what those four inherit.
-	defaults := regexp.MustCompile(`(?is)html\s*\{\s*((?:--header-[a-z-]+\s*:[^;]+;\s*)+)\}`)
-	m := defaults.FindStringSubmatch(source)
-	if m == nil {
-		t.Fatal("no default --header-* block on html; the chromatic themes would have no header colour at all")
+	if bar == "" {
+		t.Fatal("no .ui-topnav rule in the shell stylesheet")
 	}
-	for _, want := range []string{"--header-bg", "--header-fg", "--header-h", "--header-fade"} {
-		if !strings.Contains(m[1], want) {
-			t.Errorf("default header block is missing %s", want)
-		}
+	if !strings.Contains(bar, "border-bottom: 1px solid") {
+		t.Errorf(".ui-topnav has no hairline under it; got %q", bar)
 	}
 }
 
@@ -185,52 +174,6 @@ func sharedSelector(selector string) bool {
 		}
 	}
 	return false
-}
-
-// TestContentClearsTheHeaderFade is the geometric half. The fade paints an opaque
-// gradient from the bar's colour down to transparent over --header-fade pixels;
-// if the content offset ignores it, the first line of every page sits under an
-// opaque wash and is simply invisible at rest.
-func TestContentClearsTheHeaderFade(t *testing.T) {
-	mono := monochromeCSS(t) // chdirs to the repo root
-	tokens := themeTokens(t, mono, "light")
-	if tokens["--header-fade"] == "" {
-		t.Fatal("--header-fade is not declared; without it the fade height and the content offset cannot be kept in step")
-	}
-
-	source, err := os.ReadFile(filepath.Join("web", "static", "css", "ui", "10-core.css"))
-	if err != nil {
-		t.Fatalf("read core stylesheet: %v", err)
-	}
-	shell := regexp.MustCompile(`(?is)\.ui-main-shell\s*\{([^}]*)\}`).FindStringSubmatch(string(source))
-	if shell == nil {
-		t.Fatal("no .ui-main-shell rule found")
-	}
-	margin := regexp.MustCompile(`(?im)^\s*margin-top\s*:\s*([^;]+);`).FindStringSubmatch(shell[1])
-	if margin == nil {
-		t.Fatal(".ui-main-shell has no margin-top; it must clear the bar")
-	}
-	if !strings.Contains(margin[1], "--header-fade") {
-		t.Errorf(".ui-main-shell margin-top = %q, which ignores --header-fade: the gradient would cover the top of every page", strings.TrimSpace(margin[1]))
-	}
-
-	theme := mono
-	if !strings.Contains(theme, ".ui-topnav::after") {
-		t.Error("no .ui-topnav::after rule: the header has no fade")
-	}
-	fade := regexp.MustCompile(`(?is)\.ui-topnav::after\s*\{([^}]*)\}`).FindStringSubmatch(theme)
-	if fade == nil {
-		t.Fatal("could not parse .ui-topnav::after")
-	}
-	if !strings.Contains(fade[1], "height: var(--header-fade)") {
-		t.Error("the fade's height must come from --header-fade so it stays in step with the content offset")
-	}
-	if !strings.Contains(fade[1], "linear-gradient") {
-		t.Error("the fade must be a gradient, not a flat block")
-	}
-	if !strings.Contains(fade[1], "pointer-events: none") {
-		t.Error("the fade must not swallow clicks in the strip below the bar")
-	}
 }
 
 // TestHeaderChromeIsNeverTheLastWordOfASharedRule closes the hole the previous

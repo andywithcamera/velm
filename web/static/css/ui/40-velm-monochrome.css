@@ -1,11 +1,12 @@
 /* Velm draft overrides: monochrome, light-first, and intentionally minimal. */
 
-/* Header chrome defaults. The chromatic themes keep their own colour, so the bar
-   is the same colour as the page and only the fade beneath it is visible; the two
-   monochrome themes override every one of these above to invert it. */
+/* Header chrome. The bar is the page colour in every theme with a single hairline
+   beneath it; the fade and the black/white inversion were tried in #324 and
+   reverted as a mistake (#331). These tokens stay so header rules read one
+   palette, they just resolve to the page's own. */
 html {
   --header-h: 64px;
-  --header-fade: 22px;
+  --header-fade: 0px;
   --header-bg: var(--bg-base);
   --header-fg: var(--text-primary);
   --header-fg-dim: var(--text-dim);
@@ -19,20 +20,6 @@ html {
 
 html[data-theme="light"] {
   color-scheme: light;
-  /* Header chrome. The monochrome themes invert the bar against the page: a
-     black header on white, a white header on black. Every header rule reads
-     --header-*, never --text-*, so this is a palette change and not a rule
-     rewrite. Panels that float inside the header (nav drawer, user menu, search
-     results) are page surfaces and deliberately do not use these. */
-  --header-bg: #000;
-  --header-fg: #fff;
-  --header-fg-dim: rgba(255, 255, 255, 0.72);
-  --header-fg-ghost: rgba(255, 255, 255, 0.52);
-  --header-line: rgba(255, 255, 255, 0.22);
-  --header-line-strong: rgba(255, 255, 255, 0.44);
-  --header-hover: rgba(255, 255, 255, 0.1);
-  --header-field: rgba(255, 255, 255, 0.07);
-  --header-focus-ring: rgba(255, 255, 255, 0.28);
   --bg-base: #fff;
   --bg-surface: #fff;
   --bg-elevated: #fff;
@@ -67,15 +54,6 @@ html[data-theme="light"] {
 
 html[data-theme="dark"] {
   color-scheme: dark;
-  --header-bg: #fff;
-  --header-fg: #000;
-  --header-fg-dim: rgba(0, 0, 0, 0.72);
-  --header-fg-ghost: rgba(0, 0, 0, 0.5);
-  --header-line: rgba(0, 0, 0, 0.2);
-  --header-line-strong: rgba(0, 0, 0, 0.42);
-  --header-hover: rgba(0, 0, 0, 0.08);
-  --header-field: rgba(0, 0, 0, 0.05);
-  --header-focus-ring: rgba(0, 0, 0, 0.28);
   --bg-base: #000;
   --bg-surface: #000;
   --bg-elevated: #000;
@@ -186,21 +164,7 @@ body {
   padding: 0 24px;
   background: var(--header-bg);
   color: var(--header-fg);
-  border-bottom: 0;
-}
-
-/* The bar does not end at a line: it fades into the page. Content is offset by
-   --header-fade (see .ui-main-shell) so nothing is hidden at rest, and anything
-   scrolling up dissolves instead of being cut off at a hard edge. */
-.ui-topnav::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  height: var(--header-fade);
-  background: linear-gradient(to bottom, var(--header-bg), transparent);
-  pointer-events: none;
+  border-bottom: 1px solid var(--header-line);
 }
 
 /* The theme and overlay pickers live in the bar, so they follow its inversion
