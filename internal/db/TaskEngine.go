@@ -246,6 +246,16 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	var taskID string
 	var taskNumber string
 	title := instanceTitle(ctx, q, def, parentTaskID)
+	// A root may be named by its request (#226): a task spawned from an
+	// external record is only findable by the caller's own handle for it
+	// ("GH-226 …"), and the definition's display name cannot carry that.
+	// Children are deliberately excluded — their title states the stage, and
+	// inheriting the request title would name every stage after the issue.
+	if strings.TrimSpace(parentTaskID) == "" {
+		if requestedTitle := strings.TrimSpace(inputStringValue(inputs, "title")); requestedTitle != "" {
+			title = requestedTitle
+		}
+	}
 	// Instance fields: the definition's own description and the request's
 	// priority/planned start are known at spawn time, so the doer's form is
 	// populated from the first render instead of being blank until someone
