@@ -44,39 +44,43 @@
         </a>
     </div>
 
-        <div class="ui-topnav-center">
-        <div class="ui-topnav-search-shell">
-            <label class="ui-sr-only" for="searchInput">Global search</label>
-            <input
-                id="searchInput"
-                name="q"
-                type="text"
-                placeholder="Search records, docs, tables, and tools"
-                class="ui-topnav-search"
-                hx-get="/api/search"
-                hx-trigger="keyup changed delay:200ms"
-                hx-target="#searchResults"
-                hx-swap="innerHTML"
-                autocomplete="off"
-            />
-            <div
-                id="searchResults"
-                class="ui-topnav-search-results hidden"
-                _="on htmx:afterSettle if #searchResults.innerHTML.trim() != '' then remove .hidden else add .hidden"
-            ></div>
-        </div>
-    </div>
-
     <div class="ui-topnav-actions">
-        <button
-            type="button"
-            class="ui-topnav-mobile-search"
-            aria-controls="mobileSearchPanel"
-            aria-expanded="false"
-            data-disclosure-target="mobileSearchPanel"
-        >
-            Search
-        </button>
+        <div class="ui-topnav-search-toggle">
+            <button
+                type="button"
+                class="ui-topnav-icon ui-topnav-search-btn"
+                aria-controls="searchPopover"
+                aria-expanded="false"
+                aria-label="Search"
+                _="on click toggle .hidden on #searchPopover then set #searchInput's value to '' then call #searchInput.focus()"
+            >
+                <svg class="ui-topnav-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" stroke-width="2" />
+                    <path stroke-linecap="round" stroke-width="2" d="M16.5 16.5L21 21" />
+                </svg>
+            </button>
+
+            <div id="searchPopover" class="ui-topnav-search-popover hidden">
+                <label class="ui-sr-only" for="searchInput">Global search</label>
+                <input
+                    id="searchInput"
+                    name="q"
+                    type="text"
+                    placeholder="Search records, docs, tables, and tools"
+                    class="ui-topnav-search"
+                    hx-get="/api/search"
+                    hx-trigger="keyup changed delay:200ms"
+                    hx-target="#searchResults"
+                    hx-swap="innerHTML"
+                    autocomplete="off"
+                />
+                <div
+                    id="searchResults"
+                    class="ui-topnav-search-results hidden"
+                    _="on htmx:afterSettle if #searchResults.innerHTML.trim() != '' then remove .hidden else add .hidden"
+                ></div>
+            </div>
+        </div>
 
         <div
             id="notification-menu-container"
@@ -184,24 +188,4 @@
     </div>
 </nav>
 
-<div id="mobileSearchPanel" class="ui-topnav-mobile-panel hidden">
-    <label class="ui-sr-only" for="mobileSearchInput">Global search</label>
-    <input
-        id="mobileSearchInput"
-        name="q"
-        type="text"
-        placeholder="Search records, docs, tables, and tools"
-        class="ui-topnav-search"
-        hx-get="/api/search"
-        hx-trigger="keyup changed delay:200ms"
-        hx-target="#searchResultsMobile"
-        hx-swap="innerHTML"
-        autocomplete="off"
-    />
-    <div
-        id="searchResultsMobile"
-        class="ui-topnav-search-results hidden"
-        _="on htmx:afterSettle if #searchResultsMobile.innerHTML.trim() != '' then remove .hidden else add .hidden"
-    ></div>
-</div>
 {{end}}

@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Changed
+
+- The header no longer fades into the page and no longer inverts on the black and white themes. Both shipped in #324 and are reverted as a mistake: the bar is the page colour with one hairline under it, in every theme. The `--header-*` tokens stay, resolving to the page palette, so no header rule had to be rewritten; `TestHeaderIsNotInvertedOrFaded` now asserts the revert. (#331)
+- Search is a 36px icon beside the notification bell instead of a field across the middle of the bar, and it opens a popover holding the same input and results. The separate mobile search panel is gone; one icon serves every width. (#331)
+- The notification panel is anchored to the viewport instead of to the 36px bell button. Right-aligning a 352px menu to a button 108px from the right edge put its left edge at x=-70 on a 390px screen; measured after the fix at x=12..378. `TestSearchIsAnIconBesideTheBell` pins the anchoring and the width clamp for both panels. (#331)
+
 ### Fixed
 
 - The ambient overlay choice reverted to "none" on every page load. `persistOverlay` POSTed to `/api/preferences/overlay` without `X-CSRF-Token`; the route runs through `auth.RequireCSRF`, so every save was refused with 403 and the next render read the absent preference back as "none". `persistTheme`, ten lines below, sends the header. The `.catch()` hid it: a 403 is a fulfilled response, not a rejection, so nothing surfaced. Measured locally: no header 403 `CSRF validation failed`, with header 204, then `GET` returned the saved value. `TestStateChangingAPIFetchesSendCSRF` now requires the header on every mutating `/api` fetch in every template, and found a second live instance in `form-view.html`'s `/api/app-runtime/call` (#328, carried as the single documented exception). (#329)

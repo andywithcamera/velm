@@ -1250,3 +1250,45 @@
 .ui-footer-divider {
   color: var(--text-ghost);
 }
+
+/* Search is an icon in the action cluster, the same 36px square as the
+   notification bell, rather than a field taking the middle of the bar (#331).
+   The popover is fixed to the viewport so it cannot overflow on a phone: the
+   bell's dropdown used to run off the left edge at 390px. */
+.ui-topnav-search-toggle {
+  position: relative;
+}
+
+.ui-topnav-search-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.ui-topnav-search-popover {
+  position: fixed;
+  top: calc(var(--header-h) + var(--sp-2));
+  right: var(--sp-3);
+  z-index: 1120;
+  width: min(30rem, calc(100vw - 2 * var(--sp-3)));
+}
+
+.ui-topnav-search-popover .ui-topnav-search {
+  width: 100%;
+}
+
+.ui-topnav-search-popover .ui-topnav-search-results {
+  top: calc(100% + var(--sp-2));
+  left: 0;
+  right: 0;
+}
+
+/* Notification panel: anchored to the viewport, not the 36px button. Right-
+   aligning a 352px menu to a button 108px from the right edge put 70px of it
+   off-screen at 390px wide. */
+.ui-notification-menu {
+  position: fixed;
+  top: calc(var(--header-h) + var(--sp-2));
+  right: var(--sp-3);
+  width: min(24rem, calc(100vw - 2 * var(--sp-3)));
+  max-width: none;
+}
