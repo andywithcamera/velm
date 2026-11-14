@@ -2,7 +2,12 @@
 // The toggle lives in the notification menu (data-push-toggle).
 (function () {
   'use strict';
-  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+  // A capability gate must not be silent. iOS exposes no PushManager outside a
+  // Home Screen web app, so returning early here left the menu with no control
+  // and no explanation at all (#340). The toggle is shown instead, disabled,
+  // with the reason.
+  const supported = () => 'serviceWorker' in navigator && 'PushManager' in window;
+  const UNSUPPORTED = 'Push needs this site added to your Home Screen';
 
   // The toggle lives in the notification menu, which htmx fetches when the
   // bell is clicked (#337). It is NOT in the DOM at script load, so it must be
@@ -57,6 +62,11 @@
       const btn = currentBtn();
       if (!btn) return;
       btn.hidden = false;
+      if (!supported()) {
+        btn.textContent = UNSUPPORTED;
+        btn.disabled = true;
+        return;
+      }
       refreshState();
     } catch (_) {
       // Leave it hidden: no config endpoint means no push.
@@ -76,6 +86,10 @@
 
   async function enable() {
     const btn = currentBtn();
+    if (!supported()) {
+      if (btn) { btn.textContent = UNSUPPORTED; btn.disabled = true; }
+      return;
+    }
     const config = await fetch('/api/push/config', { credentials: 'same-origin' }).then((r) => r.json());
     if (!config.enabled) {
       if (btn) btn.textContent = 'Push not available';

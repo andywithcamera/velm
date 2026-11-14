@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Changed
 
+- The notification menu now shows why push is unavailable instead of hiding the control. iOS exposes no PushManager outside a Home Screen web app, and the client returned silently at load, so the menu had no toggle and no explanation. (#340)
 - The push toggle now appears under the notification bell. It was bound once at load, but the menu is fetched by htmx after the script runs, so the reveal hit the first node and the swap replaced it with a hidden one. The button is resolved on demand, the click is delegated, and the reveal re-runs on `htmx:afterSettle`. (#337)
 - The push toggle in the notification menu is actually reachable now. The button shipped with a `hidden` attribute and no code ever removed it, so an instance with VAPID keys configured still gave a user nothing to press and no device could subscribe. `push-client.js` now asks `/api/push/config` and reveals the toggle only when the server reports push enabled. (#332)
 - A task spawned by the task engine now notifies the person it lands on. The engine writes `base_task` with its own INSERT, so the notification emit that covers form saves never ran, and work appeared on someone's board silently. A root landing in a shared queue notifies that queue; a container's stage children do not. (#332)
