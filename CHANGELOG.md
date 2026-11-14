@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Changed
 
+- Ambient overlays now paint above all app content, including panels and the header, instead of only in the gaps between them. The canvas stays `pointer-events: none`, so nothing becomes unclickable. Aurora's opacity drops to 0.45 because it is the only effect that covers the whole viewport: at 0.8 it cost body-text contrast on the purple theme (5.66 -> 4.90, near the AA 4.5 floor). (#334)
 - The header no longer fades into the page and no longer inverts on the black and white themes. Both shipped in #324 and are reverted as a mistake: the bar is the page colour with one hairline under it, in every theme. The `--header-*` tokens stay, resolving to the page palette, so no header rule had to be rewritten; `TestHeaderIsNotInvertedOrFaded` now asserts the revert. (#331)
 - Search is a 36px icon beside the notification bell instead of a field across the middle of the bar, and it opens a popover holding the same input and results. The separate mobile search panel is gone; one icon serves every width. (#331)
 - The notification panel is anchored to the viewport instead of to the 36px bell button. Right-aligning a 352px menu to a button 108px from the right edge put its left edge at x=-70 on a 390px screen; measured after the fix at x=12..378. `TestSearchIsAnIconBesideTheBell` pins the anchoring and the width clamp for both panels. (#331)
