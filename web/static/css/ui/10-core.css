@@ -58,15 +58,18 @@
 
 }
 
-html,
-body {
+/* The theme background is painted by <html> alone. body must stay
+   transparent: the ambient overlay canvas is a fixed layer at z-index -1
+   appended to <body>, and an opaque body background paints straight over it
+   (#326). */
+html {
   color-scheme: dark;
   background: var(--bg-base);
 }
 
 body {
   margin: 0;
-  background: var(--bg-base);
+  background: transparent;
   color: var(--text-secondary);
   font-family: "Instrument Sans", sans-serif;
   font-size: 14px;
