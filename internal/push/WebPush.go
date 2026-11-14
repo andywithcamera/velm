@@ -123,6 +123,9 @@ func Subject() string {
 	return contact
 }
 
+// sendTimeout bounds one push-service round trip.
+var sendTimeout = 10 * time.Second
+
 // GenerateVapidKeys creates a new base64url key pair (used by tooling/tests).
 func GenerateVapidKeys() (publicKey, privateKey string, err error) {
 	curve := ecdh.P256()
@@ -175,7 +178,12 @@ func Send(ctx context.Context, subs []Subscription, title, body, href string) Se
 		return res
 	}
 	for _, sub := range subs {
-		resp, err := webpush.SendNotification([]byte(payload), &webpush.Subscription{
+		// Bounded: webpush-go falls back to http.DefaultClient, which has no
+		// timeout, so an unresponsive push service hung the caller. The test
+		// control is a synchronous form submission, and the dispatch path runs
+		// in a 30s-budgeted goroutine, so a stall here is a visible hang.
+		attemptCtx, cancel := context.WithTimeout(ctx, sendTimeout)
+		resp, err := webpush.SendNotificationWithContext(attemptCtx, []byte(payload), &webpush.Subscription{
 			Endpoint: sub.Endpoint,
 			Keys: webpush.Keys{
 				P256dh: sub.P256DH,
@@ -187,6 +195,7 @@ func Send(ctx context.Context, subs []Subscription, title, body, href string) Se
 			VAPIDPrivateKey: vapidPriv,
 			TTL:             int((24 * time.Hour).Seconds()),
 		})
+		cancel()
 		d := classify(sub.Endpoint, resp, err)
 		res.Results = append(res.Results, d)
 		switch {

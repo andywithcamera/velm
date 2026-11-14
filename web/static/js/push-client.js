@@ -15,7 +15,6 @@
   // revealIfAvailable() never ran at all.
   const currentBtn = () => document.getElementById('pushToggle');
   const currentTestBtn = () => document.getElementById('pushTest');
-  const currentTestResult = () => document.getElementById('pushTestResult');
 
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
   const LS_KEY = 'velm-push-endpoint';
@@ -55,44 +54,15 @@
   }
 
   // The test button only makes sense once the server holds a subscription.
+  // Reveal only, never hide: the panel server-renders it when the account has a
+  // stored subscription, and a client that disagreed would remove the one
+  // control that reports why push is silent (#351).
   function showTestButton(on) {
     const test = currentTestBtn();
-    if (test) test.hidden = !on;
-  }
-
-  // "Subscribed" and "delivers" are different facts. The push service's own
-  // status code is the only thing that separates them, and it was previously
-  // visible only in server logs (#344).
-  async function sendTest() {
-    const btn = currentTestBtn();
-    const out = currentTestResult();
-    if (!btn) return;
-    btn.disabled = true;
-    if (out) { out.hidden = false; out.textContent = 'Sending…'; }
-    try {
-      const res = await fetch('/api/push/test', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'X-CSRF-Token': csrf }
-      });
-      const body = await res.json().catch(() => null);
-      if (!out) return;
-      out.hidden = false;
-      if (!res.ok || !body) {
-        out.textContent = 'Test failed (' + res.status + ')';
-        return;
-      }
-      const results = body.results || [];
-      if (!results.length) { out.textContent = 'No subscription to send to'; return; }
-      out.textContent = results.map((r) =>
-        (r.ok ? '✓ ' : '✗ ') + r.host + ' ' + (r.status || 'no response') +
-        (r.error ? ' — ' + r.error : '')
-      ).join(' · ');
-    } catch (err) {
-      if (out) { out.hidden = false; out.textContent = 'Test failed: ' + (err.message || 'network error'); }
-    } finally {
-      btn.disabled = false;
-    }
+    if (!test || !on) return;
+    test.hidden = false;
+    const form = test.closest('form');
+    if (form) form.hidden = false;
   }
 
   // Errors were swallowed with console.warn, which is invisible in an iOS
@@ -225,10 +195,8 @@
   // Delegated: the panel is swapped in after this script runs, so a direct
   // listener on the button would never be attached.
   document.addEventListener('click', async (e) => {
-    if (e.target.closest && e.target.closest('#pushTest')) {
-      await sendTest();
-      return;
-    }
+    // #pushTest is a submit button in a real form, so the browser handles it.
+    // Handling it here as well sent two pushes per tap.
     const btn = e.target.closest && e.target.closest('#pushToggle');
     if (!btn) return;
     btn.disabled = true;
