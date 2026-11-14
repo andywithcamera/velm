@@ -6,8 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/push/status` reports whether the signed-in user actually has a push subscription, read from the rows the sender uses. Nothing exposed this before: a browser that asked for permission but whose POST never stored a row still rendered *Disable push notifications*, so a notification that reached the bell but not the phone was undiagnosable from outside. The client now prefers this answer and falls back to local state only if the endpoint is unreachable. (#344)
+
 ### Changed
 
+- Opt-in failures are shown on the push button instead of being logged to `console.warn`, which is unreachable in an iOS home-screen app. Permission denial, blocked notifications, service-worker registration failure, subscribe failure and a failed POST each name themselves, and the label is no longer refreshed after a failure — doing so overwrote the message with "Enable push notifications". (#344)
 - The notification menu now shows why push is unavailable instead of hiding the control. iOS exposes no PushManager outside a Home Screen web app, and the client returned silently at load, so the menu had no toggle and no explanation. (#340)
 - The push toggle now appears under the notification bell. It was bound once at load, but the menu is fetched by htmx after the script runs, so the reveal hit the first node and the swap replaced it with a hidden one. The button is resolved on demand, the click is delegated, and the reveal re-runs on `htmx:afterSettle`. (#337)
 - The push toggle in the notification menu is actually reachable now. The button shipped with a `hidden` attribute and no code ever removed it, so an instance with VAPID keys configured still gave a user nothing to press and no device could subscribe. `push-client.js` now asks `/api/push/config` and reveals the toggle only when the server reports push enabled. (#332)

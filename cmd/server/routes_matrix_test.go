@@ -96,6 +96,7 @@ var routeAccess = map[string]accessClass{
 	"/api/realtime/presence/heartbeat": accessView,
 	"/api/push/config":                 accessPublic,
 	"/api/push/subscribe":              accessView,
+	"/api/push/status":                 accessView,
 	"/api/push/unsubscribe":            accessView,
 	"/api/notifications/panel":         accessView,
 	"/api/notifications/read-all":      accessView,
