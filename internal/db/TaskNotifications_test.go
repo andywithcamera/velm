@@ -94,7 +94,11 @@ func TestPlanBaseTaskNotificationsAssignedTaskChanged(t *testing.T) {
 	}
 }
 
-func TestPlanBaseTaskNotificationsSkipsSelfNotification(t *testing.T) {
+// Self-assignment must notify: handing a task to yourself is a real hand-off,
+// particularly for a task you raised and then claimed (#342). The global
+// suppression this replaced also covered a genuine noise problem, so the
+// companion test below keeps updates to your own task silent.
+func TestPlanBaseTaskNotificationsNotifiesOnSelfAssignment(t *testing.T) {
 	inputs := planBaseTaskNotifications(
 		"89ba09f0-4296-4d79-8c94-0128b2cfc3f4",
 		"update",
@@ -111,8 +115,69 @@ func TestPlanBaseTaskNotificationsSkipsSelfNotification(t *testing.T) {
 		nil,
 	)
 
+	if len(inputs) != 1 {
+		t.Fatalf("len(inputs) = %d, want 1", len(inputs))
+	}
+	if inputs[0].UserID != taskNotifyAssignee {
+		t.Fatalf("UserID = %q, want %q", inputs[0].UserID, taskNotifyAssignee)
+	}
+	if inputs[0].Title != "Task assigned to you" {
+		t.Fatalf("Title = %q", inputs[0].Title)
+	}
+}
+
+// Editing a task already assigned to you stays silent. This is the noise the
+// old blanket self-suppression existed to prevent, and retiring it wholesale
+// would regress it.
+func TestPlanBaseTaskNotificationsSkipsSelfNotification(t *testing.T) {
+	inputs := planBaseTaskNotifications(
+		"89ba09f0-4296-4d79-8c94-0128b2cfc3f4",
+		"update",
+		taskNotifyAssignee,
+		map[string]string{
+			"number":           "TASK-000008",
+			"title":            "Review incident",
+			"assigned_user_id": taskNotifyAssignee,
+			"priority":         "p3",
+		},
+		map[string]string{
+			"number":           "TASK-000008",
+			"title":            "Review incident",
+			"assigned_user_id": taskNotifyAssignee,
+			"priority":         "p1",
+		},
+		nil,
+	)
+
 	if len(inputs) != 0 {
 		t.Fatalf("len(inputs) = %d, want 0", len(inputs))
+	}
+}
+
+// Saving a task into a group you are a member of should not tell you about
+// your own save. Only the assignment branch allows self-notification.
+func TestPlanBaseTaskNotificationsSkipsSelfOnGroupQueue(t *testing.T) {
+	inputs := planBaseTaskNotifications(
+		"89ba09f0-4296-4d79-8c94-0128b2cfc3f4",
+		"update",
+		taskNotifyAssignee,
+		map[string]string{
+			"number": "TASK-000009",
+			"title":  "Swap monitor",
+		},
+		map[string]string{
+			"number":              "TASK-000009",
+			"title":               "Swap monitor",
+			"assignment_group_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+		},
+		[]string{taskNotifyAssignee, taskNotifyUser2},
+	)
+
+	if len(inputs) != 1 {
+		t.Fatalf("len(inputs) = %d, want 1", len(inputs))
+	}
+	if inputs[0].UserID != taskNotifyUser2 {
+		t.Fatalf("UserID = %q, want %q", inputs[0].UserID, taskNotifyUser2)
 	}
 }
 

@@ -114,9 +114,15 @@ func planTaskNotificationsWithGroupQueue(tableName, recordID, operation, actorUs
 
 	inputs := make([]UserNotificationCreateInput, 0, 4)
 	seen := make(map[string]bool, 4)
-	appendInput := func(userID, title, body, level string) {
+	// allowSelf lets a trigger notify the actor about their own action. Only
+	// assignment sets it: handing a task to yourself is a real state change
+	// worth confirming, while echoing back every edit you just made is noise.
+	appendInput := func(userID, title, body, level string, allowSelf bool) {
 		userID = strings.TrimSpace(userID)
-		if !utils.IsValidUUID(userID) || userID == actorUserID || seen[userID] {
+		if !utils.IsValidUUID(userID) || seen[userID] {
+			return
+		}
+		if userID == actorUserID && !allowSelf {
 			return
 		}
 		seen[userID] = true
@@ -140,6 +146,7 @@ func planTaskNotificationsWithGroupQueue(tableName, recordID, operation, actorUs
 			"Task assigned to you",
 			taskRef,
 			"info",
+			true,
 		)
 		return inputs
 	}
@@ -151,6 +158,7 @@ func planTaskNotificationsWithGroupQueue(tableName, recordID, operation, actorUs
 				"Unassigned task in your group",
 				taskRef,
 				"info",
+				false,
 			)
 		}
 		return inputs
@@ -163,6 +171,7 @@ func planTaskNotificationsWithGroupQueue(tableName, recordID, operation, actorUs
 				"Task updated",
 				taskRef+" changed: "+summary,
 				"info",
+				false,
 			)
 		}
 	}
