@@ -84,3 +84,41 @@ func TestPushToggleReachableAfterHtmxSwap(t *testing.T) {
 		t.Fatal("handlePushConfig does not expose publicKey, so the client cannot subscribe")
 	}
 }
+
+// TestPushCapabilityGateIsNotSilent pins #340. The client used to start with
+// `if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;`
+// — which is exactly true on any iOS browser tab, because Safari only exposes
+// PushManager inside a Home Screen web app. The menu then showed no control
+// and no explanation, which reads as "the feature is broken" rather than
+// "install this first". A capability gate must surface the reason.
+func TestPushCapabilityGateIsNotSilent(t *testing.T) {
+	t.Chdir("../..")
+	client := readRepoFile(t, "web", "static", "js", "push-client.js")
+
+	// The specific defect: a top-level return on the capability check.
+	head := client
+	if i := strings.Index(head, "const currentBtn"); i > 0 {
+		head = head[:i]
+	}
+	if regexp.MustCompile(`(?m)^\s*if \(!?\('serviceWorker' in navigator\).*return;?`).MatchString(head) {
+		t.Fatal("push-client.js returns at load when the browser lacks serviceWorker/PushManager, so the toggle is never shown and the user is told nothing")
+	}
+
+	// Unsupported must be handled with a message, in the reveal and in enable().
+	if !regexp.MustCompile(`supported\s*=\s*\(\)\s*=>`).MatchString(client) {
+		t.Fatal("push-client.js has no supported() capability helper")
+	}
+	if !regexp.MustCompile(`UNSUPPORTED\s*=`).MatchString(client) && !strings.Contains(client, "Home Screen") {
+		t.Fatal("push-client.js never tells the user why push is unavailable")
+	}
+	for _, fn := range []string{"revealIfAvailable", "enable"} {
+		re := regexp.MustCompile(`(?s)async function ` + fn + `\(\).*?\n  \}`)
+		body := re.FindString(client)
+		if body == "" {
+			t.Fatalf("push-client.js has no %s()", fn)
+		}
+		if !strings.Contains(body, "supported()") {
+			t.Fatalf("%s() does not check supported() before using PushManager, so it will throw or fail silently on iOS", fn)
+		}
+	}
+}
