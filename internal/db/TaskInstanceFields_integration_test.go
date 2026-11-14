@@ -180,3 +180,53 @@ func TestPromotionRefreshesDescriptionButKeepsEdits(t *testing.T) {
 		t.Fatalf("hand-written description was overwritten: %q", kept)
 	}
 }
+
+// TestSpawnHonoursRootTitleInput covers issue #226: a spawned root can only
+// be matched to its GitHub issue by title, and the title came from the
+// definition alone, so 70 flat rows could not be re-created as instances
+// that carry "GH-<n>". A root now takes inputs["title"]; a child must not,
+// or every stage of the pipeline would be titled after the issue.
+func TestSpawnHonoursRootTitleInput(t *testing.T) {
+	ctx := taskEngineTestDB(t)
+	suffix := instanceTestSuffix(t)
+
+	rootDef := seedDefinition(ctx, t, "seed-titled-"+suffix, "Feature Request", true, "")
+	childDef := seedDefinition(ctx, t, "seed-titled-child-"+suffix, "Intake Validation", false, "")
+	seedChildLink(ctx, t, rootDef, childDef, 10, nil)
+
+	rootID, err := SpawnTaskInstance(ctx, Pool, rootDef, "", "", map[string]any{
+		"title": "GH-226 Recreate flat tasks",
+	})
+	if err != nil {
+		t.Fatalf("spawn titled root: %v", err)
+	}
+	var rootTitle string
+	if err := Pool.QueryRow(ctx, `SELECT title FROM base_task WHERE _id = $1`, rootID).Scan(&rootTitle); err != nil {
+		t.Fatalf("read root title: %v", err)
+	}
+	if !strings.HasPrefix(rootTitle, "GH-226 Recreate flat tasks (TASK-") {
+		t.Fatalf("root title = %q, want it to start \"GH-226 Recreate flat tasks (TASK-\"", rootTitle)
+	}
+
+	childID := childByDef(ctx, t, rootID, childDef)
+	var childTitle string
+	if err := Pool.QueryRow(ctx, `SELECT title FROM base_task WHERE _id = $1`, childID).Scan(&childTitle); err != nil {
+		t.Fatalf("read child title: %v", err)
+	}
+	if strings.Contains(childTitle, "GH-226") {
+		t.Fatalf("child title = %q, want the definition's name, not the root's issue title", childTitle)
+	}
+
+	// A blank title input must fall back to the definition's display name.
+	plainID, err := SpawnTaskInstance(ctx, Pool, rootDef, "", "", map[string]any{"title": "   "})
+	if err != nil {
+		t.Fatalf("spawn with blank title: %v", err)
+	}
+	var plainTitle string
+	if err := Pool.QueryRow(ctx, `SELECT title FROM base_task WHERE _id = $1`, plainID).Scan(&plainTitle); err != nil {
+		t.Fatalf("read plain title: %v", err)
+	}
+	if !strings.HasPrefix(plainTitle, "Feature Request (TASK-") {
+		t.Fatalf("title with blank input = %q, want the definition's display name", plainTitle)
+	}
+}
