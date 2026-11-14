@@ -99,6 +99,7 @@ func registerRoutes() {
 	http.Handle("/api/search/", withAuth(authz.PermissionView, http.HandlerFunc(handleSearch)))
 	http.Handle("/api/push/config", security.RequestLog(http.HandlerFunc(handlePushConfig)))
 	http.Handle("/api/push/status", withAuth(authz.PermissionView, http.HandlerFunc(handlePushStatus)))
+	http.Handle("/api/push/test", withAuth(authz.PermissionView, auth.RequireCSRF(http.HandlerFunc(handlePushTest), store)))
 	http.Handle("/api/push/subscribe", withAuth(authz.PermissionView, auth.RequireCSRF(http.HandlerFunc(handlePushSubscribe), store)))
 	http.Handle("/api/push/unsubscribe", withAuth(authz.PermissionView, auth.RequireCSRF(http.HandlerFunc(handlePushUnsubscribe), store)))
 	http.Handle("/api/notifications/panel", withAuth(authz.PermissionView, http.HandlerFunc(handleNotificationsPanel)))

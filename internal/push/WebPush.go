@@ -11,7 +11,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -73,11 +75,25 @@ func GenerateVapidKeys() (publicKey, privateKey string, err error) {
 		base64.RawURLEncoding.EncodeToString(privBytes), nil
 }
 
+// Delivery is what one endpoint's push service answered.
+//
+// Status is the HTTP status the service returned; 0 means the request never
+// produced a response (DNS, TLS, timeout) and Err carries that cause instead.
+type Delivery struct {
+	Endpoint string
+	Status   int
+	Err      string
+}
+
+// OK reports whether the push service accepted the message for delivery.
+func (d Delivery) OK() bool { return d.Status >= 200 && d.Status < 300 }
+
 type SendResult struct {
 	Sent    int
 	Removed int
 	Failed  int
-	Stale   []string // endpoints to delete (404/410 from the push service)
+	Stale   []string   // endpoints to delete (404/410 from the push service)
+	Results []Delivery // one per subscription, in order
 }
 
 // Send delivers one payload to all subscriptions. Stale endpoints
@@ -108,24 +124,55 @@ func Send(ctx context.Context, subs []Subscription, title, body, href string) Se
 			VAPIDPrivateKey: vapidPriv,
 			TTL:             int((24 * time.Hour).Seconds()),
 		})
-		if err != nil {
-			if resp != nil && (resp.StatusCode == 404 || resp.StatusCode == 410) {
-				res.Stale = append(res.Stale, sub.Endpoint)
-				res.Removed++
-			} else {
-				res.Failed++
-			}
-			log.Printf("push: send to %s… failed: %v", trimEndpoint(sub.Endpoint), err)
-			continue
+		d := classify(sub.Endpoint, resp, err)
+		res.Results = append(res.Results, d)
+		switch {
+		case d.OK():
+			res.Sent++
+		case isStaleStatus(d.Status):
+			res.Stale = append(res.Stale, sub.Endpoint)
+			res.Removed++
+		default:
+			res.Failed++
 		}
-		if resp != nil && resp.Body != nil {
-			// Body is drained and closed best-effort in the response-error
-			// path; nothing useful to do with a Close error here.
-			_ = resp.Body.Close()
+		if !d.OK() {
+			log.Printf("push: send to %s… failed: status=%d %s",
+				trimEndpoint(sub.Endpoint), d.Status, d.Err)
 		}
-		res.Sent++
 	}
 	return res
+}
+
+// classify turns the push service's answer into an outcome.
+//
+// webpush-go returns the *http.Response verbatim from client.Do, and Go's HTTP
+// client reports no error for an HTTP error status. Checking only `err`
+// therefore counted a 403 (VAPID key mismatch) or a 410 (dead endpoint) as a
+// successful send: the table said "subscribed", the inbox filled in-app, and
+// the device stayed silent with nothing logged (#344).
+func classify(endpoint string, resp *http.Response, err error) Delivery {
+	d := Delivery{Endpoint: endpoint}
+	if resp != nil {
+		d.Status = resp.StatusCode
+		// Drain before closing so the transport can reuse the connection;
+		// the body carries the service's own error code as text.
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxPushErrorBody))
+		_ = resp.Body.Close()
+		if d.Status >= 300 {
+			d.Err = strings.TrimSpace(string(b))
+		}
+	}
+	if err != nil && d.Err == "" {
+		d.Err = err.Error()
+	}
+	if resp == nil && err == nil {
+		d.Err = "no response"
+	}
+	return d
+}
+
+func isStaleStatus(status int) bool {
+	return status == http.StatusNotFound || status == http.StatusGone
 }
 
 func trimEndpoint(endpoint string) string {
@@ -159,4 +206,7 @@ const (
 	maxPushTitle = 180
 	maxPushBody  = 500
 	maxPushHref  = 2048
+	// maxPushErrorBody caps what we keep of a rejection body: enough for the
+	// service's error code, not enough to store a page.
+	maxPushErrorBody = 2048
 )
