@@ -134,6 +134,18 @@ func handlePushStatus(w http.ResponseWriter, r *http.Request) {
 // POST /api/push/test — send a test push to the caller's own endpoints and
 // return the push service's answer synchronously.
 //
+// wantsFormResponse reports whether the caller is a browser form rather than
+// the fetch-based client, which asks for JSON.
+func wantsFormResponse(r *http.Request) bool {
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("HX-Request")), "true") {
+		return false
+	}
+	if strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "application/x-www-form-urlencoded") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/html")
+}
+
 // Diagnosing "subscribed but silent" otherwise needs a task assignment and
 // then Railway logs; this puts the status code in the app.
 func handlePushTest(w http.ResponseWriter, r *http.Request) {
@@ -164,6 +176,22 @@ func handlePushTest(w http.ResponseWriter, r *http.Request) {
 	if err := db.RecordPushDeliveries(r.Context(), res.Results); err != nil {
 		log.Printf("push: recording test delivery failed: %v", err)
 	}
+	// A plain form POST (the server-rendered control) expects to land back in
+	// the app with the outcome rendered, not a JSON body.
+	if wantsFormResponse(r) {
+		returnTo := sanitizeLoginNext(strings.TrimSpace(r.FormValue("return_to")))
+		target := "/"
+		if returnTo != "" {
+			target = returnTo
+		}
+		sep := "?"
+		if strings.Contains(target, "?") {
+			sep = "&"
+		}
+		http.Redirect(w, r, target+sep+"push_test=1", http.StatusSeeOther)
+		return
+	}
+
 	out := make([]map[string]any, 0, len(res.Results))
 	for _, d := range res.Results {
 		out = append(out, map[string]any{

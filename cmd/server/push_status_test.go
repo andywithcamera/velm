@@ -133,9 +133,13 @@ func TestPushStatusReportsDeliveryOutcome(t *testing.T) {
 	if !strings.Contains(menu, `id="pushTest"`) {
 		t.Fatal("the notification menu has no test-send control")
 	}
-	if !strings.Contains(client, "/api/push/test") {
-		t.Fatal("push-client.js never calls /api/push/test")
+	// The control is a plain form posting to the route (see
+	// push_panel_server_rendered_test.go); the client no longer has to trigger
+	// it, which is what lets it work with no JavaScript at all.
+	if !strings.Contains(menu, `action="/api/push/test"`) {
+		t.Fatal("the notification menu does not post to /api/push/test")
 	}
+	_ = client
 }
 
 // APNs answered 403 BadJwtToken for every send while /api/push/config happily

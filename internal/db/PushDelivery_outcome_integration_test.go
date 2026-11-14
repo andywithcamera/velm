@@ -63,6 +63,13 @@ func TestPushDeliveryOutcomeIsRecorded(t *testing.T) {
 		t.Fatalf("got %d subscriptions, want 1", len(states))
 	}
 	s := states[0]
+	// A subscription that has never been delivered to must not claim a
+	// success: the insert used to stamp last_success with now() (migration
+	// 097), which read as "delivered at 11:23" on a device that had never
+	// received anything.
+	if s.LastSuccess != nil {
+		t.Fatalf("a never-delivered subscription reports LastSuccess = %v", *s.LastSuccess)
+	}
 	if s.LastStatus == nil || *s.LastStatus != 403 {
 		t.Fatalf("LastStatus = %v, want 403", s.LastStatus)
 	}
@@ -94,7 +101,7 @@ func TestPushDeliveryOutcomeIsRecorded(t *testing.T) {
 	if s.FailureCount != 1 {
 		t.Fatalf("FailureCount = %d, want the history kept at 1", s.FailureCount)
 	}
-	if time.Since(s.LastSuccess) > time.Minute {
+	if s.LastSuccess == nil || time.Since(*s.LastSuccess) > time.Minute {
 		t.Fatalf("LastSuccess not refreshed: %v", s.LastSuccess)
 	}
 }

@@ -49,8 +49,25 @@
 
         <div class="ui-notification-menu-body">
             <button type="button" id="pushToggle" class="ui-menu-link ui-menu-link-inline" data-push-toggle hidden>Enable push notifications</button>
+            {{if .PushSubscribed}}
+            {{/* Server-rendered so it works with no JavaScript at all: the client
+                 that would reveal a hidden button is delivered through a cache
+                 that has made every previous fix invisible on an installed
+                 PWA (#351). A plain form POST also survives a stale service
+                 worker. */}}
+            <form method="post" action="/api/push/test" class="ui-menu-inline-form">
+                <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+                <input type="hidden" name="return_to" value="{{.ReturnTo}}">
+                <button type="submit" id="pushTest" class="ui-menu-link ui-menu-link-inline" data-push-test>Send test notification</button>
+            </form>
+            {{else}}
             <button type="button" id="pushTest" class="ui-menu-link ui-menu-link-inline" data-push-test hidden>Send test notification</button>
+            {{end}}
+            {{if .PushTestOutcome}}
+            <p id="pushTestResult" class="ui-menu-hint">{{.PushTestOutcome}}</p>
+            {{else}}
             <p id="pushTestResult" class="ui-menu-hint" hidden></p>
+            {{end}}
             {{range .Items}}
             <div class="ui-notification-item{{if .IsUnread}} is-unread{{end}}">
                 <div class="ui-notification-item-row">

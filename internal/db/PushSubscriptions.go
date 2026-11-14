@@ -29,7 +29,7 @@ SET user_id = EXCLUDED.user_id,
     p256dh = EXCLUDED.p256dh,
     auth = EXCLUDED.auth,
     user_agent = EXCLUDED.user_agent,
-    last_success = now()
+    updated_at = now()
 `, in.UserID, in.Endpoint, in.P256DH, in.Auth, truncateString(in.UserAgent, 300))
 	return err
 }
@@ -94,7 +94,7 @@ type PushSubscriptionState struct {
 	UserAgent    string
 	LastStatus   *int
 	LastError    string
-	LastSuccess  time.Time
+	LastSuccess  *time.Time
 	LastFailure  *time.Time
 	FailureCount int
 }

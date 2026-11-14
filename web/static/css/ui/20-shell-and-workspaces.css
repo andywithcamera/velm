@@ -185,6 +185,10 @@
   right: 0;
 }
 
+/* The push test control is a real form so it submits without JavaScript; the
+   form box must not change the menu's layout. */
+.ui-menu-inline-form { display: contents; }
+
 .ui-menu-link,
 .ui-menu-button {
   display: flex;
