@@ -53,11 +53,60 @@ func EmitTaskNotifications(ctx context.Context, tableName, recordID, operation, 
 	return err
 }
 
+// EmitSpawnedTaskNotification notifies whoever a task created by the engine
+// lands on. spawnTaskWithRoute writes base_task with its own INSERT rather than
+// through HandleSave, so the EmitTaskNotifications call that covers form saves
+// never ran for spawned work and the assignment was silent (#332).
+//
+// isRoot decides the group-queue fan-out: a root arriving in a shared queue is
+// news to that queue, exactly as an unassigned task saved through a form is,
+// but a container spawns its stage children into the same queue and telling
+// every member about each of those is noise. A named assignee is always
+// notified. Failure to notify is not worth failing the spawn over, so the
+// caller logs it.
+func EmitSpawnedTaskNotification(ctx context.Context, querier scriptQuerier, tableName, recordID, actorUserID string, isRoot bool, newSnapshot map[string]any) error {
+	tableName = strings.TrimSpace(strings.ToLower(tableName))
+	if querier == nil || TaskTypeValueForTable(ctx, tableName) == "" {
+		return nil
+	}
+
+	newValues := stringifyValueMap(newSnapshot)
+	if strings.TrimSpace(newValues["assigned_user_id"]) == "" && !isRoot {
+		return nil
+	}
+
+	groupMembers := []string(nil)
+	if isRoot && baseTaskShouldNotifyGroupQueue("insert", nil, newValues) {
+		var err error
+		groupMembers, err = listBaseTaskGroupMemberIDs(ctx, querier, newValues["assignment_group_id"])
+		if err != nil {
+			return err
+		}
+	}
+
+	inputs := planTaskNotificationsWithGroupQueue(tableName, recordID, "insert", actorUserID, nil, newValues, groupMembers, isRoot)
+	if len(inputs) == 0 {
+		return nil
+	}
+
+	_, err := createUserNotificationsWithQuerier(ctx, querier, inputs)
+	return err
+}
+
 func planBaseTaskNotifications(recordID, operation, actorUserID string, oldValues, newValues map[string]string, groupMemberIDs []string) []UserNotificationCreateInput {
 	return planTaskNotifications("base_task", recordID, operation, actorUserID, oldValues, newValues, groupMemberIDs)
 }
 
 func planTaskNotifications(tableName, recordID, operation, actorUserID string, oldValues, newValues map[string]string, groupMemberIDs []string) []UserNotificationCreateInput {
+	return planTaskNotificationsWithGroupQueue(tableName, recordID, operation, actorUserID, oldValues, newValues, groupMemberIDs, true)
+}
+
+// planTaskNotificationsWithGroupQueue plans the notifications for one task
+// write. includeGroupQueue is false for engine spawns: a container spawns its
+// children into a shared group with nobody named, and telling every member of
+// the group about each child is noise, not news. A named assignee is a real
+// hand-off and is notified either way.
+func planTaskNotificationsWithGroupQueue(tableName, recordID, operation, actorUserID string, oldValues, newValues map[string]string, groupMemberIDs []string, includeGroupQueue bool) []UserNotificationCreateInput {
 	tableName = strings.TrimSpace(strings.ToLower(tableName))
 	recordID = strings.TrimSpace(recordID)
 	operation = strings.ToLower(strings.TrimSpace(operation))
@@ -95,7 +144,7 @@ func planTaskNotifications(tableName, recordID, operation, actorUserID string, o
 		return inputs
 	}
 
-	if baseTaskShouldNotifyGroupQueue(operation, oldValues, newValues) {
+	if includeGroupQueue && baseTaskShouldNotifyGroupQueue(operation, oldValues, newValues) {
 		for _, userID := range groupMemberIDs {
 			appendInput(
 				userID,

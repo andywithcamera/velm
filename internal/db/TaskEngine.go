@@ -286,9 +286,23 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	// title, so a board of 28 "Feature Request" cards was unreadable. The
 	// number is assigned by the before-write trigger, so it is appended
 	// after the insert rather than composed into the value above.
+	composedTitle := composeInstanceTitle(title, taskNumber)
 	if _, err := q.Exec(ctx, `UPDATE base_task SET title = $2 WHERE _id = $1`,
-		taskID, composeInstanceTitle(title, taskNumber)); err != nil {
+		taskID, composedTitle); err != nil {
 		return "", fmt.Errorf("spawn task title: %w", err)
+	}
+
+	// Issue #332: the engine writes base_task directly, so the notification
+	// emitted by HandleSave for a form save never ran here and a spawned task
+	// landed on someone's desk silently. Best-effort: a notification is not
+	// worth failing a spawn over.
+	if err := EmitSpawnedTaskNotification(ctx, q, "base_task", taskID, requestedBy, strings.TrimSpace(parentTaskID) == "", map[string]any{
+		"number":              taskNumber,
+		"title":               composedTitle,
+		"assigned_user_id":    assigneeID,
+		"assignment_group_id": groupID,
+	}); err != nil {
+		log.Printf("failed to notify assignee of spawned task id=%s err=%v", taskID, err)
 	}
 
 	if def.IsContainer {
