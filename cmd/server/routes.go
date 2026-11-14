@@ -83,9 +83,13 @@ func registerRoutes() {
 	// See newStaticAssetHandler: /static/ sets its own Cache-Control (issue #188).
 	http.Handle("/static/", security.RequestLog(http.StripPrefix("/static/", newStaticAssetHandler("./web/static"))))
 	// PWA: the service worker must be served from the root scope it controls.
+	// `no-cache` forces the browser's update check to reach the origin instead of
+	// satisfying it from a heuristic HTTP cache: a worker change must be seen on
+	// the next navigation, not after a max-age expires (#348).
 	http.Handle("/sw.js", security.RequestLog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		w.Header().Set("Service-Worker-Allowed", "/")
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFile(w, r, "./web/static/sw.js")
 	})))
 	http.Handle("/offline.html", security.RequestLog(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

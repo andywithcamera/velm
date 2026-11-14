@@ -1,7 +1,16 @@
 // Velm service worker: app-shell caching.
-// Static assets: cache-first (immutable, versioned URLs).
+// Static assets: network-first, cache fallback.
 // Pages and API: network-first with offline fallback to the cached shell.
-const VERSION = 'velm-sw-v1';
+//
+// Static assets used to be cache-first, on the assumption that their URLs were
+// "immutable, versioned". They are not: the templates request
+// /static/js/push-client.js with no ?v=, and VERSION below was never bumped (it
+// stayed 'velm-sw-v1' from #246). So the first response a browser cached was
+// served forever, overriding the origin's own `Cache-Control: no-cache`, and
+// every front-end fix shipped after that was invisible to any device with the
+// service worker installed (#348). Network-first keeps the offline shell but
+// never lets a stale asset outlive one online navigation.
+const VERSION = 'velm-sw-v2';
 const SHELL = ['/', '/static/css/ui.css', '/static/icons/icon-192.png', '/offline.html'];
 
 self.addEventListener('install', (event) => {
@@ -20,16 +29,17 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
 
-  // Static assets: cache-first.
+  // Static assets: network-first, cache fallback. A rejected or failed fetch
+  // must not leave the page without the asset, hence the cache fallback.
   if (url.pathname.startsWith('/static/')) {
     event.respondWith(
-      caches.match(event.request).then((hit) =>
-        hit || fetch(event.request).then((res) => {
+      fetch(event.request).then((res) => {
+        if (res && res.ok) {
           const copy = res.clone();
           caches.open(VERSION).then((c) => c.put(event.request, copy));
-          return res;
-        })
-      )
+        }
+        return res;
+      }).catch(() => caches.match(event.request).then((hit) => hit || Response.error()))
     );
     return;
   }
