@@ -104,3 +104,29 @@ func TestSearchPopoverKeepsTheSearchIds(t *testing.T) {
 		t.Error("navbar still references the removed mobile search ids")
 	}
 }
+
+// TestActionClusterSitsOnTheRightEdge pins the bar's balance. The bar is a
+// three-column grid whose middle column is the flexible one, and the action
+// cluster is the second child, so it lands there: without an explicit
+// justification the cluster packs against the brand and the bar reads as
+// left-loaded with a dead right half.
+func TestActionClusterSitsOnTheRightEdge(t *testing.T) {
+	t.Chdir("../..")
+	shell := readRepoFile(t, "web", "static", "css", "ui", "20-shell-and-workspaces.css")
+
+	var justified, spanned bool
+	for _, body := range ruleBodies(t, shell, ".ui-topnav-actions") {
+		if strings.Contains(body, "justify-content: flex-end") {
+			justified = true
+		}
+		if strings.Contains(body, "grid-column:") {
+			spanned = true
+		}
+	}
+	if !justified {
+		t.Error(".ui-topnav-actions does not justify to the end, so the cluster packs beside the brand")
+	}
+	if !spanned {
+		t.Error(".ui-topnav-actions does not span to the trailing column; its right edge then lands on a column gap, not the bar padding")
+	}
+}
