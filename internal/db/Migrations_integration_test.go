@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestMigrationChecksumLifecycle exercises the checksum path against a REAL
@@ -121,5 +122,78 @@ func TestMigrationChecksumLifecycle(t *testing.T) {
 	// Restore the row so a shared database is left as it was found.
 	if _, err := Pool.Exec(ctx, `UPDATE _schema_migration SET checksum = $2 WHERE version = $1`, legacy, migrationChecksum(files[legacy])); err != nil {
 		t.Fatalf("restore checksum for %s: %v", legacy, err)
+	}
+}
+
+// TestRunMigrationsWaitsForTheMigrationLock proves RunMigrations serialises on
+// the advisory lock rather than racing. Two migrators on one database both see
+// "not yet applied", both run CREATE TABLE, and one dies on a duplicate pg_type
+// key — which is exactly how CI failed for PR #359: `go test ./...` runs
+// cmd/server and internal/db as separate processes, both migrating velm_test.
+// The same race exists in production when two instances boot together.
+//
+// Deterministic by construction: hold the lock on one connection, then require
+// that a concurrent RunMigrations has NOT returned while it is held. Without
+// the lock it returns in milliseconds and the test fails.
+func TestRunMigrationsWaitsForTheMigrationLock(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL not set; skipping real-Postgres integration test")
+	}
+
+	t.Setenv("DATABASE_URL", url)
+	os.Setenv("DATABASE_URL", url)
+	if err := ConnectToDB(); err != nil {
+		t.Fatalf("ConnectToDB: %v", err)
+	}
+	t.Cleanup(CloseDB)
+
+	ctx := context.Background()
+
+	holder, err := Pool.Acquire(ctx)
+	if err != nil {
+		t.Fatalf("acquire holder connection: %v", err)
+	}
+	// Release in the failure paths too, or the pool is poisoned for later tests.
+	released := false
+	releaseHolder := func() {
+		if released {
+			return
+		}
+		released = true
+		if _, err := holder.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationsLockKey); err != nil {
+			t.Errorf("unlock: %v", err)
+		}
+		holder.Release()
+	}
+	t.Cleanup(releaseHolder)
+
+	if _, err := holder.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationsLockKey); err != nil {
+		t.Fatalf("take migration lock: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		done <- RunMigrations(runCtx)
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("RunMigrations returned while the migration lock was held (err = %v); it is not serialising", err)
+	case <-time.After(500 * time.Millisecond):
+		// Blocked, as it must be.
+	}
+
+	releaseHolder()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("RunMigrations after the lock was released: %v", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("RunMigrations never returned after the migration lock was released")
 	}
 }

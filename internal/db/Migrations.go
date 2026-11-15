@@ -14,10 +14,37 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// migrationsLockKey is an arbitrary but fixed advisory-lock key. Any process
+// that migrates this database takes it, so only one migrator works at a time.
+// It spells "velm migr" in ASCII, which makes it greppable in pg_locks.
+const migrationsLockKey int64 = 0x76656c6d6d696772
+
 func RunMigrations(ctx context.Context) error {
 	if Pool == nil {
 		return fmt.Errorf("database pool is not initialized")
 	}
+
+	// Serialise migrators. Two processes migrating one database at once both
+	// see "not yet applied", both run CREATE TABLE, and one dies on a duplicate
+	// pg_type key. That happens in production when two instances boot together,
+	// and in tests whenever two packages migrate the same database in parallel
+	// (go test ./... runs packages concurrently by default). The lock is held on
+	// its own connection for the whole run, because a session advisory lock is
+	// owned by the session that took it and the pool hands out a different
+	// connection for every Exec.
+	lockConn, err := Pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration lock connection: %w", err)
+	}
+	defer lockConn.Release()
+	if _, err := lockConn.Exec(ctx, `SELECT pg_advisory_lock($1)`, migrationsLockKey); err != nil {
+		return fmt.Errorf("take migration lock: %w", err)
+	}
+	defer func() {
+		// Unlock on a fresh context: if ctx is already cancelled the pool would
+		// refuse the call, and the lock would be held until the connection dies.
+		_, _ = lockConn.Exec(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationsLockKey)
+	}()
 
 	if _, err := Pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS _schema_migration (

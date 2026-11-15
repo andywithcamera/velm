@@ -136,8 +136,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # -p 1 is not a speed tweak, it is a correctness requirement: every
+      # integration test migrates the SAME Postgres database, and go test runs
+      # packages in parallel by default. Two concurrent migrators both see "not
+      # yet applied" and one dies on a duplicate pg_type key; worse, the checksum
+      # lifecycle test deliberately corrupts _schema_migration to prove boot
+      # aborts, so any other package migrating during that window fails on a
+      # migration it never touched. RunMigrations takes an advisory lock, which
+      # makes concurrent migrations safe, but it cannot make a deliberate
+      # mid-test tamper invisible to a neighbour. One package at a time can.
       - name: Run tests
-        run: go test ./... -count=1
+        run: go test ./... -count=1 -p 1
 
       # Fail loudly if the integration test skipped: a green run that never
       # touched Postgres is the failure mode this job exists to prevent.
