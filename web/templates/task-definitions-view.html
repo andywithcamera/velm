@@ -406,6 +406,113 @@
     margin-top: 1rem;
     font-size: 0.85rem;
   }
+
+  .ui-def-inrows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .ui-def-inrow {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    background: var(--bg-base);
+  }
+
+  .ui-def-inrow-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .ui-def-inrow-pos {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+
+  .ui-def-inrow-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .ui-def-ingrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .ui-def-mini {
+    border: 1px solid var(--border-mid);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text-primary);
+    padding: 0.2rem 0.55rem;
+    font-family: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .ui-def-mini:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .ui-def-row-error {
+    border: 1px solid rgba(220, 80, 80, 0.45);
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+  }
+
+  .ui-def-reserved {
+    font-size: 0.75rem;
+    color: rgb(180, 130, 30);
+  }
+
+  .ui-def-choices {
+    margin-top: 0.6rem;
+    display: grid;
+    gap: 0.4rem;
+    border-top: 1px dashed var(--border);
+    padding-top: 0.6rem;
+  }
+
+  .ui-def-choice {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) repeat(3, auto);
+    gap: 0.35rem;
+    align-items: center;
+  }
+
+  .ui-def-raw {
+    margin-top: 1rem;
+  }
+
+  .ui-def-raw summary {
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+  }
+
+  .ui-def-raw[open] summary {
+    margin-bottom: 0.5rem;
+  }
+
+  @media (max-width: 720px) {
+    .ui-def-ingrid,
+    .ui-def-choice {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 </style>
 <div class="ui-def-edit" id="task-definition-editor">
   <div class="ui-def-edit-head">
@@ -445,6 +552,277 @@
     </form>
   </section>
 
+  {{template "task-definition-inputs-card" .}}
+
   <p class="ui-def-back"><a href="/task-definitions">Back to the list</a></p>
 </div>
+<script nonce="{{.CSPNonce}}">
+(function () {
+  var rows = document.getElementById("inputs-rows");
+  if (!rows) {
+    return;
+  }
+
+  function renumber() {
+    var items = rows.querySelectorAll("[data-input-row]");
+    for (var i = 0; i < items.length; i++) {
+      var position = items[i].querySelector("[data-row-pos]");
+      if (position) {
+        position.textContent = String(i + 1);
+      }
+    }
+  }
+
+  function typeControl(row) {
+    return row.querySelector("select[name^='data_type__']");
+  }
+
+  function syncChoices(row) {
+    var box = row.querySelector("[data-choices]");
+    if (!box) {
+      return;
+    }
+    var select = typeControl(row);
+    var on = !!select && select.value === "choice";
+    box.hidden = !on;
+    var controls = box.querySelectorAll("input, button");
+    for (var i = 0; i < controls.length; i++) {
+      controls[i].disabled = !on;
+    }
+  }
+
+  function syncDefaultNote(row) {
+    var control = row.querySelector("[name^='default_value__']");
+    var note = row.querySelector("[data-default-note]");
+    if (control && note) {
+      note.hidden = control.value.trim() === "";
+    }
+  }
+
+  function syncReserved(row) {
+    var input = row.querySelector("input[name^='name__']");
+    var name = input ? input.value.trim() : "";
+    var notes = row.querySelectorAll("[data-reserved-note]");
+    for (var i = 0; i < notes.length; i++) {
+      notes[i].hidden = notes[i].getAttribute("data-reserved-note") !== name;
+    }
+  }
+
+  function sync(row) {
+    syncChoices(row);
+    syncDefaultNote(row);
+    syncReserved(row);
+  }
+
+  function addChoice(row) {
+    var template = document.getElementById("task-input-choice-template");
+    var list = row.querySelector("[data-choices]");
+    var token = row.querySelector("input[name='row_order']");
+    if (!template || !list || !token) {
+      return;
+    }
+    var html = template.innerHTML.split("__TOKEN__").join(token.value);
+    list.insertAdjacentHTML("beforeend", html);
+    syncChoices(row);
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-row-action]");
+    if (!button || button.disabled) {
+      return;
+    }
+    event.preventDefault();
+    var action = button.getAttribute("data-row-action");
+    var row = button.closest("[data-input-row]");
+    if (action === "add-choice") {
+      if (row) {
+        addChoice(row);
+      }
+      return;
+    }
+    var choice = button.closest("[data-choice]");
+    if (choice) {
+      if (action === "choice-remove") {
+        choice.remove();
+      } else if (action === "choice-up" && choice.previousElementSibling) {
+        choice.parentNode.insertBefore(choice, choice.previousElementSibling);
+      } else if (action === "choice-down" && choice.nextElementSibling) {
+        choice.parentNode.insertBefore(choice.nextElementSibling, choice);
+      }
+      return;
+    }
+    if (!row) {
+      return;
+    }
+    if (action === "remove") {
+      row.remove();
+      renumber();
+    } else if (action === "up" && row.previousElementSibling) {
+      row.parentNode.insertBefore(row, row.previousElementSibling);
+      renumber();
+    } else if (action === "down" && row.nextElementSibling) {
+      row.parentNode.insertBefore(row.nextElementSibling, row);
+      renumber();
+    }
+  });
+
+  rows.addEventListener("input", function (event) {
+    var row = event.target.closest("[data-input-row]");
+    if (row) {
+      sync(row);
+    }
+  });
+  rows.addEventListener("change", function (event) {
+    var row = event.target.closest("[data-input-row]");
+    if (row) {
+      sync(row);
+    }
+  });
+  rows.addEventListener("htmx:afterSwap", function () {
+    var items = rows.querySelectorAll("[data-input-row]");
+    for (var i = 0; i < items.length; i++) {
+      sync(items[i]);
+    }
+    renumber();
+  });
+
+  var initial = rows.querySelectorAll("[data-input-row]");
+  for (var i = 0; i < initial.length; i++) {
+    sync(initial[i]);
+  }
+  renumber();
+})();
+</script>
+{{end}}
+
+{{define "task-definition-input-row"}}
+<li class="ui-def-inrow" data-input-row>
+  <input type="hidden" name="row_order" value="{{.Token}}" />
+  <input type="hidden" name="original_name__{{.Token}}" value="{{.Field.Name}}" />
+  <div class="ui-def-inrow-head">
+    <span class="ui-def-inrow-pos" data-row-pos>{{.Position}}</span>
+    <span class="ui-def-inrow-actions">
+      <button class="ui-def-mini" type="button" data-row-action="up">Move up</button>
+      <button class="ui-def-mini" type="button" data-row-action="down">Move down</button>
+      <button class="ui-def-mini" type="button" data-row-action="remove">Remove row</button>
+    </span>
+  </div>
+  {{if .Error}}<div class="ui-def-row-error" role="alert" data-row-error="{{.Token}}">{{.Error}}</div>{{end}}
+  <div class="ui-def-ingrid">
+    <label class="ui-def-field">
+      <span class="ui-def-label">Name</span>
+      <input class="ui-def-input" type="text" name="name__{{.Token}}" value="{{.Field.Name}}" autocomplete="off" />
+      <span class="ui-def-help">Letters, digits and underscores; may not start with an underscore.</span>
+      <span class="ui-def-reserved" data-reserved-note="body"{{if ne .Field.Name "body"}} hidden{{end}}>body: Folded into the instance description</span>
+      <span class="ui-def-reserved" data-reserved-note="priority"{{if ne .Field.Name "priority"}} hidden{{end}}>priority: Sets the task priority, falling back to the default when not one of the allowed values</span>
+      <span class="ui-def-reserved" data-reserved-note="window_start"{{if ne .Field.Name "window_start"}} hidden{{end}}>window_start: Parsed as the planned start; an unparseable value is ignored</span>
+    </label>
+    <label class="ui-def-field">
+      <span class="ui-def-label">Label</span>
+      <input class="ui-def-input" type="text" name="label__{{.Token}}" value="{{.Field.Label}}" autocomplete="off" />
+      <span class="ui-def-help">Shown to the requester. Left blank, the name is humanised.</span>
+    </label>
+    <label class="ui-def-field">
+      <span class="ui-def-label">Data type</span>
+      {{if .TypeOffered}}
+        <select class="ui-def-input" name="data_type__{{.Token}}">
+          {{range .Types}}<option value="{{.}}"{{if eq . $.Field.DataType}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      {{else}}
+        <input class="ui-def-input" type="text" name="data_type__{{.Token}}" value="{{.Field.DataType}}" readonly />
+        <span class="ui-def-help">Renders as a plain text input; edit in Raw YAML.</span>
+      {{end}}
+    </label>
+    <div class="ui-def-field">
+      {{if .RequiredOffered}}
+        <label class="ui-def-check">
+          <input type="checkbox" name="required__{{.Token}}" value="yes"{{if .Required}} checked{{end}} />
+          <span>Required</span>
+        </label>
+      {{else}}
+        <span class="ui-def-help">Booleans are answered yes/no; required has no effect.</span>
+      {{end}}
+    </div>
+    <label class="ui-def-field">
+      <span class="ui-def-label">Default value</span>
+      {{if .DefaultIsBoolean}}
+        <select class="ui-def-input" name="default_value__{{.Token}}">
+          <option value=""{{if eq .Field.DefaultValue ""}} selected{{end}}>No default</option>
+          <option value="yes"{{if eq .Field.DefaultValue "yes"}} selected{{end}}>Yes</option>
+          <option value="no"{{if eq .Field.DefaultValue "no"}} selected{{end}}>No</option>
+          {{if .StoredDefaultUnusual}}<option value="{{.Field.DefaultValue}}" selected>{{.Field.DefaultValue}}</option>{{end}}
+        </select>
+      {{else}}
+        <input class="ui-def-input" type="text" name="default_value__{{.Token}}" value="{{.Field.DefaultValue}}" autocomplete="off" />
+      {{end}}
+      <span class="ui-def-help" data-default-note{{if eq .Field.DefaultValue ""}} hidden{{end}}>A default makes this optional at request time</span>
+    </label>
+    <label class="ui-def-field">
+      <span class="ui-def-label">Help text</span>
+      <textarea class="ui-def-input" name="help_text__{{.Token}}" rows="2">{{.Field.HelpText}}</textarea>
+    </label>
+  </div>
+  <div class="ui-def-choices" data-choices{{if ne .Field.DataType "choice"}} hidden{{end}}>
+    <span class="ui-def-label">Choices</span>
+    {{range .Field.Choices}}
+      <div class="ui-def-choice" data-choice>
+        <input class="ui-def-input" type="text" name="choice_value__{{$.Token}}" value="{{.Value}}" placeholder="value" aria-label="Choice value"{{if ne $.Field.DataType "choice"}} disabled{{end}} />
+        <input class="ui-def-input" type="text" name="choice_label__{{$.Token}}" value="{{.Label}}" placeholder="Label" aria-label="Choice label"{{if ne $.Field.DataType "choice"}} disabled{{end}} />
+        <button class="ui-def-mini" type="button" data-row-action="choice-up"{{if ne $.Field.DataType "choice"}} disabled{{end}}>Move up</button>
+        <button class="ui-def-mini" type="button" data-row-action="choice-down"{{if ne $.Field.DataType "choice"}} disabled{{end}}>Move down</button>
+        <button class="ui-def-mini" type="button" data-row-action="choice-remove"{{if ne $.Field.DataType "choice"}} disabled{{end}}>Remove</button>
+      </div>
+    {{end}}
+    <button class="ui-def-mini" type="button" data-row-action="add-choice"{{if ne .Field.DataType "choice"}} disabled{{end}}>Add choice</button>
+  </div>
+</li>
+{{end}}
+
+{{define "task-definition-inputs-card"}}
+<section class="ui-def-card" id="inputs">
+  <h2 class="ui-def-card-title">Inputs</h2>
+  <p class="ui-def-help">The requester's form. Rows are in declaration order, which is the order the catalog asks for them.</p>
+  {{if .Inputs.Error}}<div class="ui-def-error" role="alert">{{.Inputs.Error}}</div>{{end}}
+  {{if .Inputs.Notice}}<p class="ui-def-help" role="status">{{.Inputs.Notice}}</p>{{end}}
+  {{if .Inputs.Offered}}
+    <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/inputs">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <p class="ui-def-help">Saving this form rewrites <code>input_schema_yaml</code>: YAML comments are discarded.</p>
+      {{if .Inputs.Rows}}
+        <ol class="ui-def-inrows" id="inputs-rows">
+          {{range .Inputs.Rows}}{{template "task-definition-input-row" .}}{{end}}
+        </ol>
+      {{else}}
+        <ol class="ui-def-inrows" id="inputs-rows"></ol>
+        <p class="ui-def-help">This definition declares no inputs.</p>
+      {{end}}
+      <div class="ui-def-actions">
+        <button class="ui-def-mini" type="button" hx-get="/task-definitions/{{.Definition.Slug}}/inputs/rows/new" hx-target="#inputs-rows" hx-swap="beforeend">Add row</button>
+        <button class="ui-def-button" type="submit">Save inputs</button>
+      </div>
+      <template id="task-input-choice-template">
+        <div class="ui-def-choice" data-choice>
+          <input class="ui-def-input" type="text" name="choice_value____TOKEN__" value="" placeholder="value" aria-label="Choice value" />
+          <input class="ui-def-input" type="text" name="choice_label____TOKEN__" value="" placeholder="Label" aria-label="Choice label" />
+          <button class="ui-def-mini" type="button" data-row-action="choice-up">Move up</button>
+          <button class="ui-def-mini" type="button" data-row-action="choice-down">Move down</button>
+          <button class="ui-def-mini" type="button" data-row-action="choice-remove">Remove</button>
+        </div>
+      </template>
+    </form>
+  {{else}}
+    <div class="ui-def-error" role="alert">The row editor is not offered: this document {{.Inputs.Reason}}.</div>
+  {{end}}
+  <details class="ui-def-raw"{{if or (not .Inputs.Offered) .Inputs.RawError .Inputs.RawNotice}} open{{end}}>
+    <summary>Raw YAML</summary>
+    <p class="ui-def-help">Saving this form discards YAML comments. It is the escape hatch: any key and any data_type are accepted here.</p>
+    {{if .Inputs.RawError}}<div class="ui-def-error" role="alert">{{.Inputs.RawError}}</div>{{end}}
+    {{if .Inputs.RawNotice}}<p class="ui-def-help" role="status">{{.Inputs.RawNotice}}</p>{{end}}
+    <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/inputs/raw">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <textarea class="ui-def-input" name="input_schema_yaml" rows="10" spellcheck="false">{{.Inputs.RawYAML}}</textarea>
+      <div class="ui-def-actions"><button class="ui-def-button" type="submit">Save raw YAML</button></div>
+    </form>
+  </details>
+</section>
 {{end}}

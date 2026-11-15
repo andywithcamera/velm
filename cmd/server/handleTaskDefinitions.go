@@ -177,6 +177,8 @@ func renderEditorPage(w http.ResponseWriter, r *http.Request, row db.TaskDefinit
 	viewData["View"] = "task-definition-editor"
 	viewData["Definition"] = row
 	viewData["BasicsError"] = reason
+	viewData["Inputs"] = buildTaskInputsView(row)
+	viewData["InputTypes"] = taskInputDataTypeOptions
 	writeTaskDefinitionPage(w, "layout.html", viewData, status)
 }
 

@@ -219,6 +219,25 @@ func CreateTaskDefinition(ctx context.Context, slug, displayName, description st
 	return row, nil
 }
 
+// UpdateTaskDefinitionInputSchema writes the requester form's YAML exactly as
+// given. The caller has already run one of the two validators: the row editor's
+// lossless gate and ParseTaskInputSchema, or a raw save's ParseTaskInputSchema
+// alone (AC-37). This helper adds no rules of its own, so there is only ever one
+// set of them.
+func UpdateTaskDefinitionInputSchema(ctx context.Context, slug, raw string) error {
+	tag, err := Pool.Exec(ctx, `
+		UPDATE base_task_definition
+		SET input_schema_yaml = $2, _updated_at = NOW()
+		WHERE slug = $1 AND _deleted_at IS NULL`, strings.TrimSpace(slug), raw)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTaskDefinitionNotFound
+	}
+	return nil
+}
+
 // UpdateTaskDefinitionBasics writes the four editable columns of the basics
 // section. The slug is deliberately not among them: it is the stable reference
 // other definitions and spawn rules hold.

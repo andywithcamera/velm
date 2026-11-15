@@ -114,7 +114,13 @@ func TestTaskDefinitionTemplatesParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse templates: %v", err)
 	}
-	for _, name := range []string{"task-definitions-view", "task-definition-new-view", "task-definition-editor-view"} {
+	for _, name := range []string{
+		"task-definitions-view",
+		"task-definition-new-view",
+		"task-definition-editor-view",
+		"task-definition-input-row",
+		"task-definition-inputs-card",
+	} {
 		if parsed.Lookup(name) == nil {
 			t.Errorf("template %q is not defined", name)
 		}
@@ -128,11 +134,14 @@ func TestTaskDefinitionRoutesRequireTheirStatedPermission(t *testing.T) {
 	routes := parseRegisteredRoutes(t)
 
 	expected := map[string]accessClass{
-		"GET /task-definitions":                accessView,
-		"POST /task-definitions":               accessWrite,
-		"GET /task-definitions/new":            accessView,
-		"GET /task-definitions/{slug}":         accessView,
-		"POST /task-definitions/{slug}/basics": accessWrite,
+		"GET /task-definitions":                        accessView,
+		"POST /task-definitions":                       accessWrite,
+		"GET /task-definitions/new":                    accessView,
+		"GET /task-definitions/{slug}":                 accessView,
+		"POST /task-definitions/{slug}/basics":         accessWrite,
+		"GET /task-definitions/{slug}/inputs/rows/new": accessView,
+		"POST /task-definitions/{slug}/inputs":         accessWrite,
+		"POST /task-definitions/{slug}/inputs/raw":     accessWrite,
 	}
 	for pattern, want := range expected {
 		if got := routeAccess[pattern]; got != want {
@@ -188,7 +197,12 @@ func TestTaskDefinitionWriteRoutesCarryCSRF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read routes.go: %v", err)
 	}
-	for _, pattern := range []string{"POST /task-definitions", "POST /task-definitions/{slug}/basics"} {
+	for _, pattern := range []string{
+		"POST /task-definitions",
+		"POST /task-definitions/{slug}/basics",
+		"POST /task-definitions/{slug}/inputs",
+		"POST /task-definitions/{slug}/inputs/raw",
+	} {
 		found := false
 		for _, line := range strings.Split(string(source), "\n") {
 			if !strings.Contains(line, `"`+pattern+`"`) {
