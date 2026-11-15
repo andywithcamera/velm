@@ -169,7 +169,10 @@
 
 .ui-task-board-scroll {
   overflow-x: auto;
-  padding: 0.15rem 0.85rem 0.85rem;
+  /* The lanes used to sit 2.4px under the action bar's rule, which read as the
+     lane tops colliding with the line above rather than as a deliberate gap.
+     0.5rem is the same step the toolbar uses between its own rows. */
+  padding: 0.5rem 0.85rem 0.85rem;
   scroll-padding-inline: 0.85rem;
 }
 
@@ -417,6 +420,52 @@
 /* Empty lanes keep a drop target with no placeholder box. */
 .ui-task-board-lane-body {
   min-height: 4rem;
+}
+
+/* A five-card board stops a third of the way down the window and leaves the
+   rest of the page blank, which reads as a rendering fault rather than as a
+   short list. Above the lane-switcher breakpoint the board takes whatever
+   height is left: the shell, its section and its panel become flex columns so
+   the lane grid can grow, and the lanes stretch with the row. Below the
+   breakpoint the lanes stack one at a time, where stretching would hand a
+   single lane a screenful of empty box — so this applies to the side-by-side
+   layout only. */
+@media (min-width: 721px) {
+  .ui-main-shell:has(#taskBoard) {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* `flex: 1 0 auto`, not `1 1 auto`: shrink is off so a board with more cards
+     than the window grows the page. With shrink on, the strip would absorb the
+     overflow into its own vertical scrollbar, which `overflow-x: auto` already
+     forces on it. */
+  .ui-main-shell:has(#taskBoard) > #taskBoard,
+  #taskBoard > .ui-panel {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+  }
+
+  /* The grid is the flex item that grows. `min-height: 100%` on it does not
+     work: the percentage resolves against a flex-sized parent and falls back to
+     auto, which is what left the board its content height. */
+  .ui-task-board-scroll {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .ui-task-board-grid {
+    flex: 1 0 auto;
+    /* One implicit row, told to take the whole grid height: the lanes are the
+       row's items, and `align-items: stretch` only stretches them to their
+       track, so a track that stays auto-sized leaves them short. `1fr` is
+       `minmax(auto, 1fr)`, so a full board still pushes the row past the
+       viewport instead of clipping it. */
+    grid-auto-rows: 1fr;
+  }
 }
 
 /* ─── Lane switcher (mobile) ────────────────────────────────── */

@@ -23,6 +23,16 @@
   gap: var(--sp-2);
 }
 
+/* The action cluster — search, notifications, account — belongs on the right
+   edge of the bar. It is the bar's middle child, so it lands in the flexible
+   column; left to itself it packs against the brand and the whole bar reads as
+   left-loaded with an empty right half. Spanning to the last column puts its
+   right edge on the bar's own padding rather than a column gap. */
+.ui-topnav-actions {
+  grid-column: 2 / 4;
+  justify-content: flex-end;
+}
+
 .ui-topnav-center {
   display: flex;
   justify-content: center;
