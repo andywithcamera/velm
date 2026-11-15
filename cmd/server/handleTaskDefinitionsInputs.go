@@ -144,11 +144,11 @@ func newTaskInputRowView() taskInputRowView {
 // renderEditorWithInputs renders the whole editor against the submitted inputs
 // section. A refusal therefore keeps the author's rows on screen.
 func renderEditorWithInputs(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, status int, inputs taskInputsView) {
-	viewData := newViewData(w, r, "/task-definitions/"+row.Slug, row.DisplayName, "Operations")
-	viewData["View"] = "task-definition-editor"
-	viewData["Definition"] = row
+	viewData, ok := editorViewData(w, r, row)
+	if !ok {
+		return
+	}
 	viewData["Inputs"] = inputs
-	viewData["InputTypes"] = taskInputDataTypeOptions
 	writeTaskDefinitionPage(w, "layout.html", viewData, status)
 }
 

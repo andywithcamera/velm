@@ -173,13 +173,33 @@ func handleTaskDefinitionEditor(w http.ResponseWriter, r *http.Request) {
 }
 
 func renderEditorPage(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, status int, reason string) {
+	viewData, ok := editorViewData(w, r, row)
+	if !ok {
+		return
+	}
+	viewData["BasicsError"] = reason
+	writeTaskDefinitionPage(w, "layout.html", viewData, status)
+}
+
+// editorViewData builds the sections every editor render needs: basics, inputs,
+// outputs and the stepper. The stepper is a database read, so it can fail; the
+// 500 is written here rather than halfway through a template.
+func editorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow) (map[string]any, bool) {
+	steps, err := buildStepsView(r.Context(), row)
+	if err != nil {
+		log.Printf("task definition %q steps load failed: %v", row.Slug, err)
+		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
+		return nil, false
+	}
 	viewData := newViewData(w, r, "/task-definitions/"+row.Slug, row.DisplayName, "Operations")
 	viewData["View"] = "task-definition-editor"
 	viewData["Definition"] = row
-	viewData["BasicsError"] = reason
 	viewData["Inputs"] = buildTaskInputsView(row)
 	viewData["InputTypes"] = taskInputDataTypeOptions
-	writeTaskDefinitionPage(w, "layout.html", viewData, status)
+	viewData["Outputs"] = buildOutputsView(row.VariablesYAML)
+	stampStepTokens(&steps, viewData["CSRFToken"].(string))
+	viewData["Steps"] = steps
+	return viewData, true
 }
 
 func writeTaskDefinitionPage(w http.ResponseWriter, name string, viewData map[string]any, status int) {

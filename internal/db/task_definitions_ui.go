@@ -39,7 +39,10 @@ type TaskDefinitionRow struct {
 	IsContainer     bool
 	IsActive        bool
 	InputSchemaYAML string
-	ChildCount      int
+	// VariablesYAML is the declaration column the outputs list reads. Only its
+	// outputs: list is used by the engine today.
+	VariablesYAML string
+	ChildCount    int
 }
 
 // InputCount is the number of declared requester inputs. A schema that fails to
@@ -61,14 +64,19 @@ type TaskDefinitionStep struct {
 	ChildSlug         string
 	ChildDisplayName  string
 	ChildDeleted      bool
-	SortOrder         int
-	DependsOn         []string
-	DependsOnReason   string
-	InputMapping      map[string]string
+	// ChildInputSchemaYAML is the child's requester form. The step editor uses
+	// it to name the mapping keys and to decide whether a key can be checked at
+	// all (AC-59, AC-60); it is joined here so the editor stays one query.
+	ChildInputSchemaYAML string
+	SortOrder            int
+	DependsOn            []string
+	DependsOnReason      string
+	InputMapping         map[string]string
 }
 
 const taskDefinitionColumns = `d._id::text, d.slug, d.display_name, d.description,
-	d.is_container, d.is_active, COALESCE(d.input_schema_yaml, '')`
+	d.is_container, d.is_active, COALESCE(d.input_schema_yaml, ''),
+	COALESCE(d.variables_yaml, '')`
 
 // escapeLike makes a user's search text a literal needle rather than a pattern:
 // without this, typing "%" matches every definition and typing "_" matches any
@@ -105,7 +113,7 @@ func ListTaskDefinitionRows(ctx context.Context, query string) ([]TaskDefinition
 	for rows.Next() {
 		var row TaskDefinitionRow
 		if err := rows.Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.ChildCount); err != nil {
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &row.ChildCount); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -124,7 +132,7 @@ func GetTaskDefinitionBySlug(ctx context.Context, slug string) (TaskDefinitionRo
 		FROM base_task_definition d
 		WHERE d.slug = $1 AND d._deleted_at IS NULL`, strings.TrimSpace(slug)).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.ChildCount)
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &row.ChildCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TaskDefinitionRow{}, ErrTaskDefinitionNotFound
 	}
@@ -144,6 +152,7 @@ func ListDefinitionSteps(ctx context.Context, definitionID string) ([]TaskDefini
 	rows, err := Pool.Query(ctx, `
 		SELECT c.child_definition_id::text, child.slug, child.display_name,
 		       (child._deleted_at IS NOT NULL),
+		       COALESCE(child.input_schema_yaml, ''),
 		       c.sort_order,
 		       COALESCE(c.depends_on::text[], ARRAY[]::text[]),
 		       COALESCE(c.depends_on_reason, ''),
@@ -162,7 +171,7 @@ func ListDefinitionSteps(ctx context.Context, definitionID string) ([]TaskDefini
 		var step TaskDefinitionStep
 		var mapping []byte
 		if err := rows.Scan(&step.ChildDefinitionID, &step.ChildSlug, &step.ChildDisplayName,
-			&step.ChildDeleted, &step.SortOrder, &step.DependsOn,
+			&step.ChildDeleted, &step.ChildInputSchemaYAML, &step.SortOrder, &step.DependsOn,
 			&step.DependsOnReason, &mapping); err != nil {
 			return nil, err
 		}
@@ -208,7 +217,7 @@ func CreateTaskDefinition(ctx context.Context, slug, displayName, description st
 		RETURNING `+strings.ReplaceAll(taskDefinitionColumns, "d.", "")+`, 0`,
 		strings.TrimSpace(slug), strings.TrimSpace(displayName), strings.TrimSpace(description), isContainer).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.ChildCount)
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &row.ChildCount)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_base_task_definition_slug_live" {

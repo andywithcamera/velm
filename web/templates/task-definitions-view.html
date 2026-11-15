@@ -507,9 +507,125 @@
     margin-bottom: 0.5rem;
   }
 
+  .ui-def-steps {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+    counter-reset: step;
+  }
+
+  .ui-def-step {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    background: var(--bg-base);
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .ui-def-step-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: baseline;
+  }
+
+  .ui-def-step-pos {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  .ui-def-step-name {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .ui-def-step-name code,
+  .ui-def-step-order {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    font-weight: 400;
+  }
+
+  .ui-def-step-meta {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.2rem 0.75rem;
+    margin: 0;
+    font-size: 0.85rem;
+  }
+
+  .ui-def-step-meta dt {
+    color: var(--text-secondary);
+  }
+
+  .ui-def-step-meta dd {
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .ui-def-map-read {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.15rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+  }
+
+  .ui-def-step-forms {
+    display: grid;
+    gap: 0.6rem;
+    border-top: 1px dashed var(--border);
+    padding-top: 0.6rem;
+  }
+
+  .ui-def-step-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+  }
+
+  .ui-def-sibling {
+    display: inline-flex;
+    gap: 0.25rem;
+    align-items: center;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    margin-right: 0.75rem;
+  }
+
+  .ui-def-mapgrid {
+    display: grid;
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr);
+    gap: 0.4rem 0.6rem;
+    align-items: center;
+  }
+
+  .ui-def-warning {
+    font-size: 0.78rem;
+    color: rgb(180, 130, 30);
+  }
+
+  .ui-def-outputs {
+    margin: 0;
+    padding-left: 1.1rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+  }
+
   @media (max-width: 720px) {
     .ui-def-ingrid,
-    .ui-def-choice {
+    .ui-def-choice,
+    .ui-def-mapgrid {
       grid-template-columns: minmax(0, 1fr);
     }
   }
@@ -553,6 +669,10 @@
   </section>
 
   {{template "task-definition-inputs-card" .}}
+
+  {{template "task-definition-outputs-card" .}}
+
+  {{template "task-definition-steps-card" .}}
 
   <p class="ui-def-back"><a href="/task-definitions">Back to the list</a></p>
 </div>
@@ -825,4 +945,177 @@
     </form>
   </details>
 </section>
+{{end}}
+
+{{define "task-definition-outputs-card"}}
+<section class="ui-def-card" id="outputs">
+  <h2 class="ui-def-card-title">Outputs</h2>
+  <p class="ui-def-help">A container re-declares here what it re-exports upward: the names under <code>outputs:</code> in <code>variables_yaml</code> are its contract with its caller.</p>
+  {{if .Outputs.ParseError}}<div class="ui-def-error" role="alert">variables_yaml does not parse: {{.Outputs.ParseError}}</div>{{end}}
+  {{if .Outputs.Outputs}}
+    <ul class="ui-def-outputs">
+      {{range .Outputs.Outputs}}<li>{{.}}</li>{{end}}
+    </ul>
+  {{else}}
+    <p class="ui-def-help">This definition declares no outputs.</p>
+  {{end}}
+  {{if or .Outputs.Inputs .Outputs.Locals}}
+    <div class="ui-def-readonly">
+      <p class="ui-def-help">Read-only: <code>inputs:</code> and <code>locals:</code> in this column are read by nothing today — the engine uses only <code>outputs:</code>.</p>
+      {{if .Outputs.Inputs}}<p class="ui-def-help">inputs: {{range .Outputs.Inputs}}<code>{{.}}</code> {{end}}</p>{{end}}
+      {{if .Outputs.Locals}}<p class="ui-def-help">locals: {{range .Outputs.Locals}}<code>{{.}}</code> {{end}}</p>{{end}}
+    </div>
+  {{end}}
+</section>
+{{end}}
+
+{{define "task-definition-steps-card"}}
+<section class="ui-def-card" id="steps">
+  <h2 class="ui-def-card-title">Steps</h2>
+  {{if .Steps.Container}}
+    <p class="ui-def-help">Steps run in this order. A step opens when every step it depends on has closed for the reason given.</p>
+  {{else}}
+    <p class="ui-def-help">This definition has no steps; it does no work itself.</p>
+  {{end}}
+  {{if .Steps.Container}}{{template "task-definition-stepper" .}}{{end}}
+</section>
+{{end}}
+
+{{define "task-definition-step-errors"}}
+{{if .Steps.Error}}<div class="ui-def-error" role="alert">{{.Steps.Error}}</div>{{end}}
+{{end}}
+
+{{define "task-definition-stepper"}}
+<div id="step-stepper">
+  <div id="step-errors" role="alert">{{template "task-definition-step-errors" .}}</div>
+  {{if .Steps.Notice}}<p class="ui-def-help" role="status">{{.Steps.Notice}}</p>{{end}}
+  {{if .Steps.Warning}}<p class="ui-def-warning" role="status">{{.Steps.Warning}}</p>{{end}}
+  {{if .Steps.Container}}
+    {{if .Steps.Steps}}
+      <ol class="ui-def-steps" id="step-list">
+        {{range .Steps.Steps}}{{template "task-definition-step" .}}{{end}}
+      </ol>
+    {{else}}
+      <ol class="ui-def-steps" id="step-list"></ol>
+      <p class="ui-def-help">No steps yet.</p>
+    {{end}}
+    <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/steps" hx-post="/task-definitions/{{.Definition.Slug}}/steps" hx-target="#step-stepper" hx-swap="outerHTML">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <div class="ui-def-step-actions">
+        <label class="ui-def-field">
+          <span class="ui-def-label">Add a step</span>
+          <select class="ui-def-input" name="child_slug">
+            <option value="">Choose a definition…</option>
+            {{range .Steps.Candidates}}<option value="{{.Slug}}">{{.DisplayName}} ({{.Slug}})</option>{{end}}
+          </select>
+        </label>
+        <button class="ui-def-button" type="submit">Add step</button>
+      </div>
+    </form>
+  {{end}}
+</div>
+{{end}}
+
+{{define "task-definition-step"}}
+{{$step := .}}
+<li class="ui-def-step" id="step-{{.Slug}}" data-step="{{.Slug}}">
+  <div class="ui-def-step-head">
+    <span class="ui-def-step-pos">#{{.Position}}</span>
+    <span class="ui-def-step-name">{{.DisplayName}} <code>{{.Slug}}</code></span>
+    <span class="ui-def-step-order">sort_order {{.SortOrder}}</span>
+  </div>
+  {{if .Deleted}}
+    <div class="ui-def-row-error" role="alert">This definition has been deleted — remove this step</div>
+    <form class="ui-def-step-actions" method="post" action="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/remove" hx-post="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/remove" hx-target="#step-stepper" hx-swap="outerHTML">
+      <input type="hidden" name="csrf_token" value="{{$step.CSRFToken}}" />
+      <button class="ui-def-mini" type="submit">Remove step</button>
+    </form>
+  {{else}}
+    <dl class="ui-def-step-meta">
+      <dt>Depends on</dt>
+      <dd>{{if .DependsOn}}{{range .DependsOn}}#{{.Position}} <code>{{.Slug}}</code>{{if .Missing}} (not in this container){{end}} {{end}}{{else}}— nothing; it opens with the container{{end}}</dd>
+      <dt>Waits for</dt>
+      <dd>{{if .DependsOnReason}}<code>{{.DependsOnReason}}</code>{{else}}— any successful close{{end}}</dd>
+    </dl>
+
+    <div class="ui-def-step-map">
+      <span class="ui-def-label">Input mapping</span>
+      {{if .Mapping}}
+        <ul class="ui-def-map-read">
+          {{range .Mapping}}<li>{{.Name}} → {{.Value}}</li>{{end}}
+        </ul>
+      {{else}}
+        <p class="ui-def-help">No inputs mapped.</p>
+      {{end}}
+      {{if .UnknownMapping}}
+        <p class="ui-def-help">Stored keys this definition does not declare, kept as they are:</p>
+        <ul class="ui-def-map-read">
+          {{range .UnknownMapping}}<li>{{.Name}} → {{.Value}}</li>{{end}}
+        </ul>
+      {{end}}
+      {{if .MappingUnchecked}}<p class="ui-def-warning" role="status">This definition declares no inputs; keys cannot be checked.</p>{{end}}
+    </div>
+
+    <div class="ui-def-step-forms">
+      <div class="ui-def-step-actions">
+        <form method="post" action="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/move" hx-post="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/move" hx-target="#step-stepper" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$step.CSRFToken}}" />
+          <input type="hidden" name="direction" value="up" />
+          <button class="ui-def-mini" type="submit">Move up</button>
+        </form>
+        <form method="post" action="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/move" hx-post="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/move" hx-target="#step-stepper" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$step.CSRFToken}}" />
+          <input type="hidden" name="direction" value="down" />
+          <button class="ui-def-mini" type="submit">Move down</button>
+        </form>
+        <form method="post" action="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/remove" hx-post="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/remove" hx-target="#step-stepper" hx-swap="outerHTML">
+          <input type="hidden" name="csrf_token" value="{{$step.CSRFToken}}" />
+          <button class="ui-def-mini" type="submit">Remove step</button>
+        </form>
+      </div>
+
+      <form class="ui-def-form" method="post" action="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/depends" hx-post="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/depends" hx-target="#step-stepper" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{$step.CSRFToken}}" />
+        <span class="ui-def-label">Depends on</span>
+        {{if .Siblings}}
+          <div>
+            {{range .Siblings}}
+              <label class="ui-def-sibling">
+                <input type="checkbox" name="depends_on" value="{{.Slug}}"{{if .Checked}} checked{{end}} />
+                <span>#{{.Position}} {{.Slug}}</span>
+              </label>
+            {{end}}
+          </div>
+        {{else}}
+          <p class="ui-def-help">This is the only step; there is nothing to wait on.</p>
+        {{end}}
+        <label class="ui-def-field">
+          <span class="ui-def-label">Waits for the dependency to close as</span>
+          <select class="ui-def-input" name="depends_on_reason">
+            <option value=""{{if eq .DependsOnReason ""}} selected{{end}}>Any successful close</option>
+            {{range .Reasons}}<option value="{{.}}"{{if eq . $step.DependsOnReason}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+        </label>
+        <div class="ui-def-step-actions"><button class="ui-def-button" type="submit">Save dependency</button></div>
+      </form>
+
+      <form class="ui-def-form" method="post" action="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/mapping" hx-post="/task-definitions/{{$step.ContainerSlug}}/steps/{{.Slug}}/mapping" hx-target="#step-stepper" hx-swap="outerHTML">
+        <input type="hidden" name="csrf_token" value="{{$step.CSRFToken}}" />
+        <span class="ui-def-label">Input mapping: child input → source</span>
+        {{if .Mapping}}
+          <div class="ui-def-mapgrid">
+            {{range .Mapping}}
+              <label class="ui-def-help" for="map-{{$step.Slug}}-{{.Name}}">{{.Name}}</label>
+              <input class="ui-def-input" id="map-{{$step.Slug}}-{{.Name}}" type="text" name="mapping__{{.Name}}" value="{{.Value}}" autocomplete="off" placeholder="$inputs.name, $outputs.step.name or a literal" />
+            {{end}}
+          </div>
+        {{else}}
+          <p class="ui-def-help">This definition declares no inputs, so there is nothing to map. Saving keeps any key already stored.</p>
+        {{end}}
+        <p class="ui-def-help">An empty source removes the mapping. Values are stored exactly as typed.</p>
+        <div class="ui-def-step-actions"><button class="ui-def-button" type="submit">Save mapping</button></div>
+      </form>
+    </div>
+  {{end}}
+</li>
 {{end}}

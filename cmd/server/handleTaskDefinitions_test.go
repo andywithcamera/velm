@@ -120,6 +120,11 @@ func TestTaskDefinitionTemplatesParse(t *testing.T) {
 		"task-definition-editor-view",
 		"task-definition-input-row",
 		"task-definition-inputs-card",
+		"task-definition-outputs-card",
+		"task-definition-steps-card",
+		"task-definition-stepper",
+		"task-definition-step",
+		"task-definition-step-errors",
 	} {
 		if parsed.Lookup(name) == nil {
 			t.Errorf("template %q is not defined", name)
@@ -134,14 +139,19 @@ func TestTaskDefinitionRoutesRequireTheirStatedPermission(t *testing.T) {
 	routes := parseRegisteredRoutes(t)
 
 	expected := map[string]accessClass{
-		"GET /task-definitions":                        accessView,
-		"POST /task-definitions":                       accessWrite,
-		"GET /task-definitions/new":                    accessView,
-		"GET /task-definitions/{slug}":                 accessView,
-		"POST /task-definitions/{slug}/basics":         accessWrite,
-		"GET /task-definitions/{slug}/inputs/rows/new": accessView,
-		"POST /task-definitions/{slug}/inputs":         accessWrite,
-		"POST /task-definitions/{slug}/inputs/raw":     accessWrite,
+		"GET /task-definitions":                                    accessView,
+		"POST /task-definitions":                                   accessWrite,
+		"GET /task-definitions/new":                                accessView,
+		"GET /task-definitions/{slug}":                             accessView,
+		"POST /task-definitions/{slug}/basics":                     accessWrite,
+		"GET /task-definitions/{slug}/inputs/rows/new":             accessView,
+		"POST /task-definitions/{slug}/inputs":                     accessWrite,
+		"POST /task-definitions/{slug}/inputs/raw":                 accessWrite,
+		"POST /task-definitions/{slug}/steps":                      accessWrite,
+		"POST /task-definitions/{slug}/steps/{child_slug}/remove":  accessWrite,
+		"POST /task-definitions/{slug}/steps/{child_slug}/move":    accessWrite,
+		"POST /task-definitions/{slug}/steps/{child_slug}/depends": accessWrite,
+		"POST /task-definitions/{slug}/steps/{child_slug}/mapping": accessWrite,
 	}
 	for pattern, want := range expected {
 		if got := routeAccess[pattern]; got != want {
@@ -202,6 +212,11 @@ func TestTaskDefinitionWriteRoutesCarryCSRF(t *testing.T) {
 		"POST /task-definitions/{slug}/basics",
 		"POST /task-definitions/{slug}/inputs",
 		"POST /task-definitions/{slug}/inputs/raw",
+		"POST /task-definitions/{slug}/steps",
+		"POST /task-definitions/{slug}/steps/{child_slug}/remove",
+		"POST /task-definitions/{slug}/steps/{child_slug}/move",
+		"POST /task-definitions/{slug}/steps/{child_slug}/depends",
+		"POST /task-definitions/{slug}/steps/{child_slug}/mapping",
 	} {
 		found := false
 		for _, line := range strings.Split(string(source), "\n") {
