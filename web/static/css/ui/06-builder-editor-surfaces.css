@@ -14,7 +14,7 @@
   gap: 0.15rem;
   min-height: 2.8rem;
   padding: 0 0.55rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   border-left: 0;
   border-right: 0;
   border-top: 0;
@@ -60,8 +60,8 @@
   max-width: 20rem;
   padding: 0.68rem 0.8rem;
   border: 0;
-  border-top: 2px solid transparent;
-  border-radius: 0;
+  border-top: var(--edge-w-thick) var(--edge-style) transparent;
+  border-radius: var(--radius-none);
   background: rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
   cursor: pointer;
@@ -72,7 +72,7 @@
 .ui-code-tab-dirty {
   width: 0.42rem;
   height: 0.42rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: #f59e0b;
   opacity: 0;
   transform: scale(0.7);
@@ -111,7 +111,7 @@
   justify-content: center;
   width: 1.1rem;
   height: 1.1rem;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
 }
 
 .ui-code-tab-pin {
@@ -120,7 +120,7 @@
   justify-content: center;
   min-width: 1.7rem;
   height: 1.1rem;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--text-ghost);
   font-style: normal;
   font-size: 0.62rem;
@@ -162,8 +162,8 @@
   justify-content: center;
   min-height: 2rem;
   padding: 0.45rem 0.7rem;
-  border: 1px solid var(--border-mid);
-  border-radius: 999px;
+  border: var(--edge-w) var(--edge-style) var(--border-mid);
+  border-radius: var(--radius-pill);
   background: var(--bg-elevated);
   color: var(--text-secondary);
   font-size: 0.76rem;
@@ -175,7 +175,7 @@
 
 .ui-code-surface {
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   padding: 0;
   overflow: hidden;
   box-shadow: none;
@@ -189,7 +189,7 @@
   justify-content: space-between;
   gap: 0.85rem;
   padding: 0.7rem 0.85rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   background: linear-gradient(180deg, var(--bg-surface), var(--bg-elevated));
 }
 
@@ -254,9 +254,9 @@
 .ui-view-page-builder .ui-codebench-sidebar,
 .ui-view-page-builder .ui-codebench-tree,
 .ui-view-page-builder .ui-code-tabs {
-  border-radius: 0;
+  border-radius: var(--radius-none);
 }
 
 .ui-view-page-builder footer {
-  border-top: 1px solid rgba(71, 85, 105, 0.35);
+  border-top: var(--edge-w) var(--edge-style) rgba(71, 85, 105, 0.35);
 }

@@ -35,10 +35,33 @@
   --status-info-bg: rgba(14, 165, 233, 0.1);
   --status-info-border: rgba(14, 165, 233, 0.25);
 
-  --radius-sm: 4px;
+  /* Geometry and typography. A style pack (Modern, Terminal, 8-bit, ...) overrides
+     this block and nothing else, so one attribute on <html> reshapes the whole
+     app. Nothing here may set colour: colour belongs to the theme axis, and the
+     two compose without a themes x styles matrix. */
+  --radius-none: 0;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 16px;
+  --radius-4xl: 18px;
+  --radius-5xl: 22px;
+  --radius-6xl: 24px;
+  --radius-7xl: 28px;
   --radius-pill: 100px;
+  --radius-circle: 50%;
+
+  --edge-w: 1px;
+  --edge-w-thick: 2px;
+  --edge-w-heavy: 3px;
+  --edge-style: solid;
+  --edge-style-dashed: dashed;
+
+  --font-body: "Instrument Sans", sans-serif;
+  --font-mono: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
 
   --transition-fast: 0.15s ease;
   --transition-base: 0.2s ease;
@@ -70,7 +93,7 @@ body {
   margin: 0;
   background: transparent;
   color: var(--text-secondary);
-  font-family: "Instrument Sans", sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.6;
 }
@@ -96,7 +119,7 @@ body.ui-reference-modal-open {
 
 *::-webkit-scrollbar-thumb {
   background: rgba(100, 120, 200, 0.25);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 *::-webkit-scrollbar-thumb:hover {
@@ -169,7 +192,7 @@ body.ui-reference-modal-open {
   z-index: 1150;
   max-width: 24rem;
   padding: 14px 20px;
-  border: 1px solid var(--status-error-border);
+  border: var(--edge-w) var(--edge-style) var(--status-error-border);
   border-radius: var(--radius-md);
   background: var(--status-error-bg);
   color: var(--status-error);
@@ -186,7 +209,7 @@ a {
 code,
 pre,
 .font-mono {
-  font-family: "Monaspace Neon", ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 .ui-sr-only {
@@ -217,7 +240,7 @@ h4,
 .ui-page-article h2,
 .ui-page-article h3,
 .ui-page-article h4 {
-  font-family: "Instrument Sans", sans-serif;
+  font-family: var(--font-body);
   color: var(--text-primary);
   line-height: 1.1;
 }
@@ -259,7 +282,7 @@ h4,
   padding: var(--sp-6) var(--sp-8) 20px;
   margin: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-none);
   background: transparent;
   box-shadow: none;
 }
@@ -313,7 +336,7 @@ h4,
 .ui-field-meta,
 .ui-stat-label,
 .ui-form-stat-label {
-  font-family: "Instrument Sans", sans-serif;
+  font-family: var(--font-body);
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.16em;
@@ -368,8 +391,8 @@ h4,
 .ui-metadata-item,
 .ui-note,
 .ui-alert {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
   box-shadow: none;
 }
@@ -393,7 +416,7 @@ h4,
   gap: 5px;
   padding: 3px 10px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
+  border: var(--edge-w) var(--edge-style) var(--border);
   background: rgba(100, 120, 200, 0.08);
   color: var(--text-dim);
   font-size: 11px;
@@ -405,7 +428,7 @@ h4,
   content: "";
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: currentColor;
 }
 
@@ -441,8 +464,8 @@ h4,
   min-height: 36px;
   padding: 9px 18px;
   border-radius: var(--radius-md);
-  border: 1px solid transparent;
-  font-family: "Instrument Sans", sans-serif;
+  border: var(--edge-w) var(--edge-style) transparent;
+  font-family: var(--font-body);
   font-size: 13px;
   font-weight: 600;
   line-height: 1;
@@ -501,7 +524,7 @@ h4,
 }
 
 :focus-visible {
-  outline: 2px solid var(--blue-bright);
+  outline: var(--edge-w-thick) var(--edge-style) var(--blue-bright);
   outline-offset: 2px;
 }
 
@@ -526,12 +549,12 @@ h4,
 .ui-select,
 .ui-textarea {
   width: 100%;
-  border: 1px solid var(--border-mid);
+  border: var(--edge-w) var(--edge-style) var(--border-mid);
   border-radius: var(--radius-md);
   padding: 10px 14px;
   background: var(--bg-elevated);
   color: var(--text-primary);
-  font-family: "Instrument Sans", sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
 }
 
@@ -574,7 +597,7 @@ h4,
   gap: var(--sp-2);
   margin: 0;
   padding: 0 var(--sp-8) var(--sp-4);
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
 }
 
 .ui-toolbar-group {
@@ -590,7 +613,7 @@ h4,
 
 .ui-toolbar-search {
   min-width: min(100%, 34rem);
-  font-family: "Monaspace Neon", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -631,8 +654,8 @@ h4,
 .ui-topnav-search-results {
   position: absolute;
   z-index: 1100;
-  border: 1px solid rgba(6, 9, 26, 0.16);
-  border-radius: var(--radius-lg);
+  border: var(--edge-w) var(--edge-style) rgba(6, 9, 26, 0.16);
+  border-radius: var(--radius-xl);
   background: var(--bg-base);
   box-shadow: 0 18px 42px rgba(6, 9, 26, 0.28);
   /* Long menus (e.g. admin) must scroll on small screens instead of
@@ -681,7 +704,7 @@ h4,
   justify-content: center;
   width: 36px;
   height: 36px;
-  border: 1px solid var(--border-mid);
+  border: var(--edge-w) var(--edge-style) var(--border-mid);
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
@@ -698,7 +721,7 @@ h4,
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  border: 1px solid var(--border-mid);
+  border: var(--edge-w) var(--edge-style) var(--border-mid);
   border-radius: var(--radius-pill);
   padding: 0.25rem;
   background: var(--bg-elevated);

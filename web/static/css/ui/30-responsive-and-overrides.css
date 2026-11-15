@@ -148,7 +148,7 @@
 
   .ui-code-tab {
     width: 100%;
-    border-radius: 12px;
+    border-radius: var(--radius-xl);
   }
 
   .ui-code-editor-body {
@@ -199,7 +199,7 @@
     width: 100%;
     max-height: 100%;
     padding: 0.85rem;
-    border-radius: 18px;
+    border-radius: var(--radius-4xl);
   }
 
   .ui-reference-modal-toolbar {
@@ -328,7 +328,7 @@
 .ui-record-timeline-item,
 .ui-record-timeline-change {
   background: rgba(6, 9, 26, 0.42);
-  border: 1px solid rgba(120, 140, 220, 0.16);
+  border: var(--edge-w) var(--edge-style) rgba(120, 140, 220, 0.16);
 }
 
 .ui-record-timeline-change-old {
@@ -373,8 +373,8 @@
   display: grid;
   gap: var(--sp-4);
   padding: clamp(24px, 4vw, 40px);
-  border: 1px solid var(--border-mid);
-  border-radius: calc(var(--radius-lg) + 4px);
+  border: var(--edge-w) var(--edge-style) var(--border-mid);
+  border-radius: calc(var(--radius-xl) + 4px);
   background:
     radial-gradient(circle at top right, rgba(58, 82, 194, 0.18), transparent 28%),
     linear-gradient(145deg, rgba(26, 42, 102, 0.94), rgba(12, 18, 48, 0.98));
@@ -420,8 +420,8 @@
   gap: var(--sp-2);
   min-height: 176px;
   padding: var(--sp-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-xl);
   background: linear-gradient(180deg, rgba(15, 22, 56, 0.98), rgba(10, 15, 40, 0.96));
   color: var(--text-secondary);
   text-decoration: none;
@@ -438,7 +438,7 @@
 
 .ui-admin-landing-card strong {
   color: var(--text-primary);
-  font-family: "Instrument Sans", sans-serif;
+  font-family: var(--font-body);
   font-size: 1.2rem;
   line-height: 1.1;
 }

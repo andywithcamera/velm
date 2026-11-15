@@ -94,7 +94,10 @@ func TestHeaderIsNotInvertedOrFaded(t *testing.T) {
 	if bar == "" {
 		t.Fatal("no .ui-topnav rule in the shell stylesheet")
 	}
-	if !strings.Contains(bar, "border-bottom: 1px solid") {
+	// #352 moved the width and style behind tokens; --edge-w is 1px and
+	// --edge-style is solid, which the value test above each block pins.
+	hairline := regexp.MustCompile(`border-bottom: (1px solid|var\(--edge-w\) var\(--edge-style\))`)
+	if !hairline.MatchString(bar) {
 		t.Errorf(".ui-topnav has no hairline under it; got %q", bar)
 	}
 }

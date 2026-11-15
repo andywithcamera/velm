@@ -33,7 +33,47 @@ var (
 	fontFamilyCSS = regexp.MustCompile(`(?is)font-family\s*:\s*([^;}]+)`)
 	fontFaceFam   = regexp.MustCompile(`(?is)font-family\s*:\s*["']([^"']+)["']`)
 	fontWeightDef = regexp.MustCompile(`(?is)font-weight\s*:\s*([0-9]+(?:\s+[0-9]+)?)`)
+	fontTokenDef  = regexp.MustCompile(`(?is)(--font-[a-z-]+)\s*:\s*([^;}]+)`)
+	fontTokenRef  = regexp.MustCompile(`var\(\s*(--font-[a-z-]+)\s*\)`)
 )
+
+// fontTokens reads the `--font-*` custom properties from the core stylesheet.
+// #352 moved every family stack behind a token so a style pack can swap the
+// typography without touching 12 files; the tests below therefore have to
+// resolve the tokens before they can see a family name at all.
+func fontTokens(t *testing.T) map[string]string {
+	t.Helper()
+	tokens := map[string]string{}
+	path := filepath.Join("web", "static", "css", "ui", "10-core.css")
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	for _, m := range fontTokenDef.FindAllStringSubmatch(string(source), -1) {
+		tokens[m[1]] = strings.TrimSpace(m[2])
+	}
+	if len(tokens) == 0 {
+		t.Fatal("no --font-* tokens in 10-core.css; the style axis needs them")
+	}
+	return tokens
+}
+
+// resolveFontTokens substitutes var(--font-x) with the family stack it names, so
+// the family/weight checks below run against real families whether a stylesheet
+// writes them literally or through a token. An unknown token fails the test
+// rather than silently skipping it.
+func resolveFontTokens(t *testing.T, source string, tokens map[string]string) string {
+	t.Helper()
+	return fontTokenRef.ReplaceAllStringFunc(source, func(ref string) string {
+		m := fontTokenRef.FindStringSubmatch(ref)
+		value, ok := tokens[m[1]]
+		if !ok {
+			t.Errorf("font-family uses %s but 10-core.css does not define it", m[1])
+			return ref
+		}
+		return value
+	})
+}
 
 // subresourceRefs returns every URL a template loads as a subresource:
 // stylesheets, preloaded fonts, and scripts. Anchors and images are excluded on
@@ -222,6 +262,7 @@ func TestEveryDeclaredFontHasAFace(t *testing.T) {
 		"segoe ui":           true,
 		"blinkmacsystemfont": true,
 	}
+	tokens := fontTokens(t)
 	for _, sheet := range sheets {
 		if strings.HasSuffix(sheet, "01-fonts.css") {
 			continue
@@ -230,7 +271,7 @@ func TestEveryDeclaredFontHasAFace(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read %s: %v", sheet, err)
 		}
-		for _, m := range fontFamilyCSS.FindAllStringSubmatch(string(source), -1) {
+		for _, m := range fontFamilyCSS.FindAllStringSubmatch(resolveFontTokens(t, string(source), tokens), -1) {
 			for _, raw := range strings.Split(m[1], ",") {
 				name := strings.ToLower(strings.TrimSpace(raw))
 				if !strings.HasPrefix(name, "\"") && !strings.HasPrefix(name, "'") {
@@ -288,6 +329,7 @@ func TestFontWeightsStayInsideTheVariableAxis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("glob ui css: %v", err)
 	}
+	tokens := fontTokens(t)
 	checked := 0
 	for _, sheet := range sheets {
 		if strings.HasSuffix(sheet, "01-fonts.css") {
@@ -298,7 +340,7 @@ func TestFontWeightsStayInsideTheVariableAxis(t *testing.T) {
 			t.Fatalf("read %s: %v", sheet, err)
 		}
 		// A declaration block sets both properties or it is not our concern.
-		for _, block := range strings.Split(string(source), "}") {
+		for _, block := range strings.Split(resolveFontTokens(t, string(source), tokens), "}") {
 			family := fontFamilyCSS.FindStringSubmatch(block)
 			weight := fontWeightDef.FindStringSubmatch(block)
 			if family == nil || weight == nil {

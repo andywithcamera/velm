@@ -130,7 +130,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid var(--text-primary);
+  outline: var(--edge-w-thick) var(--edge-style) var(--text-primary);
 }
 
 .ui-btn:focus-visible,
@@ -164,7 +164,7 @@ body {
   padding: 0 24px;
   background: var(--header-bg);
   color: var(--header-fg);
-  border-bottom: 1px solid var(--header-line);
+  border-bottom: var(--edge-w) var(--edge-style) var(--header-line);
 }
 
 /* The theme and overlay pickers live in the bar, so they follow its inversion
@@ -179,7 +179,7 @@ body {
 .ui-topnav-brand {
   /* The wordmark is the one place the mono takes brand weight: Instrument Sans
      stops at 700, Monaspace Neon reaches 800, and "velm.dev" is a hostname. */
-  font-family: "Monaspace Neon", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 19px;
   font-weight: 800;
   letter-spacing: -0.05em;
@@ -245,7 +245,7 @@ body {
 
 .ui-topnav-search,
 .ui-toolbar-search {
-  font-family: "Instrument Sans", sans-serif;
+  font-family: var(--font-body);
   font-size: 13px;
 }
 
@@ -325,12 +325,12 @@ body {
 
 .ui-nav-drawer,
 .ui-dropdown-menu {
-  border-radius: 18px;
+  border-radius: var(--radius-4xl);
 }
 
 .ui-topnav-mobile-panel {
   background: var(--bg-base);
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   backdrop-filter: none;
 }
 
@@ -394,8 +394,8 @@ body {
   justify-content: space-between;
   gap: var(--sp-3);
   padding: 10px var(--sp-3);
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-3xl);
   background: transparent;
   color: var(--text-secondary);
   text-align: left;
@@ -615,7 +615,7 @@ body {
 
 .ui-record-timeline-change {
   background: var(--surface-soft) !important;
-  border: 1px solid var(--border) !important;
+  border: var(--edge-w) var(--edge-style) var(--border) !important;
 }
 
 .ui-record-timeline-change-values {
@@ -688,7 +688,7 @@ body {
 }
 
 .ui-codebench-tree-vscode .ui-codebench-tree-head {
-  border-bottom: 1px solid #2b2b2b;
+  border-bottom: var(--edge-w) var(--edge-style) #2b2b2b;
 }
 
 .ui-codebench-tree-vscode .ui-codebench-tree-kicker,

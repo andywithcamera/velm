@@ -17,7 +17,7 @@
   display: grid;
   gap: 1.15rem;
   padding: clamp(1.2rem, 3vw, 1.8rem);
-  border-radius: 28px;
+  border-radius: var(--radius-7xl);
   background:
     radial-gradient(circle at top left, rgba(125, 211, 252, 0.14), transparent 28%),
     radial-gradient(circle at bottom right, rgba(249, 115, 22, 0.12), transparent 34%),
@@ -72,7 +72,7 @@
   inset: auto -8% -38% auto;
   width: 18rem;
   aspect-ratio: 1;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: radial-gradient(circle, rgba(248, 184, 78, 0.42), transparent 70%);
   pointer-events: none;
 }
@@ -99,8 +99,8 @@
 .ui-map-depth-panel {
   grid-template-rows: auto 1fr;
   padding: 0.95rem 1rem;
-  border: 1px solid var(--border-mid);
-  border-radius: 22px;
+  border: var(--edge-w) var(--edge-style) var(--border-mid);
+  border-radius: var(--radius-5xl);
   background:
     linear-gradient(160deg, rgba(248, 184, 78, 0.08), transparent 42%),
     linear-gradient(180deg, var(--bg-surface), var(--bg-elevated));
@@ -134,7 +134,7 @@
 .ui-map-depth-scale output {
   min-width: 2rem;
   padding: 0.22rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(249, 115, 22, 0.12);
   color: var(--text-primary);
   font-weight: 700;
@@ -192,8 +192,8 @@
   z-index: 3;
   max-width: min(20rem, calc(100% - 2rem));
   padding: 0.42rem 0.78rem;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
+  border: var(--edge-w) var(--edge-style) rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-pill);
   background: rgba(8, 12, 15, 0.84);
   backdrop-filter: blur(12px);
   box-shadow: 0 18px 32px rgba(2, 6, 23, 0.22);
@@ -238,8 +238,8 @@
 
 .ui-map-legend {
   padding: 0.7rem 0.85rem;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 18px;
+  border: var(--edge-w) var(--edge-style) rgba(255, 255, 255, 0.09);
+  border-radius: var(--radius-4xl);
   background: rgba(8, 13, 16, 0.54);
   backdrop-filter: blur(10px);
   color: rgba(248, 250, 252, 0.84);
@@ -261,8 +261,8 @@
 .ui-map-legend-swatch {
   width: 0.9rem;
   height: 0.9rem;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.88);
+  border-radius: var(--radius-circle);
+  border: var(--edge-w-thick) var(--edge-style) rgba(255, 255, 255, 0.88);
 }
 
 .ui-map-legend-swatch.is-selected {
@@ -280,7 +280,7 @@
 .ui-map-legend-line {
   width: 1.2rem;
   height: 0;
-  border-top: 3px solid rgba(248, 184, 78, 0.8);
+  border-top: var(--edge-w-heavy) var(--edge-style) rgba(248, 184, 78, 0.8);
 }
 
 .ui-map-legend-line.is-active {
@@ -296,8 +296,8 @@
   gap: 0.75rem;
   width: min(100% - 2rem, 22rem);
   padding: 1rem 1.05rem;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
+  border: var(--edge-w) var(--edge-style) rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-6xl);
   background: rgba(8, 12, 15, 0.76);
   backdrop-filter: blur(14px);
   box-shadow: 0 20px 42px rgba(2, 6, 23, 0.3);
