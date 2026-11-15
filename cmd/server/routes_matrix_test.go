@@ -72,45 +72,55 @@ var routeAccess = map[string]accessClass{
 	"/api/agent-tokens": accessAdmin,
 
 	// Read.
-	"/p/":                              accessView,
-	"/map":                             accessView,
-	"/task-catalog":                    accessView,
-	"/task-catalog/order":              accessWrite,
-	"/task":                            accessView,
-	"/task/":                           accessView,
-	"/t/":                              accessView,
-	"/f/":                              accessView,
-	"/f/graph/":                        accessView,
-	"/api/links/":                      accessWrite,
-	"/docs":                            accessView,
-	"/docs/manage":                     accessView,
-	"/d/":                              accessView,
-	"/knowledge":                       accessView,
-	"/logout":                          accessView,
-	"/api/menu/":                       accessView,
-	"/api/search/":                     accessView,
-	"/api/export/":                     accessView,
-	"/api/reference-options":           accessView,
-	"/api/realtime/stream":             accessView,
-	"/api/realtime/record-version":     accessView,
-	"/api/realtime/presence/heartbeat": accessView,
-	"/api/push/config":                 accessPublic,
-	"/api/push/subscribe":              accessView,
-	"/api/push/status":                 accessView,
-	"/api/push/test":                   accessView,
-	"/api/push/unsubscribe":            accessView,
-	"/api/notifications/panel":         accessView,
-	"/api/notifications/read-all":      accessView,
-	"/api/notifications/open":          accessView,
-	"/api/preferences/list-view":       accessView,
-	"/api/preferences/theme":           accessView,
-	"/api/preferences/overlay":         accessView,
-	"/api/preferences/style":           accessView,
-	"/api/preferences/list-view/saved": accessView,
-	"/api/form/security-preview":       accessView,
-	"/api/docs/preview":                accessView,
-	"/api/docs/wikilink-search":        accessView,
-	"/api/scripts/scope":               accessView,
+	"/p/":                 accessView,
+	"/map":                accessView,
+	"/task-catalog":       accessView,
+	"/task-catalog/order": accessWrite,
+
+	// Task definition editor. Each method gets its own row because the read
+	// pages and the write actions share a path and must not share a gate: the
+	// list and the editor are readable with view, while creating a definition
+	// and saving its basics need write.
+	"GET /task-definitions":                accessView,
+	"POST /task-definitions":               accessWrite,
+	"GET /task-definitions/new":            accessView,
+	"GET /task-definitions/{slug}":         accessView,
+	"POST /task-definitions/{slug}/basics": accessWrite,
+	"/task":                                accessView,
+	"/task/":                               accessView,
+	"/t/":                                  accessView,
+	"/f/":                                  accessView,
+	"/f/graph/":                            accessView,
+	"/api/links/":                          accessWrite,
+	"/docs":                                accessView,
+	"/docs/manage":                         accessView,
+	"/d/":                                  accessView,
+	"/knowledge":                           accessView,
+	"/logout":                              accessView,
+	"/api/menu/":                           accessView,
+	"/api/search/":                         accessView,
+	"/api/export/":                         accessView,
+	"/api/reference-options":               accessView,
+	"/api/realtime/stream":                 accessView,
+	"/api/realtime/record-version":         accessView,
+	"/api/realtime/presence/heartbeat":     accessView,
+	"/api/push/config":                     accessPublic,
+	"/api/push/subscribe":                  accessView,
+	"/api/push/status":                     accessView,
+	"/api/push/test":                       accessView,
+	"/api/push/unsubscribe":                accessView,
+	"/api/notifications/panel":             accessView,
+	"/api/notifications/read-all":          accessView,
+	"/api/notifications/open":              accessView,
+	"/api/preferences/list-view":           accessView,
+	"/api/preferences/theme":               accessView,
+	"/api/preferences/overlay":             accessView,
+	"/api/preferences/style":               accessView,
+	"/api/preferences/list-view/saved":     accessView,
+	"/api/form/security-preview":           accessView,
+	"/api/docs/preview":                    accessView,
+	"/api/docs/wikilink-search":            accessView,
+	"/api/scripts/scope":                   accessView,
 
 	// Write: mutates records, pages or schema.
 	"/builder/schema":               accessWrite,
@@ -336,6 +346,21 @@ func TestRouteAccessTableMatchesSource(t *testing.T) {
 	}
 }
 
+// splitMethodPattern separates the method prefix ServeMux allows in a route
+// pattern ("POST /task-definitions") from the path a request is made against.
+// Patterns without a method keep the GET default the matrix test has always
+// used, so existing rows read unchanged.
+func splitMethodPattern(pattern string) (string, string) {
+	if space := strings.IndexByte(pattern, ' '); space > 0 {
+		method := strings.ToUpper(pattern[:space])
+		switch method {
+		case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			return method, strings.TrimSpace(pattern[space+1:])
+		}
+	}
+	return "", pattern
+}
+
 // TestRoutePermissionMatrix drives the real permission middleware for every
 // route that declares one, across the three roles, and asserts the handler is
 // reached only when the role holds the required permission.
@@ -372,6 +397,11 @@ func TestRoutePermissionMatrix(t *testing.T) {
 			continue
 		}
 
+		method, path := splitMethodPattern(pattern)
+		if method == "" {
+			method = http.MethodGet
+		}
+
 		for role, granted := range roles {
 			role, granted := role, granted
 			authz.PermissionResolver = func(_ context.Context, userID, permission, _ string) (bool, error) {
@@ -388,7 +418,7 @@ func TestRoutePermissionMatrix(t *testing.T) {
 			})
 
 			handler := authz.RequirePermission(authz.Permission(required), next)
-			req := httptest.NewRequest(http.MethodGet, pattern, nil)
+			req := httptest.NewRequest(method, path, nil)
 			if role != "anonymous" {
 				req = req.WithContext(auth.WithUserContext(req.Context(), "user-1", "u@example.com", "User", role))
 			}

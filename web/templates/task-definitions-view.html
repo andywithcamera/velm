@@ -1,0 +1,450 @@
+{{define "task-definitions-view"}}
+<style>
+  .ui-defs {
+    padding: 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .ui-defs-hero {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+  }
+
+  .ui-defs-title {
+    margin: 0 0 0.35rem;
+    font-family: "Instrument Sans", sans-serif;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+  }
+
+  .ui-defs-sub {
+    margin: 0;
+    color: var(--text-secondary);
+  }
+
+  .ui-defs-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .ui-defs-search-input {
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    padding: 0.4rem 0.6rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    min-width: 16rem;
+  }
+
+  .ui-defs-button {
+    display: inline-block;
+    min-height: 40px;
+    border: 1px solid var(--border-mid);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    color: var(--text-primary);
+    padding: 0.4rem 0.8rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .ui-defs-button:hover {
+    background: var(--bg-surface);
+  }
+
+  .ui-defs-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .ui-defs-table th,
+  .ui-defs-table td {
+    text-align: left;
+    padding: 0.55rem 0.6rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+    vertical-align: top;
+  }
+
+  .ui-defs-table th {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .ui-defs-slug {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+  }
+
+  .ui-defs-chip {
+    display: inline-block;
+    border: 1px solid var(--border-mid);
+    border-radius: 999px;
+    padding: 0.05rem 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-defs-chip-inactive {
+    border-color: rgba(220, 80, 80, 0.45);
+    color: rgb(220, 80, 80);
+  }
+
+  .ui-defs-empty {
+    color: var(--text-dim);
+    padding: 1rem 0;
+  }
+
+  @media (max-width: 640px) {
+    .ui-defs {
+      padding: 1rem 0.75rem;
+    }
+    .ui-defs-search-input {
+      min-width: 0;
+      width: 100%;
+    }
+  }
+</style>
+<div class="ui-defs" id="task-definitions">
+  <div class="ui-defs-hero">
+    <div>
+      <h1 class="ui-defs-title">Task Definitions</h1>
+      <p class="ui-defs-sub">What can be started. A container composes steps; a leaf does the work itself.</p>
+    </div>
+    <div class="ui-defs-tools">
+      <form method="get" action="/task-definitions">
+        <input class="ui-defs-search-input" type="search" name="q" value="{{.DefinitionQuery}}" placeholder="Search slug or name…" autocomplete="off" aria-label="Search task definitions" />
+        <button class="ui-defs-button" type="submit">Search</button>
+      </form>
+      <a class="ui-defs-button" href="/task-definitions/new">New definition</a>
+    </div>
+  </div>
+
+  {{if eq .DefinitionTotal 0}}
+    {{if .DefinitionQuery}}
+      <p class="ui-defs-empty">No definitions match “{{.DefinitionQuery}}”.</p>
+    {{else}}
+      <p class="ui-defs-empty">No definitions yet. Use “New definition” to create one.</p>
+    {{end}}
+  {{else}}
+    <table class="ui-defs-table">
+      <thead>
+        <tr>
+          <th scope="col">Slug</th>
+          <th scope="col">Name</th>
+          <th scope="col">Kind</th>
+          <th scope="col">Inputs</th>
+          <th scope="col">Steps</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .DefinitionRows}}
+          <tr>
+            <td class="ui-defs-slug"><a href="/task-definitions/{{.Slug}}">{{.Slug}}</a></td>
+            <td><a href="/task-definitions/{{.Slug}}">{{.DisplayName}}</a></td>
+            <td>{{if .IsContainer}}Container{{else}}Leaf{{end}}</td>
+            <td>{{with .InputCount}}{{if lt . 0}}—{{else}}{{.}}{{end}}{{else}}0{{end}}</td>
+            <td>{{if .IsContainer}}{{.ChildCount}}{{else}}0{{end}}</td>
+            <td>{{if .IsActive}}<span class="ui-defs-chip">Active</span>{{else}}<span class="ui-defs-chip ui-defs-chip-inactive">Inactive</span>{{end}}</td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  {{end}}
+</div>
+{{end}}
+
+{{define "task-definition-new-view"}}
+<style>
+  .ui-def {
+    padding: 1.5rem;
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .ui-def-title {
+    margin: 0 0 0.35rem;
+    font-family: "Instrument Sans", sans-serif;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+  }
+
+  .ui-def-sub {
+    margin: 0 0 1.25rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-def-form {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .ui-def-field {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .ui-def-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-def-input {
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  textarea.ui-def-input {
+    resize: vertical;
+  }
+
+  .ui-def-help {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+
+  .ui-def-check {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+  }
+
+  .ui-def-button {
+    justify-self: start;
+    min-height: 40px;
+    border: 1px solid var(--border-mid);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    color: var(--text-primary);
+    padding: 0.4rem 0.9rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .ui-def-error {
+    border: 1px solid rgba(220, 80, 80, 0.45);
+    border-radius: 10px;
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .ui-def-back {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+  }
+</style>
+<div class="ui-def" id="task-definition-new">
+  <h1 class="ui-def-title">New task definition</h1>
+  <p class="ui-def-sub">The slug is the stable reference other definitions use. It is read-only once the definition exists.</p>
+  {{if .FormError}}<div class="ui-def-error" role="alert">{{.FormError}}</div>{{end}}
+  <form class="ui-def-form" method="post" action="/task-definitions">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+    <label class="ui-def-field">
+      <span class="ui-def-label">Slug</span>
+      <input class="ui-def-input" type="text" name="slug" value="{{.NewSlug}}" required maxlength="60" autocomplete="off" />
+      <span class="ui-def-help">Lowercase letters, digits and hyphens, starting with a letter or digit. 60 characters or fewer.</span>
+    </label>
+    <label class="ui-def-field">
+      <span class="ui-def-label">Display name</span>
+      <input class="ui-def-input" type="text" name="display_name" value="{{.NewDisplayName}}" required />
+    </label>
+    <label class="ui-def-field">
+      <span class="ui-def-label">Description</span>
+      <textarea class="ui-def-input" name="description" rows="4">{{.NewDescription}}</textarea>
+    </label>
+    <label class="ui-def-check">
+      <input type="checkbox" name="is_container" value="yes"{{if .NewIsContainer}} checked{{end}} />
+      <span>Container: this definition composes other definitions as steps</span>
+    </label>
+    <button class="ui-def-button" type="submit">Create definition</button>
+  </form>
+  <p class="ui-def-back"><a href="/task-definitions">Back to the list</a></p>
+</div>
+{{end}}
+
+{{define "task-definition-editor-view"}}
+<style>
+  .ui-def-edit {
+    padding: 1.5rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .ui-def-edit-head {
+    margin-bottom: 1.25rem;
+  }
+
+  .ui-def-edit-title {
+    margin: 0 0 0.35rem;
+    font-family: "Instrument Sans", sans-serif;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+  }
+
+  .ui-def-edit-slug {
+    margin: 0;
+    color: var(--text-secondary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.85rem;
+  }
+
+  .ui-def-card {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--bg-surface);
+    padding: 1.1rem;
+    margin-bottom: 1.1rem;
+  }
+
+  .ui-def-card-title {
+    margin: 0 0 0.75rem;
+    font-size: 1rem;
+    color: var(--text-primary);
+  }
+
+  .ui-def-form {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .ui-def-field {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  .ui-def-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-def-input {
+    min-height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    padding: 0.4rem 0.6rem;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  textarea.ui-def-input {
+    resize: vertical;
+  }
+
+  .ui-def-help {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+
+  .ui-def-check {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+  }
+
+  .ui-def-actions {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+  }
+
+  .ui-def-button {
+    min-height: 40px;
+    border: 1px solid var(--border-mid);
+    border-radius: 10px;
+    background: var(--surface-soft);
+    color: var(--text-primary);
+    padding: 0.4rem 0.9rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .ui-def-error {
+    border: 1px solid rgba(220, 80, 80, 0.45);
+    border-radius: 10px;
+    color: var(--text-primary);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .ui-def-back {
+    margin-top: 1rem;
+    font-size: 0.85rem;
+  }
+</style>
+<div class="ui-def-edit" id="task-definition-editor">
+  <div class="ui-def-edit-head">
+    <h1 class="ui-def-edit-title">{{.Definition.DisplayName}}</h1>
+    <p class="ui-def-edit-slug">{{.Definition.Slug}}</p>
+  </div>
+
+  <section class="ui-def-card" id="basics">
+    <h2 class="ui-def-card-title">Basics</h2>
+    {{if .BasicsError}}<div class="ui-def-error" role="alert">{{.BasicsError}}</div>{{end}}
+    <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/basics">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <label class="ui-def-field">
+        <span class="ui-def-label">Slug</span>
+        <input class="ui-def-input" type="text" value="{{.Definition.Slug}}" readonly disabled />
+        <span class="ui-def-help">Read-only: other definitions and spawn rules reference this slug.</span>
+      </label>
+      <label class="ui-def-field">
+        <span class="ui-def-label">Display name</span>
+        <input class="ui-def-input" type="text" name="display_name" value="{{.Definition.DisplayName}}" />
+      </label>
+      <label class="ui-def-field">
+        <span class="ui-def-label">Description</span>
+        <textarea class="ui-def-input" name="description" rows="4">{{.Definition.Description}}</textarea>
+      </label>
+      <label class="ui-def-check">
+        <input type="checkbox" name="is_container" value="yes"{{if .Definition.IsContainer}} checked{{end}} />
+        <span>Container: this definition composes other definitions as steps</span>
+      </label>
+      <label class="ui-def-check">
+        <input type="checkbox" name="is_active" value="yes"{{if .Definition.IsActive}} checked{{end}} />
+        <span>Active: this definition may be spawned from the catalog</span>
+      </label>
+      <div class="ui-def-actions">
+        <button class="ui-def-button" type="submit">Save basics</button>
+      </div>
+    </form>
+  </section>
+
+  <p class="ui-def-back"><a href="/task-definitions">Back to the list</a></p>
+</div>
+{{end}}

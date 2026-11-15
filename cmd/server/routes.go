@@ -130,6 +130,16 @@ func registerRoutes() {
 	http.Handle("/builder/pages", withAuth(authz.PermissionWrite, http.HandlerFunc(handlePageBuilder)))
 	http.Handle("/admin/app-editor", withAuth(authz.PermissionWrite, http.HandlerFunc(handlePageBuilder)))
 	http.Handle("/map", withAuth(authz.PermissionView, http.HandlerFunc(handleMapRedirect)))
+	// Task definition editor (slice 1). The read pages and the write actions
+	// share paths, so each is registered per method: the list must stay
+	// readable for a view-only user while a create or a basics save needs the
+	// write permission. Method-qualified patterns are part of ServeMux's own
+	// grammar (Go 1.22), and routes_matrix_test.go reads them as written.
+	http.Handle("GET /task-definitions", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskDefinitionsPage)))
+	http.Handle("POST /task-definitions", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionCreate), store)))
+	http.Handle("GET /task-definitions/new", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskDefinitionNewPage)))
+	http.Handle("GET /task-definitions/{slug}", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskDefinitionEditor)))
+	http.Handle("POST /task-definitions/{slug}/basics", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionBasicsSave), store)))
 	http.Handle("/task-catalog", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogPage)))
 	http.Handle("/task-catalog/order", withAuth(authz.PermissionWrite, http.HandlerFunc(handleTaskCatalogOrder)))
 	http.Handle("/task", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))

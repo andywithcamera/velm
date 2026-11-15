@@ -92,6 +92,15 @@
             {{if eq .View "task-catalog"}}
                 {{template "task-catalog-view" .}}
             {{end}}
+            {{if eq .View "task-definitions"}}
+                {{template "task-definitions-view" .}}
+            {{end}}
+            {{if eq .View "task-definition-new"}}
+                {{template "task-definition-new-view" .}}
+            {{end}}
+            {{if eq .View "task-definition-editor"}}
+                {{template "task-definition-editor-view" .}}
+            {{end}}
             {{if eq .View "docs"}}
                 {{template "docs-view" .}}
             {{end}}
