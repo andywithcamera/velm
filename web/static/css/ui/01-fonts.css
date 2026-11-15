@@ -36,3 +36,24 @@
   font-display: swap;
   src: url("../../fonts/monaspace-neon.woff2") format("woff2");
 }
+
+/*
+ * Press Start 2P — the 8-bit style pack's display face.
+ *
+ * Static weight 400 only, latin subset, 12 KB. It is deliberately NOT offered as
+ * a body face: pixel glyphs have a fixed 8px grid, so at UI sizes the strokes
+ * either vanish or turn into blocks, and the advance width is far wider than the
+ * UI face. The eightbit pack applies it to headings and chrome and leaves body
+ * copy on the monospace face.
+ *
+ * Licence: SIL OFL 1.1, see LICENCES.md. Loading it harms nothing when the pack
+ * is not selected — font-display: swap means it is only fetched when a rule
+ * actually uses the family.
+ */
+@font-face {
+  font-family: "Press Start 2P";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../../fonts/press-start-2p.woff2") format("woff2");
+}

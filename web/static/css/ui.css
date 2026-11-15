@@ -2,7 +2,7 @@
  * Shared UI stylesheet manifest.
  * Keep import order stable because the active theme still relies on legacy-to-restyle overrides.
  */
-@import url("./ui/01-fonts.css?v=20261113b");
+@import url("./ui/01-fonts.css?v=20261115c");
 @import url("./ui/05-detail-hero-and-reference.css?v=20261115a");
 @import url("./ui/05-detail-map.css?v=20261115a");
 @import url("./ui/05-detail-editor-and-timeline.css?v=20261115a");
@@ -16,6 +16,7 @@
 @import url("./ui/50-docs.css?v=20261115a");
 @import url("./ui/45-overlays.css?v=20261114c");
 @import url("./ui/55-ui-refinements.css?v=20261115a");
+@import url("./ui/60-style-packs.css?v=20261115c");
 
 /* Form-embedded relationship map (phase 1) */
 .ui-form-map { position: relative; min-height: 240px; }

@@ -124,6 +124,7 @@ func registerRoutes() {
 	http.Handle("/api/preferences/list-view", withAuth(authz.PermissionView, http.HandlerFunc(handleListViewPreference)))
 	http.Handle("/api/preferences/theme", withAuth(authz.PermissionView, http.HandlerFunc(handleThemePreference)))
 	http.Handle("/api/preferences/overlay", withAuth(authz.PermissionView, http.HandlerFunc(handleOverlayPreference)))
+	http.Handle("/api/preferences/style", withAuth(authz.PermissionView, http.HandlerFunc(handleStylePreference)))
 	http.Handle("/api/preferences/list-view/saved", withAuth(authz.PermissionView, http.HandlerFunc(handleListViewSavedViews)))
 	http.Handle("/builder/schema", withAuth(authz.PermissionWrite, http.HandlerFunc(handleSchemaBuilderPage)))
 	http.Handle("/builder/pages", withAuth(authz.PermissionWrite, http.HandlerFunc(handlePageBuilder)))
