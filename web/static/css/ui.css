@@ -3,19 +3,19 @@
  * Keep import order stable because the active theme still relies on legacy-to-restyle overrides.
  */
 @import url("./ui/01-fonts.css?v=20261113b");
-@import url("./ui/05-detail-hero-and-reference.css?v=20260323i");
-@import url("./ui/05-detail-map.css?v=20260401b");
-@import url("./ui/05-detail-editor-and-timeline.css?v=20260323i");
-@import url("./ui/06-builder-codebench-tree.css?v=20260323i");
-@import url("./ui/06-builder-editor-surfaces.css?v=20260323i");
-@import url("./ui/06-builder-object-and-code-editor.css?v=20260323i");
-@import url("./ui/10-core.css?v=20261114a");
-@import url("./ui/20-shell-and-workspaces.css?v=20261114b");
-@import url("./ui/30-responsive-and-overrides.css?v=20260323i");
-@import url("./ui/40-velm-monochrome.css?v=20261114b");
-@import url("./ui/50-docs.css?v=20260511d");
+@import url("./ui/05-detail-hero-and-reference.css?v=20261115a");
+@import url("./ui/05-detail-map.css?v=20261115a");
+@import url("./ui/05-detail-editor-and-timeline.css?v=20261115a");
+@import url("./ui/06-builder-codebench-tree.css?v=20261115a");
+@import url("./ui/06-builder-editor-surfaces.css?v=20261115a");
+@import url("./ui/06-builder-object-and-code-editor.css?v=20261115a");
+@import url("./ui/10-core.css?v=20261115a");
+@import url("./ui/20-shell-and-workspaces.css?v=20261115a");
+@import url("./ui/30-responsive-and-overrides.css?v=20261115a");
+@import url("./ui/40-velm-monochrome.css?v=20261115a");
+@import url("./ui/50-docs.css?v=20261115a");
 @import url("./ui/45-overlays.css?v=20261114c");
-@import url("./ui/55-ui-refinements.css?v=20261111c");
+@import url("./ui/55-ui-refinements.css?v=20261115a");
 
 /* Form-embedded relationship map (phase 1) */
 .ui-form-map { position: relative; min-height: 240px; }
@@ -26,8 +26,8 @@
 .ui-form-map-meta { color: var(--text-dim, #6b7280); font-size: 0.8rem; margin-left: auto; }
 .ui-form-map-canvas { flex: 1 1 auto; width: 100%; display: block; touch-action: none; cursor: grab; }
 .ui-form-map-canvas:active { cursor: grabbing; }
-.ui-form-map-results { max-height: 12rem; overflow-y: auto; border: 1px solid var(--border, #e5e7eb); border-radius: 8px; }
-.ui-form-map-result { display: block; width: 100%; text-align: left; padding: 0.45rem 0.6rem; background: none; border: 0; border-bottom: 1px solid var(--border, #e5e7eb); font-size: 0.85rem; cursor: pointer; }
+.ui-form-map-results { max-height: 12rem; overflow-y: auto; border: var(--edge-w) var(--edge-style) var(--border, #e5e7eb); border-radius: var(--radius-md); }
+.ui-form-map-result { display: block; width: 100%; text-align: left; padding: 0.45rem 0.6rem; background: none; border: 0; border-bottom: var(--edge-w) var(--edge-style) var(--border, #e5e7eb); font-size: 0.85rem; cursor: pointer; }
 .ui-form-map-result:last-child { border-bottom: 0; }
 .ui-form-map-result:hover { background: var(--surface-2, #f3f4f6); }
 
@@ -42,7 +42,7 @@
 .ui-form-map-node-api-route circle { fill: #059669; }
 .ui-form-map-node-security-control circle { fill: #dc2626; }
 .ui-form-map-node text { font-size: 10px; fill: var(--text, currentColor); paint-order: stroke; stroke: var(--surface, #fff); stroke-width: 3px; stroke-linejoin: round; }
-.ui-form-map-results { max-height: 12rem; overflow: auto; border: 1px solid var(--border, #d1d5db); border-radius: 0.375rem; }
-.ui-form-map-result { display: block; width: 100%; text-align: left; padding: 0.4rem 0.6rem; background: transparent; border: 0; border-bottom: 1px solid var(--border, #e5e7eb); cursor: pointer; font: inherit; }
+.ui-form-map-results { max-height: 12rem; overflow: auto; border: var(--edge-w) var(--edge-style) var(--border, #d1d5db); border-radius: var(--radius-sm); }
+.ui-form-map-result { display: block; width: 100%; text-align: left; padding: 0.4rem 0.6rem; background: transparent; border: 0; border-bottom: var(--edge-w) var(--edge-style) var(--border, #e5e7eb); cursor: pointer; font: inherit; }
 .ui-form-map-result:hover { background: var(--surface-raised, #f3f4f6); }
 .ui-form-map-result:last-child { border-bottom: 0; }

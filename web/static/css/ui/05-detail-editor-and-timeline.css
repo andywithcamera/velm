@@ -19,7 +19,7 @@
   position: relative;
   width: 3rem;
   height: 1.8rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgba(96, 46, 234, 0.18);
   transition: background-color 0.18s ease;
 }
@@ -31,7 +31,7 @@
   left: 0.22rem;
   width: 1.4rem;
   height: 1.4rem;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: #fff;
   box-shadow: 0 6px 14px rgba(15, 23, 42, 0.18);
   transition: transform 0.18s ease;
@@ -69,7 +69,7 @@
 }
 
 .ui-code-preview {
-  border: 1px solid var(--border);
+  border: var(--edge-w) var(--edge-style) var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
   padding: 0.75rem 0.85rem;
@@ -81,7 +81,7 @@
 
 .ui-markdown-preview {
   min-height: 7rem;
-  border: 1px solid var(--border);
+  border: var(--edge-w) var(--edge-style) var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-surface);
   padding: 0.85rem 0.9rem;
@@ -94,8 +94,8 @@
 }
 
 .ui-page-editor-frame {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-xl);
   overflow: hidden;
   background: var(--bg-elevated);
 }
@@ -106,7 +106,7 @@
   justify-content: space-between;
   gap: 0.85rem;
   padding: 0.75rem 0.85rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   background: linear-gradient(180deg, var(--bg-surface), var(--bg-elevated));
 }
 
@@ -185,8 +185,8 @@
   display: grid;
   gap: 0.45rem;
   padding: 0.7rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-3xl);
   background: var(--bg-elevated);
 }
 
@@ -232,8 +232,8 @@
 
 .ui-record-timeline-item {
   padding: 0.7rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 16px;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-3xl);
   background: var(--bg-elevated);
 }
 
@@ -274,8 +274,8 @@
   display: inline-block;
   margin-left: 0.35rem;
   padding: 0.05rem 0.45rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  border: var(--edge-w) var(--edge-style) var(--border);
   background: var(--surface-soft);
   color: var(--text-secondary);
   font-size: 0.72rem;
@@ -297,7 +297,7 @@
 
 .ui-record-timeline-change {
   padding: 0.55rem 0.6rem;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   background: var(--bg-surface);
 }
 
@@ -373,7 +373,7 @@
   min-width: 14rem;
   max-width: min(24rem, calc(100vw - 2rem));
   padding: 0.9rem 1rem;
-  border-radius: 14px;
+  border-radius: var(--radius-2xl);
   color: #fff;
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
   transition: opacity 0.3s ease, transform 0.3s ease;
@@ -403,7 +403,7 @@
 
 .docs-article-editor > .ui-section-header {
   padding: 1rem 1.25rem 0.85rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
 }
 
 .docs-editor-form {
@@ -416,7 +416,7 @@
   width: 100%;
   padding: 0.9rem 1.25rem 0.65rem;
   border: none;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   outline: none;
   font-size: 1.5rem;
   font-weight: 700;
@@ -435,7 +435,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 1.25rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   background: var(--bg-elevated);
 }
 
@@ -458,7 +458,7 @@
   align-items: center;
   gap: 0.65rem;
   padding: 0.4rem 1.25rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   font-size: 0.72rem;
   font-weight: 700;
   letter-spacing: 0.07em;
@@ -470,7 +470,7 @@
 .docs-editor-preview-area {
   padding: 1.25rem;
   min-height: 3rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
 }
 
 .docs-editor-preview-area:empty::before {
@@ -501,7 +501,7 @@
 }
 
 .docs-editor-advanced[open] .docs-editor-advanced-toggle {
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
 }
 
 .docs-editor-advanced-body {
@@ -510,7 +510,7 @@
 
 .docs-editor-footer {
   padding: 0.75rem 1.25rem;
-  border-top: 1px solid var(--border);
+  border-top: var(--edge-w) var(--edge-style) var(--border);
 }
 
 /* Wikilink styles */
@@ -526,7 +526,7 @@
 
 .docs-wikilink-unresolved {
   color: var(--text-dim);
-  border-bottom: 1px dashed currentColor;
+  border-bottom: var(--edge-w) var(--edge-style-dashed) currentColor;
   cursor: help;
 }
 
@@ -584,7 +584,7 @@
 }
 
 .docs-library-settings[open] .docs-library-settings-summary {
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
 }
 
 .docs-library-settings-body {
@@ -635,7 +635,7 @@
 .ui-task-request-item {
   display: grid;
   gap: 0.15rem;
-  border-left: 2px solid var(--border);
+  border-left: var(--edge-w-thick) var(--edge-style) var(--border);
   padding-left: 0.6rem;
 }
 

@@ -190,8 +190,8 @@
 
 .ui-task-board-lane {
   background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 0.85rem;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-2xl);
   box-shadow: none;
   display: flex;
   flex-direction: column;
@@ -235,8 +235,8 @@
 
 .ui-task-board-card {
   background: var(--surface-soft, rgba(0, 0, 0, 0.04));
-  border: 1px solid var(--border);
-  border-radius: 0.6rem;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-lg);
   color: inherit;
   display: flex;
   flex-direction: column;
@@ -303,7 +303,7 @@
 
 .ui-task-board-card-number {
   color: var(--text-ghost);
-  font-family: "Monaspace Neon", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.06em;
   overflow: hidden;
@@ -345,8 +345,8 @@
 .ui-task-board-assignment-trigger {
   background: transparent;
   border: 0;
-  border-bottom: 1px dashed var(--border-bright);
-  border-radius: 0;
+  border-bottom: var(--edge-w) var(--edge-style-dashed) var(--border-bright);
+  border-radius: var(--radius-none);
   color: var(--text-primary);
   cursor: pointer;
   font: inherit;
@@ -362,8 +362,8 @@
 
 .ui-task-board-assignment-popover {
   background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 0.9rem;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-2xl);
   box-shadow: none;
   left: 0;
   min-width: 12rem;
@@ -454,8 +454,8 @@
   -webkit-appearance: none;
   -moz-appearance: none;
   background: var(--bg-base);
-  border: 1px solid var(--border);
-  border-radius: 0.6rem;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-lg);
   color: var(--text-ghost);
   font-size: 0.76rem;
   font-weight: 600;
@@ -490,7 +490,7 @@
   .ui-task-board-switcher {
     -webkit-overflow-scrolling: touch;
     background: var(--bg-base);
-    border-bottom: 1px solid var(--border);
+    border-bottom: var(--edge-w) var(--edge-style) var(--border);
     display: flex;
     gap: 0.4rem;
     margin: 0 -0.25rem;
@@ -509,8 +509,8 @@
   .ui-task-board-switcher-btn {
     align-items: center;
     background: var(--surface-soft, rgba(0, 0, 0, 0.04));
-    border: 1px solid transparent;
-    border-radius: 999px;
+    border: var(--edge-w) var(--edge-style) transparent;
+    border-radius: var(--radius-pill);
     color: var(--text-ghost);
     cursor: pointer;
     display: flex;
@@ -531,7 +531,7 @@
 
   .ui-task-board-switcher-count {
     background: var(--surface-soft, rgba(0, 0, 0, 0.08));
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 0.72rem;
     min-width: 1.4rem;
     padding: 0.05rem 0.35rem;
@@ -597,7 +597,7 @@
 
 .ui-action-bar {
   align-items: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
@@ -715,7 +715,7 @@
 
 .ui-icon-btn-badge {
   background: var(--text-primary);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   color: var(--bg-base);
   font-size: 10px;
   font-weight: 700;
@@ -740,7 +740,7 @@
 
 .ui-filter-panel {
   background: var(--surface-soft, rgba(0, 0, 0, 0.03));
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   padding: 0.7rem 0.75rem 0.8rem;
 }
 
@@ -758,8 +758,8 @@
 
 .ui-action-menu {
   background: var(--bg-surface);
-  border: 1px solid var(--border-mid);
-  border-radius: 12px;
+  border: var(--edge-w) var(--edge-style) var(--border-mid);
+  border-radius: var(--radius-xl);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
   display: grid;
   gap: 1px;
@@ -778,7 +778,7 @@
 .ui-action-menu-item {
   background: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: inherit;
   cursor: pointer;
   font-family: inherit;
@@ -911,8 +911,8 @@
 }
 
 .ui-markdown-preview {
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  border: var(--edge-w) var(--edge-style) var(--border);
+  border-radius: var(--radius-2xl);
   background: var(--bg-elevated);
   padding: 0.7rem 0.85rem;
   min-height: 3rem;
@@ -955,7 +955,7 @@
 
 .ui-markdown-field-editor .ui-markdown-textarea {
   min-height: 60vh;
-  font-family: "Monaspace Neon", ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92rem;
   line-height: 1.7;
 }
@@ -1041,7 +1041,7 @@
 .ui-markdown-preview blockquote {
   margin: 0.5rem 0;
   padding: 0.15rem 0 0.15rem 0.75rem;
-  border-left: 3px solid var(--border-mid);
+  border-left: var(--edge-w-heavy) var(--edge-style) var(--border-mid);
   color: var(--text-secondary);
 }
 
@@ -1054,9 +1054,9 @@
 
 .ui-markdown-preview code {
   padding: 0.05rem 0.3rem;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  border: var(--edge-w) var(--edge-style) var(--border);
   font-size: 0.9em;
 }
 
@@ -1093,7 +1093,7 @@
   text-align: left;
   font-weight: 600;
   padding: 0.35rem 0.6rem;
-  border-bottom: 1px solid var(--border-mid);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border-mid);
   background: var(--bg-elevated);
   white-space: nowrap;
 }
@@ -1101,7 +1101,7 @@
 .ui-markdown-preview tbody td,
 .ui-markdown-table tbody td {
   padding: 0.3rem 0.6rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--edge-w) var(--edge-style) var(--border);
   vertical-align: top;
 }
 
