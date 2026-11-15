@@ -998,16 +998,16 @@ html[data-theme="mint"] {
   --text-primary: #06281f;
   --text-secondary: #0d3a2e;
   --text-dim: rgba(6, 40, 31, 0.68);
-  --text-ghost: rgba(6, 40, 31, 0.46);
+  --text-ghost: rgba(6, 40, 31, 0.50);
   --border: rgba(6, 40, 31, 0.2);
   --border-mid: rgba(6, 40, 31, 0.32);
   --border-bright: rgba(6, 40, 31, 0.48);
   --status-success: #0f766e;
   --status-success-bg: rgba(15, 118, 110, 0.1);
   --status-success-border: rgba(15, 118, 110, 0.38);
-  --status-warning: #b45309;
-  --status-warning-bg: rgba(180, 83, 9, 0.1);
-  --status-warning-border: rgba(180, 83, 9, 0.38);
+  --status-warning: #a8500a;
+  --status-warning-bg: rgba(168, 80, 10, 0.1);
+  --status-warning-border: rgba(168, 80, 10, 0.38);
   --status-error: #be123c;
   --status-error-bg: rgba(190, 18, 60, 0.1);
   --status-error-border: rgba(190, 18, 60, 0.38);
@@ -1018,4 +1018,184 @@ html[data-theme="mint"] {
   --surface-soft: rgba(6, 40, 31, 0.05);
   --surface-strong: rgba(6, 40, 31, 0.1);
   --focus-ring: rgba(15, 118, 110, 0.45);
+}
+
+/* ---- Velm orange: Warm apricot field, burnt orange primary — sunset, not neon. */
+
+html[data-theme="orange"] {
+  color-scheme: light;
+  --bg-base: #fff4e6;
+  --bg-surface: #ffeacf;
+  --bg-elevated: #fffaf3;
+  --bg-overlay: #fff4e6;
+  --blue-dim: #b3410a;
+  --blue-mid: #bb3d0b;
+  --blue-bright: #e0651f;
+  --text-primary: #2b1608;
+  --text-secondary: #3d2412;
+  --text-dim: rgba(30, 18, 8, 0.70);
+  --text-ghost: rgba(30, 18, 8, 0.50);
+  --border: rgba(43, 22, 8, 0.22);
+  --border-mid: rgba(43, 22, 8, 0.34);
+  --border-bright: rgba(43, 22, 8, 0.50);
+  --status-success: #146b34;
+  --status-success-bg: rgba(20, 107, 52, 0.10);
+  --status-success-border: rgba(20, 107, 52, 0.38);
+  --status-warning: #8a5a00;
+  --status-warning-bg: rgba(138, 90, 0, 0.10);
+  --status-warning-border: rgba(138, 90, 0, 0.38);
+  --status-error: #b3121f;
+  --status-error-bg: rgba(179, 18, 31, 0.10);
+  --status-error-border: rgba(179, 18, 31, 0.38);
+  --status-info: #155f9e;
+  --status-info-bg: rgba(21, 95, 158, 0.10);
+  --status-info-border: rgba(21, 95, 158, 0.38);
+  --shadow-raised: 0 1px 3px rgba(43, 22, 8, 0.16);
+  --surface-soft: rgba(43, 22, 8, 0.04);
+  --surface-strong: rgba(43, 22, 8, 0.08);
+  --focus-ring: rgba(187, 61, 11, 0.50);
+}
+
+/* ---- Velm pink: Rose quartz field, deep magenta primary — soft ground, sharp ink. */
+
+html[data-theme="pink"] {
+  color-scheme: light;
+  --bg-base: #fdeff5;
+  --bg-surface: #ffe3ef;
+  --bg-elevated: #fff8fb;
+  --bg-overlay: #fdeff5;
+  --blue-dim: #a8145c;
+  --blue-mid: #be185d;
+  --blue-bright: #e0439a;
+  --text-primary: #380c20;
+  --text-secondary: #4d1430;
+  --text-dim: rgba(56, 12, 32, 0.70);
+  --text-ghost: rgba(56, 12, 32, 0.50);
+  --border: rgba(56, 12, 32, 0.22);
+  --border-mid: rgba(56, 12, 32, 0.34);
+  --border-bright: rgba(56, 12, 32, 0.50);
+  --status-success: #146b34;
+  --status-success-bg: rgba(20, 107, 52, 0.10);
+  --status-success-border: rgba(20, 107, 52, 0.38);
+  --status-warning: #8a5a00;
+  --status-warning-bg: rgba(138, 90, 0, 0.10);
+  --status-warning-border: rgba(138, 90, 0, 0.38);
+  --status-error: #b3121f;
+  --status-error-bg: rgba(179, 18, 31, 0.10);
+  --status-error-border: rgba(179, 18, 31, 0.38);
+  --status-info: #155f9e;
+  --status-info-bg: rgba(21, 95, 158, 0.10);
+  --status-info-border: rgba(21, 95, 158, 0.38);
+  --shadow-raised: 0 1px 3px rgba(56, 12, 32, 0.15);
+  --surface-soft: rgba(56, 12, 32, 0.04);
+  --surface-strong: rgba(56, 12, 32, 0.08);
+  --focus-ring: rgba(190, 24, 93, 0.50);
+}
+
+/* ---- Velm grey: Mid slate field, ink text — the only theme that is grey on purpose rather than by having no colour. Light is paper; this is the machine room. */
+
+html[data-theme="grey"] {
+  color-scheme: light;
+  --bg-base: #e4e7ec;
+  --bg-surface: #eef0f4;
+  --bg-elevated: #f8f9fb;
+  --bg-overlay: #e4e7ec;
+  --blue-dim: #2f3d4d;
+  --blue-mid: #3a4a5c;
+  --blue-bright: #546a80;
+  --text-primary: #16191d;
+  --text-secondary: #23272d;
+  --text-dim: rgba(22, 25, 29, 0.72);
+  --text-ghost: rgba(22, 25, 29, 0.50);
+  --border: rgba(22, 25, 29, 0.22);
+  --border-mid: rgba(22, 25, 29, 0.34);
+  --border-bright: rgba(22, 25, 29, 0.50);
+  --status-success: #0f6130;
+  --status-success-bg: rgba(15, 97, 48, 0.10);
+  --status-success-border: rgba(15, 97, 48, 0.38);
+  --status-warning: #7d5200;
+  --status-warning-bg: rgba(125, 82, 0, 0.10);
+  --status-warning-border: rgba(125, 82, 0, 0.38);
+  --status-error: #a5111d;
+  --status-error-bg: rgba(165, 17, 29, 0.10);
+  --status-error-border: rgba(165, 17, 29, 0.38);
+  --status-info: #12528a;
+  --status-info-bg: rgba(18, 82, 138, 0.10);
+  --status-info-border: rgba(18, 82, 138, 0.38);
+  --shadow-raised: 0 1px 3px rgba(22, 25, 29, 0.18);
+  --surface-soft: rgba(22, 25, 29, 0.04);
+  --surface-strong: rgba(22, 25, 29, 0.08);
+  --focus-ring: rgba(58, 74, 92, 0.50);
+}
+
+/* ---- Velm green: Forest floor at night, vivid emerald primary. Distinct from mint, which is a pale field with teal ink; this is the dark one. */
+
+html[data-theme="green"] {
+  color-scheme: dark;
+  --bg-base: #08180f;
+  --bg-surface: #0d2317;
+  --bg-elevated: #122e1e;
+  --bg-overlay: #08180f;
+  --blue-dim: #34d399;
+  --blue-mid: #4ade80;
+  --blue-bright: #86efac;
+  --text-primary: #e6fbee;
+  --text-secondary: #cbeed8;
+  --text-dim: rgba(230, 251, 238, 0.70);
+  --text-ghost: rgba(230, 251, 238, 0.50);
+  --border: rgba(230, 251, 238, 0.22);
+  --border-mid: rgba(230, 251, 238, 0.34);
+  --border-bright: rgba(230, 251, 238, 0.50);
+  --status-success: #bef264;
+  --status-success-bg: rgba(190, 242, 100, 0.12);
+  --status-success-border: rgba(190, 242, 100, 0.40);
+  --status-warning: #fcd34d;
+  --status-warning-bg: rgba(252, 211, 77, 0.12);
+  --status-warning-border: rgba(252, 211, 77, 0.40);
+  --status-error: #fb7185;
+  --status-error-bg: rgba(251, 113, 133, 0.12);
+  --status-error-border: rgba(251, 113, 133, 0.40);
+  --status-info: #93c5fd;
+  --status-info-bg: rgba(147, 197, 253, 0.12);
+  --status-info-border: rgba(147, 197, 253, 0.40);
+  --shadow-raised: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --surface-soft: rgba(230, 251, 238, 0.08);
+  --surface-strong: rgba(230, 251, 238, 0.14);
+  --focus-ring: rgba(74, 222, 128, 0.50);
+}
+
+/* ---- Velm blue: Pale sky field, cobalt primary. The calm one. */
+
+html[data-theme="blue"] {
+  color-scheme: light;
+  --bg-base: #e9f1fd;
+  --bg-surface: #f2f7ff;
+  --bg-elevated: #fbfdff;
+  --bg-overlay: #e9f1fd;
+  --blue-dim: #1d4ed8;
+  --blue-mid: #1b46c2;
+  --blue-bright: #2f6bd6;
+  --text-primary: #0a1d36;
+  --text-secondary: #122c4d;
+  --text-dim: rgba(10, 29, 54, 0.70);
+  --text-ghost: rgba(10, 29, 54, 0.50);
+  --border: rgba(10, 29, 54, 0.22);
+  --border-mid: rgba(10, 29, 54, 0.34);
+  --border-bright: rgba(10, 29, 54, 0.50);
+  --status-success: #136b3c;
+  --status-success-bg: rgba(19, 107, 60, 0.10);
+  --status-success-border: rgba(19, 107, 60, 0.38);
+  --status-warning: #7d5200;
+  --status-warning-bg: rgba(125, 82, 0, 0.10);
+  --status-warning-border: rgba(125, 82, 0, 0.38);
+  --status-error: #b3121f;
+  --status-error-bg: rgba(179, 18, 31, 0.10);
+  --status-error-border: rgba(179, 18, 31, 0.38);
+  --status-info: #0c6b7d;
+  --status-info-bg: rgba(12, 107, 125, 0.10);
+  --status-info-border: rgba(12, 107, 125, 0.38);
+  --shadow-raised: 0 1px 3px rgba(10, 29, 54, 0.16);
+  --surface-soft: rgba(10, 29, 54, 0.04);
+  --surface-strong: rgba(10, 29, 54, 0.08);
+  --focus-ring: rgba(27, 70, 194, 0.50);
 }
