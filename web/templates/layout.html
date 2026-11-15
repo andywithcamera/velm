@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="{{.Theme}}" data-overlay="{{.Overlay}}">
+<html lang="en" data-theme="{{.Theme}}" data-overlay="{{.Overlay}}" data-style="{{.Style}}">
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -32,7 +32,7 @@
         <script src="/static/js/markdown-field.js" defer></script>
         <script src="/static/js/csp-behaviour.js"></script>
         <script src="/static/js/vendor/tailwind-browser-4.js"></script>
-        <link rel="stylesheet" href="/static/css/ui.css?v=20261115a" />
+        <link rel="stylesheet" href="/static/css/ui.css?v=20261115c" />
         <style>
             #burgerIcon.open .line1 {
                 transform: rotate(45deg) translate(5px, 5px);
@@ -138,7 +138,13 @@
                     "fireflies": "Fireflies",
                     "aurora": "Aurora"
                 };
-                const defaultTheme = "light";
+                const velmStyles = {
+                    "modern": "Modern",
+                    "terminal": "Terminal",
+                    "eightbit": "8-bit",
+                    "soft": "Soft"
+                };
+                const defaultStyle = "modern";
                 let navigationTimer = null;
                 let navigationInFlight = false;
 
@@ -167,6 +173,43 @@
                     const resolved = velmOverlays[overlay] ? overlay : "none";
                     document.documentElement.dataset.overlay = resolved;
                     document.dispatchEvent(new CustomEvent("velm:overlay", { detail: resolved }));
+                }
+
+                function normaliseStyle(style) {
+                    return velmStyles[style] ? style : defaultStyle;
+                }
+
+                function getActiveStyle() {
+                    return normaliseStyle(document.documentElement.dataset.style);
+                }
+
+                function syncStyleSelector() {
+                    const select = document.getElementById("velm-style-select");
+                    if (select) select.value = getActiveStyle();
+                }
+
+                function applyStyle(style) {
+                    const resolved = normaliseStyle(style);
+                    document.documentElement.dataset.style = resolved;
+                    syncStyleSelector();
+                    document.dispatchEvent(new CustomEvent("velm:style", { detail: resolved }));
+                    return resolved;
+                }
+
+                function persistStyle(style) {
+                    const csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || "";
+                    fetch("/api/preferences/style", {
+                        method: "POST",
+                        keepalive: true,
+                        headers: {
+                            "Content-Type": "application/json",
+                            "X-CSRF-Token": csrf
+                        },
+                        credentials: "same-origin",
+                        body: JSON.stringify({ value: style })
+                    }).catch(function () {
+                        // Non-fatal: keep the applied style in-memory for the session.
+                    });
                 }
 
                 function persistOverlay(overlay) {
@@ -213,6 +256,15 @@
                         });
                     }
                     syncThemeSelector();
+
+                    const styleSelect = document.getElementById("velm-style-select");
+                    if (styleSelect) {
+                        styleSelect.addEventListener("change", function () {
+                            const style = applyStyle(styleSelect.value);
+                            persistStyle(style);
+                        });
+                    }
+                    syncStyleSelector();
                 })();
 
                 function startProgressBar() {

@@ -172,6 +172,14 @@
                     <option value="fireflies">Fireflies</option>
                     <option value="aurora">Aurora</option>
                 </select>
+                <div class="ui-dropdown-label">Style</div>
+                <label class="ui-sr-only" for="velm-style-select">Style</label>
+                <select id="velm-style-select" class="ui-select ui-theme-select">
+                    <option value="modern">Modern</option>
+                    <option value="terminal">Terminal</option>
+                    <option value="eightbit">8-bit</option>
+                    <option value="soft">Soft</option>
+                </select>
                 <div class="ui-dropdown-label">Session</div>
                 <form method="POST" action="/logout">
                     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">

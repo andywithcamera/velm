@@ -105,6 +105,7 @@ var routeAccess = map[string]accessClass{
 	"/api/preferences/list-view":       accessView,
 	"/api/preferences/theme":           accessView,
 	"/api/preferences/overlay":         accessView,
+	"/api/preferences/style":           accessView,
 	"/api/preferences/list-view/saved": accessView,
 	"/api/form/security-preview":       accessView,
 	"/api/docs/preview":                accessView,

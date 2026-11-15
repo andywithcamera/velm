@@ -1,0 +1,157 @@
+/*
+ * Style packs.
+ *
+ * A style sets geometry and typography only: radius rungs, border weight and
+ * style, font families, shadow. Colour belongs to the theme axis, which owns
+ * every token in 40-velm-monochrome.css. Keeping the two apart is why the
+ * option count is themes + styles and not themes x styles: any theme composes
+ * with any style without a per-pair review.
+ *
+ * "modern" is the default and needs no block — it is the token set declared in
+ * 10-core.css. Every other pack overrides that block and nothing else, so a rule
+ * written tomorrow inherits the shape of whichever pack is active without being
+ * aware of it.
+ *
+ * TestEveryStyleHasAPack asserts each identifier in validStyles has a block here,
+ * and that no pack declares a colour.
+ */
+
+/* Terminal: monospace throughout, square corners, nothing floats. */
+html[data-style="terminal"] {
+  --radius-none: 0;
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+  --radius-5xl: 0;
+  --radius-6xl: 0;
+  --radius-7xl: 0;
+  --radius-pill: 0;
+  --radius-circle: 50%;
+
+  --edge-w: 1px;
+  --edge-w-thick: 1px;
+  --edge-w-heavy: 2px;
+  --edge-style: solid;
+
+  --font-body: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
+  --font-mono: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
+
+  --shadow-raised: none;
+}
+
+/* Monospace advance widths are wider than the UI face, so body copy is set a
+   point smaller to keep the same number of columns on screen — otherwise every
+   dense table reflows and wraps. Terminal's letterforms are fixed-width, so a
+   heading needs spacing rather than a bigger face to stay distinct. */
+html[data-style="terminal"] body {
+  font-size: 13px;
+}
+
+html[data-style="terminal"] .ui-title,
+html[data-style="terminal"] .ui-section-title {
+  letter-spacing: 0.01em;
+}
+
+/* 8-bit: hard 2px outlines, no curves, blocky shadows, monospace type.
+   Body copy stays a UI face in the modern pack precisely because pixel fonts
+   at 14px are unreadable in a dense list; this pack keeps the mono face and
+   pushes the "8-bit" through edges, radius and uppercase chrome instead. */
+html[data-style="eightbit"] {
+  --radius-none: 0;
+  --radius-xs: 0;
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  --radius-xl: 0;
+  --radius-2xl: 0;
+  --radius-3xl: 0;
+  --radius-4xl: 0;
+  --radius-5xl: 0;
+  --radius-6xl: 0;
+  --radius-7xl: 0;
+  --radius-pill: 0;
+  --radius-circle: 50%;
+
+  --edge-w: 2px;
+  --edge-w-thick: 2px;
+  --edge-w-heavy: 3px;
+  --edge-style: solid;
+
+  --font-body: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
+  --font-mono: "Monaspace Neon", ui-monospace, "SFMono-Regular", monospace;
+
+  /* Offset with no blur, the shape of a block shadow. Neutral black so it reads
+     on both light and dark themes. */
+  --shadow-raised: 4px 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+/* Chrome shouts in capitals; body copy does not, because a paragraph of caps at
+   13px is unreadable. The heading classes are listed explicitly as well as by
+   tag: most page titles carry a class and not a bare h1, so a tag-only rule
+   misses the ones that matter most. */
+html[data-style="eightbit"] h1,
+html[data-style="eightbit"] h2,
+html[data-style="eightbit"] h3,
+html[data-style="eightbit"] th,
+html[data-style="eightbit"] .ui-title,
+html[data-style="eightbit"] .ui-page-title,
+html[data-style="eightbit"] .ui-section-title,
+html[data-style="eightbit"] .ui-simple-table-title,
+html[data-style="eightbit"] .ui-kicker,
+html[data-style="eightbit"] .ui-dropdown-label,
+html[data-style="eightbit"] .ui-menu-link {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+html[data-style="eightbit"] body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The display face, on chrome only. 8-bit headings are set a step smaller
+   because the face draws on an 8px grid and is far wider per character than the
+   UI face at the same size; anything larger wraps a two-word title onto three
+   lines. */
+html[data-style="eightbit"] h1,
+html[data-style="eightbit"] h2,
+html[data-style="eightbit"] .ui-title,
+html[data-style="eightbit"] .ui-page-title,
+html[data-style="eightbit"] .ui-section-title,
+html[data-style="eightbit"] .ui-simple-table-title {
+  font-family: "Press Start 2P", var(--font-mono);
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+/* Soft: the modern shape opened out — larger radii, hairline edges, shadow that
+   separates without an outline. */
+html[data-style="soft"] {
+  --radius-none: 0;
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 16px;
+  --radius-xl: 18px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+  --radius-4xl: 26px;
+  --radius-5xl: 30px;
+  --radius-6xl: 32px;
+  --radius-7xl: 36px;
+  --radius-pill: 100px;
+  --radius-circle: 50%;
+
+  --edge-w: 1px;
+  --edge-w-thick: 2px;
+  --edge-w-heavy: 3px;
+  --edge-style: solid;
+
+  --shadow-raised: 0 22px 48px rgba(2, 6, 23, 0.18);
+}
