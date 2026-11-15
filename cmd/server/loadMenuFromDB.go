@@ -47,6 +47,10 @@ func loadMenuFromDB() error {
 		appendItem(title, "/t/"+table.Name)
 	}
 
+	// Task definitions sit beside Docs: one is the process library, the other
+	// is the catalog of what those processes are made of.
+	appendItem("Task Definitions", "/task-definitions")
+
 	if _, ok, err := db.GetPhysicalTable(ctx, "_docs_library"); err == nil && ok {
 		appendItem("Docs", "/docs")
 	}

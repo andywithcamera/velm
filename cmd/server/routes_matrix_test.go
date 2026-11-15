@@ -72,10 +72,29 @@ var routeAccess = map[string]accessClass{
 	"/api/agent-tokens": accessAdmin,
 
 	// Read.
-	"/p/":                              accessView,
-	"/map":                             accessView,
-	"/task-catalog":                    accessView,
-	"/task-catalog/order":              accessWrite,
+	"/p/":                 accessView,
+	"/map":                accessView,
+	"/task-catalog":       accessView,
+	"/task-catalog/order": accessWrite,
+
+	// Task definition editor. Each method gets its own row because the read
+	// pages and the write actions share a path and must not share a gate: the
+	// list and the editor are readable with view, while creating a definition
+	// and saving its basics need write.
+	"GET /task-definitions":                accessView,
+	"POST /task-definitions":               accessWrite,
+	"GET /task-definitions/new":            accessView,
+	"GET /task-definitions/{slug}":         accessView,
+	"POST /task-definitions/{slug}/basics": accessWrite,
+
+	"GET /task-definitions/{slug}/inputs/rows/new":             accessView,
+	"POST /task-definitions/{slug}/inputs":                     accessWrite,
+	"POST /task-definitions/{slug}/inputs/raw":                 accessWrite,
+	"POST /task-definitions/{slug}/steps":                      accessWrite,
+	"POST /task-definitions/{slug}/steps/{child_slug}/remove":  accessWrite,
+	"POST /task-definitions/{slug}/steps/{child_slug}/move":    accessWrite,
+	"POST /task-definitions/{slug}/steps/{child_slug}/depends": accessWrite,
+	"POST /task-definitions/{slug}/steps/{child_slug}/mapping": accessWrite,
 	"/task":                            accessView,
 	"/task/":                           accessView,
 	"/t/":                              accessView,
@@ -336,6 +355,21 @@ func TestRouteAccessTableMatchesSource(t *testing.T) {
 	}
 }
 
+// splitMethodPattern separates the method prefix ServeMux allows in a route
+// pattern ("POST /task-definitions") from the path a request is made against.
+// Patterns without a method keep the GET default the matrix test has always
+// used, so existing rows read unchanged.
+func splitMethodPattern(pattern string) (string, string) {
+	if space := strings.IndexByte(pattern, ' '); space > 0 {
+		method := strings.ToUpper(pattern[:space])
+		switch method {
+		case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			return method, strings.TrimSpace(pattern[space+1:])
+		}
+	}
+	return "", pattern
+}
+
 // TestRoutePermissionMatrix drives the real permission middleware for every
 // route that declares one, across the three roles, and asserts the handler is
 // reached only when the role holds the required permission.
@@ -372,6 +406,11 @@ func TestRoutePermissionMatrix(t *testing.T) {
 			continue
 		}
 
+		method, path := splitMethodPattern(pattern)
+		if method == "" {
+			method = http.MethodGet
+		}
+
 		for role, granted := range roles {
 			role, granted := role, granted
 			authz.PermissionResolver = func(_ context.Context, userID, permission, _ string) (bool, error) {
@@ -388,7 +427,7 @@ func TestRoutePermissionMatrix(t *testing.T) {
 			})
 
 			handler := authz.RequirePermission(authz.Permission(required), next)
-			req := httptest.NewRequest(http.MethodGet, pattern, nil)
+			req := httptest.NewRequest(method, path, nil)
 			if role != "anonymous" {
 				req = req.WithContext(auth.WithUserContext(req.Context(), "user-1", "u@example.com", "User", role))
 			}
