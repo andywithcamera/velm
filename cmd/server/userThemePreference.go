@@ -25,6 +25,11 @@ var validThemes = map[string]bool{
 	"purple":  true,
 	"crimson": true,
 	"mint":    true,
+	"orange":  true,
+	"pink":    true,
+	"grey":    true,
+	"green":   true,
+	"blue":    true,
 }
 
 const defaultTheme = "light"
