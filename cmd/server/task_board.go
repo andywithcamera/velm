@@ -773,6 +773,11 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 	if filters.Type != "" {
 		query += fmt.Sprintf(" AND COALESCE(NULLIF(BTRIM(t.work_type), ''), '') = $%d", len(args)+1)
 		args = append(args, filters.Type)
+	} else {
+		// Control blocks are structure, not work: an `if` or an `end` is a
+		// row on the board only when asked for deliberately, so a person's
+		// default list stays their tasks (Design Vision §5, AC-39/AC-40).
+		query += " AND COALESCE(NULLIF(BTRIM(t.work_type), ''), 'TASK') <> 'CONTROL'"
 	}
 
 	if filters.Priority != "" {
