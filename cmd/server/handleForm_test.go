@@ -133,6 +133,35 @@ func TestBuildFormFieldConfigsMarksBaseTaskLifecycleFieldsReadOnly(t *testing.T)
 	}
 }
 
+func TestBuildFormFieldConfigsLocksAssignmentGroupPastPending(t *testing.T) {
+	columns := []db.Column{
+		{NAME: "state", DATA_TYPE: "choice", IS_NULLABLE: false, LABEL: "State"},
+		{NAME: "assignment_group_id", DATA_TYPE: "reference", IS_NULLABLE: true, LABEL: "Assignment Group"},
+	}
+
+	for _, state := range []string{"ready", "in_progress", "closed", "skipped"} {
+		t.Run(state, func(t *testing.T) {
+			configs := buildFormFieldConfigs(context.Background(), "base_task", columns, map[string]any{"state": state})
+			if !configs["assignment_group_id"].ReadOnly {
+				t.Fatalf("assignment group should be read-only on a %s task", state)
+			}
+		})
+	}
+
+	configs := buildFormFieldConfigs(context.Background(), "base_task", columns, map[string]any{"state": "pending"})
+	if configs["assignment_group_id"].ReadOnly {
+		t.Fatal("assignment group must stay editable on a pending task")
+	}
+
+	// A new task has no stored state yet; the group must be selectable.
+	for _, record := range []any{nil, map[string]any{}, map[string]any{"state": nil}} {
+		configs = buildFormFieldConfigs(context.Background(), "base_task", columns, record)
+		if configs["assignment_group_id"].ReadOnly {
+			t.Fatalf("assignment group must stay editable on a new task, record %#v", record)
+		}
+	}
+}
+
 func TestApplySpecialFormDefaultsSetsBaseTaskStateChangedAt(t *testing.T) {
 	values := map[string]string{}
 

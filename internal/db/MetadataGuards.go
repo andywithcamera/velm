@@ -113,6 +113,68 @@ func validateBaseTaskMetadataWrite(ctx context.Context, formData map[string]stri
 	return nil
 }
 
+// applyBaseTaskAssignmentRules keeps a task's assignment group and assignee in
+// step on a form save. Two rules, both server-side because the picker is not
+// the only way into these columns:
+//
+//   - changing the group blanks the assignee, in the same write, rather than
+//     letting the 084 trigger reject a member of the old group;
+//   - once the task has moved past pending the group is read-only. Assignment
+//     happens while the task waits, and a started task silently changing hands
+//     is the thing this guards against.
+//
+// A create (empty snapshot) is left alone: there is no previous group to
+// change, and the membership check still runs later in the write.
+func applyBaseTaskAssignmentRules(formData map[string]string, nullColumns map[string]bool, oldSnapshot map[string]any) error {
+	if len(oldSnapshot) == 0 {
+		return nil
+	}
+	// An absent control is not a write. A read-only group renders as a
+	// disabled select, which the browser does not submit; treating that as
+	// "cleared" would refuse every other edit on a started task.
+	if _, present := formData["assignment_group_id"]; !present && !nullColumns["assignment_group_id"] {
+		return nil
+	}
+	submittedGroup := strings.TrimSpace(formData["assignment_group_id"])
+	if nullColumns["assignment_group_id"] {
+		submittedGroup = ""
+	}
+	oldGroup := snapshotUUIDString(oldSnapshot["assignment_group_id"])
+	if strings.EqualFold(submittedGroup, oldGroup) {
+		return nil
+	}
+
+	state := snapshotState(oldSnapshot)
+	if TaskAssignmentGroupLocked(state) {
+		return fmt.Errorf("assignment_group_id is read-only once the task has moved past pending (state is %s)", state)
+	}
+
+	// The old assignee may not belong to the new group. Blanking is
+	// unconditional on a group change so the result depends on the group, not
+	// on which of the two candidate assignees happened to be a member.
+	formData["assigned_user_id"] = ""
+	nullColumns["assigned_user_id"] = true
+	return nil
+}
+
+// TaskAssignmentGroupLocked reports whether a task in this state refuses an
+// assignment-group change. Assignment happens while the task waits; a task
+// that has started must not silently change hands. The form uses the same
+// predicate so the control and the server cannot disagree.
+func TaskAssignmentGroupLocked(state string) bool {
+	state = strings.TrimSpace(strings.ToLower(state))
+	return state != "" && state != "pending"
+}
+
+// snapshotUUIDString reads a uuid column from a record snapshot, "" if absent
+// or null. Postgres returns uuid columns as strings here.
+func snapshotUUIDString(value any) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
 func IsAdminOnlyTableName(name string) bool {
 	n := strings.TrimSpace(strings.ToLower(name))
 	return adminOnlyTableNames[n]

@@ -133,6 +133,12 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 	oldSnapshot := map[string]any{}
 	if id != "new" && id != "" {
 		oldSnapshot = loadRecordSnapshot(tableName, id)
+		if strings.EqualFold(tableName, "base_task") {
+			if err := applyBaseTaskAssignmentRules(formData, nullColumns, oldSnapshot); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
 		if !submittedFormHasChanges(view.Columns, formData, nullColumns, oldSnapshot) {
 			if r.Header.Get("HX-Request") != "" {
 				w.Header().Set("X-Velm-Form-Message", "No changes to save")
@@ -299,8 +305,18 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		operation = "update"
-		columnNames := make([]string, 0, len(formData))
+		// The union of queued values and cleared columns: the before-write
+		// trigger pass records a cleared column in nullColumns only, so
+		// iterating formData alone would silently leave the old value in
+		// place (a group change kept the previous assignee).
+		columnNames := make([]string, 0, len(formData)+len(nullColumns))
 		for k := range formData {
+			columnNames = append(columnNames, k)
+		}
+		for k := range nullColumns {
+			if _, ok := formData[k]; ok {
+				continue
+			}
 			columnNames = append(columnNames, k)
 		}
 		sort.Strings(columnNames)

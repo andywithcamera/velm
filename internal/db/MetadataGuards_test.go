@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -99,6 +100,95 @@ func TestIsProtectedTableName(t *testing.T) {
 				t.Fatalf("isProtectedTableName(%q) = %v, want %v", tt.input, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestApplyBaseTaskAssignmentRulesBlanksAssigneeOnGroupChange(t *testing.T) {
+	formData := map[string]string{
+		"assignment_group_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+		"assigned_user_id":    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+	}
+	nullColumns := map[string]bool{}
+	old := map[string]any{
+		"state":               "pending",
+		"assignment_group_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+		"assigned_user_id":    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+	}
+	if err := applyBaseTaskAssignmentRules(formData, nullColumns, old); err != nil {
+		t.Fatalf("pending group change refused: %v", err)
+	}
+	if !nullColumns["assigned_user_id"] {
+		t.Fatal("assignee was not blanked when the group changed")
+	}
+	if formData["assigned_user_id"] != "" {
+		t.Fatalf("assignee form value = %q, want empty", formData["assigned_user_id"])
+	}
+}
+
+func TestApplyBaseTaskAssignmentRulesLeavesUnchangedGroupAlone(t *testing.T) {
+	formData := map[string]string{
+		"assignment_group_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+		"assigned_user_id":    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+	}
+	nullColumns := map[string]bool{}
+	old := map[string]any{
+		"state":               "pending",
+		"assignment_group_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+		"assigned_user_id":    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+	}
+	if err := applyBaseTaskAssignmentRules(formData, nullColumns, old); err != nil {
+		t.Fatalf("unchanged group refused: %v", err)
+	}
+	if nullColumns["assigned_user_id"] {
+		t.Fatal("assignee was blanked without a group change")
+	}
+	if formData["assigned_user_id"] == "" {
+		t.Fatal("assignee was cleared without a group change")
+	}
+}
+
+func TestApplyBaseTaskAssignmentRulesLocksGroupPastPending(t *testing.T) {
+	for _, state := range []string{"ready", "in_progress", "closed", "skipped"} {
+		t.Run(state, func(t *testing.T) {
+			formData := map[string]string{
+				"assignment_group_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+				"assigned_user_id":    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+			}
+			nullColumns := map[string]bool{}
+			old := map[string]any{
+				"state":               state,
+				"assignment_group_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+			}
+			err := applyBaseTaskAssignmentRules(formData, nullColumns, old)
+			if err == nil {
+				t.Fatalf("group change on a %s task was accepted", state)
+			}
+			if !strings.Contains(err.Error(), "read-only") {
+				t.Fatalf("message %q does not say read-only", err)
+			}
+		})
+	}
+}
+
+func TestApplyBaseTaskAssignmentRulesIgnoresAbsentControl(t *testing.T) {
+	// A read-only group renders as a disabled select, which the browser omits
+	// from the POST. That must not read as "cleared", or every other edit on a
+	// started task would be refused.
+	formData := map[string]string{
+		"title":            "Assignment guard probe",
+		"assigned_user_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+	}
+	nullColumns := map[string]bool{}
+	old := map[string]any{
+		"state":               "in_progress",
+		"assignment_group_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+		"assigned_user_id":    "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+	}
+	if err := applyBaseTaskAssignmentRules(formData, nullColumns, old); err != nil {
+		t.Fatalf("an unrelated edit on a started task was refused: %v", err)
+	}
+	if nullColumns["assigned_user_id"] {
+		t.Fatal("assignee was blanked although no group was submitted")
 	}
 }
 
