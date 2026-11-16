@@ -1,8 +1,13 @@
 package main
 
-// Task catalog (2026-11-09): one page where every task definition can be
-// found, searched, and started. The catalog is the front door for spawning
+// Task catalogue (2026-11-09): one page where every task definition can be
+// found, searched, and started. The catalogue is the front door for spawning
 // work; the board is where spawned work is tracked.
+//
+// Spelling: Andy asked for "catalogue" across the user-facing surface
+// (2026-11-16). The URL, the titles and the copy say catalogue; Go identifiers,
+// template names, CSS classes and the database keep "catalog", because
+// renaming those would buy nothing a reader sees.
 
 import (
 	"context"
@@ -24,12 +29,42 @@ type taskCatalogEntry struct {
 	Description string
 	Category    string
 	IsContainer bool
+	// StepCount is the number of blocks a container will open when it is
+	// started. Zero for a leaf, which opens nothing but itself.
+	StepCount   int
 	InputFields []db.TaskInputField
 }
 
 // HasInputs reports whether starting this definition opens a form rather than
 // spawning immediately.
 func (e taskCatalogEntry) HasInputs() bool { return len(e.InputFields) > 0 }
+
+// KindLabel names the entry as a chain or a single task, with the step count
+// for a chain. This is the fix for the legibility bug: Andy ordered a leaf
+// believing it was the container, got exactly one task, and nothing on the
+// page had told him the difference.
+func (e taskCatalogEntry) KindLabel() string {
+	if !e.IsContainer {
+		return "Single task"
+	}
+	return fmt.Sprintf("Chain · %d %s", e.StepCount, stepWord(e.StepCount))
+}
+
+// StartLabel is the button text: a chain says so before it is clicked, not
+// after it has opened.
+func (e taskCatalogEntry) StartLabel() string {
+	if e.IsContainer {
+		return "Start chain…"
+	}
+	return "Start…"
+}
+
+func stepWord(n int) string {
+	if n == 1 {
+		return "step"
+	}
+	return "steps"
+}
 
 type taskCatalogCategory struct {
 	Name    string
@@ -38,11 +73,13 @@ type taskCatalogCategory struct {
 
 func loadTaskCatalog(ctx context.Context, query string) ([]taskCatalogCategory, error) {
 	rows, err := db.Pool.Query(ctx,
-		`SELECT slug, display_name, description, category, is_container,
-		        COALESCE(input_schema_yaml, '')
-		 FROM base_task_definition
-		 WHERE _deleted_at IS NULL
-		 ORDER BY display_name`)
+		`SELECT d.slug, d.display_name, d.description, d.category, d.is_container,
+		        COALESCE(d.input_schema_yaml, ''),
+		        (SELECT count(*) FROM base_task_definition_child c
+		          WHERE c.container_definition_id = d._id)
+		 FROM base_task_definition d
+		 WHERE d._deleted_at IS NULL
+		 ORDER BY d.display_name`)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +92,7 @@ func loadTaskCatalog(ctx context.Context, query string) ([]taskCatalogCategory, 
 	for rows.Next() {
 		var e taskCatalogEntry
 		var category, inputSchema string
-		if err := rows.Scan(&e.Slug, &e.DisplayName, &e.Description, &category, &e.IsContainer, &inputSchema); err != nil {
+		if err := rows.Scan(&e.Slug, &e.DisplayName, &e.Description, &category, &e.IsContainer, &inputSchema, &e.StepCount); err != nil {
 			return nil, err
 		}
 		// A malformed schema must not hide the definition: the card still
@@ -97,10 +134,10 @@ func handleTaskCatalogPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	viewData := newViewData(w, r, "/task-catalog", "Task Catalog", "Operations")
+	viewData := newViewData(w, r, "/task-catalogue", "Task Catalogue", "Operations")
 	catalog, err := loadTaskCatalog(r.Context(), r.URL.Query().Get("q"))
 	if err != nil {
-		http.Error(w, "Failed to load task catalog", http.StatusInternalServerError)
+		http.Error(w, "Failed to load task catalogue", http.StatusInternalServerError)
 		return
 	}
 	total := 0
@@ -111,21 +148,33 @@ func handleTaskCatalogPage(w http.ResponseWriter, r *http.Request) {
 	viewData["TaskCatalogCategories"] = catalog
 	viewData["TaskCatalogQuery"] = strings.TrimSpace(r.URL.Query().Get("q"))
 	viewData["TaskCatalogTotal"] = total
-	viewData["TaskCatalogOrderURL"] = "/task-catalog/order"
+	viewData["TaskCatalogOrderURL"] = "/task-catalogue/order"
 	if r.Header.Get("HX-Request") == "true" {
 		// HTMX search swaps only the results region, not the whole page.
 		if err := templates.ExecuteTemplate(w, "task-catalog-results", viewData); err != nil {
-			http.Error(w, "Failed to render task catalog", http.StatusInternalServerError)
+			http.Error(w, "Failed to render task catalogue", http.StatusInternalServerError)
 		}
 		return
 	}
 	if err := templates.ExecuteTemplate(w, "layout.html", viewData); err != nil {
-		http.Error(w, "Failed to render task catalog", http.StatusInternalServerError)
+		http.Error(w, "Failed to render task catalogue", http.StatusInternalServerError)
 	}
 }
 
-// handleTaskCatalogOrder spawns a definition instance from the catalog's
-// "Start" form. Same engine path as POST /api/task-instances; the catalog
+// handleTaskCatalogueLegacyRedirect keeps the pre-spelling URL working: the
+// page lived at /task-catalogue's old path /task-catalog from 2026-11-09 until
+// the spelling change, so bookmarks and links in older docs must not 404.
+// A 301 is permanent on purpose — the old path is not coming back.
+func handleTaskCatalogueLegacyRedirect(w http.ResponseWriter, r *http.Request) {
+	target := "/task-catalogue"
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	http.Redirect(w, r, target, http.StatusMovedPermanently)
+}
+
+// handleTaskCatalogOrder spawns a definition instance from the catalogue's
+// "Start" form. Same engine path as POST /api/task-instances; the catalogue
 // just wraps it in a form so the experience needs no client scripting.
 func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -165,12 +214,47 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 		_ = catalogOrderErrorTmpl.Execute(w, map[string]string{"Slug": slug})
 		return
 	}
+	// The confirmation has to say what came into existence: a chain that opened
+	// steps is a different outcome from a single task, and Andy ordered the
+	// leaf believing it was the chain precisely because nothing said so.
 	number := ""
-	if root, _, derr := runtimeDescribeTaskInstace(r.Context(), db.Pool, rootID); derr == nil {
+	steps := 0
+	if root, children, derr := runtimeDescribeTaskInstace(r.Context(), db.Pool, rootID); derr == nil {
 		number = root.Number
+		steps = len(children)
 	}
+	isContainer := catalogDefinitionIsContainer(r.Context(), slug) || steps > 0
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = catalogOrderDoneTmpl.Execute(w, map[string]string{"TaskID": rootID, "Number": number})
+	_ = catalogOrderDoneTmpl.Execute(w, map[string]string{
+		"TaskID":  rootID,
+		"Number":  number,
+		"Message": catalogOrderConfirmation(number, isContainer, steps),
+	})
+}
+
+// catalogDefinitionIsContainer reads the flag that decides how the order
+// confirmation describes the run. A read failure falls back to "not a
+// container"; the step count then decides, and the spawn has already
+// succeeded, so this must never turn a success into an error.
+func catalogDefinitionIsContainer(ctx context.Context, slug string) bool {
+	var isContainer bool
+	err := db.Pool.QueryRow(ctx,
+		`SELECT is_container FROM base_task_definition
+		 WHERE slug = $1 AND _deleted_at IS NULL`, slug).Scan(&isContainer)
+	return err == nil && isContainer
+}
+
+// catalogOrderConfirmation is the sentence the order fragment shows. Pure, so
+// the wording is testable without a database or a spawn: "Started TASK-152 as
+// a chain: 1 step opened" must stay true for 0, 1 and many steps.
+func catalogOrderConfirmation(number string, isContainer bool, steps int) string {
+	if !isContainer {
+		return fmt.Sprintf("Started %s as a single task: no steps opened.", number)
+	}
+	if steps == 0 {
+		return fmt.Sprintf("Started %s as a chain: no steps to open yet.", number)
+	}
+	return fmt.Sprintf("Started %s as a chain: %d %s opened.", number, steps, stepWord(steps))
 }
 
 // catalogOrderInputs resolves the requester's form against the definition's
@@ -214,4 +298,4 @@ var catalogOrderInvalidTmpl = template.Must(template.New("catalogOrderInvalid").
 	`<div class="ui-catalog-order-error">Could not start {{.Slug}}: {{.Reason}}</div>`))
 
 var catalogOrderDoneTmpl = template.Must(template.New("catalogOrderDone").Parse(
-	`<div class="ui-catalog-order-done">Started as <a href="/f/base_task/{{.TaskID}}">{{.Number}}</a>. Track it on the <a href="/task">board</a>.</div>`))
+	`<div class="ui-catalog-order-done">{{.Message}} <a href="/f/base_task/{{.TaskID}}">Open the task</a> · track it on the <a href="/task">board</a>.</div>`))

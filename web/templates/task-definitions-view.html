@@ -317,6 +317,11 @@
     font-size: 0.85rem;
   }
 
+  .ui-def-edit-links {
+    margin: 0.35rem 0 0;
+    font-size: 0.85rem;
+  }
+
   .ui-def-card {
     border: 1px solid var(--border);
     border-radius: 14px;
@@ -634,6 +639,10 @@
   <div class="ui-def-edit-head">
     <h1 class="ui-def-edit-title">{{.Definition.DisplayName}}</h1>
     <p class="ui-def-edit-slug">{{.Definition.Slug}}</p>
+    {{/* Where this definition is ordered from. Filtered by slug, so the link
+         lands on this definition's own catalogue entry rather than the top of
+         a long page. */}}
+    <p class="ui-def-edit-links"><a href="/task-catalogue?q={{.Definition.Slug}}#definition-{{.Definition.Slug}}">{{if .Definition.IsContainer}}View this chain in the catalogue{{else}}View this task in the catalogue{{end}}</a></p>
   </div>
 
   <section class="ui-def-card" id="basics">
@@ -660,7 +669,7 @@
       </label>
       <label class="ui-def-check">
         <input type="checkbox" name="is_active" value="yes"{{if .Definition.IsActive}} checked{{end}} />
-        <span>Active: this definition may be spawned from the catalog</span>
+        <span>Active: this definition may be spawned from the catalogue</span>
       </label>
       <div class="ui-def-actions">
         <button class="ui-def-button" type="submit">Save basics</button>
