@@ -40,7 +40,7 @@ func seedCanvasTree(t *testing.T, ctx context.Context, slug string, blocks []db.
 func canvasTaskBlock(t *testing.T, ctx context.Context, name string) (string, string) {
 	t.Helper()
 	slug := tdeSlug(t, name)
-	id := insertDefinition(t, ctx, slug, strings.Title(name), "", tdeTwoInputs, false, true)
+	id := insertDefinition(t, ctx, slug, titleizeBreadcrumbLabel(name), "", tdeTwoInputs, false, true)
 	return slug, id
 }
 

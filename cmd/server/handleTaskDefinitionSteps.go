@@ -121,8 +121,10 @@ func sortedMappingKeys(mapping map[string]string) []string {
 	return keys
 }
 
-// buildStepsView loads the stepper in engine order: sort_order then _created_at,
-// the same ordering getTaskDefinitionChildren uses at run time.
+// buildStepsView loads the rows view's stepper in sort_order then _created_at
+// order. The canvas and raw views read the block tree's own parent/position
+// order instead, so the two presentations can differ while the stored document
+// stays single.
 func buildStepsView(ctx context.Context, row db.TaskDefinitionRow) (stepsView, error) {
 	view := stepsView{Container: row.IsContainer}
 	if !row.IsContainer {

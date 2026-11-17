@@ -102,7 +102,7 @@ func canvasKindLabel(block db.DocumentBlock) string {
 	case "task":
 		return "Task"
 	default:
-		return strings.Title(block.Kind)
+		return titleizeBreadcrumbLabel(block.Kind)
 	}
 }
 

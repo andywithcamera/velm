@@ -488,11 +488,11 @@ func nullableText(s string) any {
 func EvaluateIfCondition(condition string, inputs map[string]any) (bool, error) {
 	trimmed := strings.TrimSpace(condition)
 	if !strings.HasPrefix(trimmed, "expr:") {
-		return false, fmt.Errorf("condition %q is not an expression; prefix it with expr:", condition)
+		return false, fmt.Errorf("condition %q is not an expression: prefix it with %q", condition, "expr:")
 	}
 	expression := strings.TrimSpace(strings.TrimPrefix(trimmed, "expr:"))
 	if expression == "" {
-		return false, fmt.Errorf("condition has no expression after expr:")
+		return false, fmt.Errorf("condition has no expression after %q", "expr:")
 	}
 	env, err := cel.NewEnv(
 		cel.Variable("inputs", cel.DynType),

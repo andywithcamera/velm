@@ -149,9 +149,11 @@ func GetTaskDefinitionBySlug(ctx context.Context, slug string) (TaskDefinitionRo
 	return row, nil
 }
 
-// ListDefinitionSteps returns a container's steps in engine order:
-// sort_order first, then _created_at to break ties, which is the ordering
-// getTaskDefinitionChildren uses at run time (TaskEngine.go:123). A child
+// ListDefinitionSteps returns a container's steps in the rows view's order:
+// sort_order first, then _created_at to break ties. (The block tree orders by
+// parent and then position at run time; the canvas reads that order through
+// LoadDefinitionDocument, so the two views can differ in presentation but never
+// in what is stored.) A child
 // deleted softly still has its link row (094 deletes softly while the FK is
 // ON DELETE CASCADE), so the row is returned with ChildDeleted set and the
 // editor can show it as broken rather than pretending it runs.

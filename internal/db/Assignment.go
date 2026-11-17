@@ -135,7 +135,11 @@ func resolveAssignment(ctx context.Context, q scriptQuerier, spec assignmentSpec
 		case 1:
 			return groupID, members[0], nil
 		default:
-			return groupID, members[rand.IntN(len(members))], nil
+			// Picking a group member at random is a workload-balancing
+			// choice, not a security decision: there is no secret to leak
+			// and no adversary who benefits from predicting it, so the
+			// non-cryptographic source is correct here.
+			return groupID, members[rand.IntN(len(members))], nil // #nosec G404 -- assignment, not a security decision
 		}
 
 	case AssignmentRoundRobin:

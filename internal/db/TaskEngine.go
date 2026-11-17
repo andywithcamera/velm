@@ -127,29 +127,6 @@ type childSpec struct {
 	DependsOnReason   string
 }
 
-func getTaskDefinitionChildren(ctx context.Context, q scriptQuerier, containerID string) ([]childSpec, error) {
-	rows, err := q.Query(ctx, `
-		SELECT child_definition_id::text, input_mapping, depends_on, depends_on_reason
-		FROM base_task_definition_child
-		WHERE container_definition_id = $1
-		ORDER BY sort_order, _created_at`, containerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var specs []childSpec
-	for rows.Next() {
-		var spec childSpec
-		var deps []string
-		if err := rows.Scan(&spec.ChildDefinitionID, &spec.InputMapping, &deps, &spec.DependsOnReason); err != nil {
-			return nil, err
-		}
-		spec.DependsOn = deps
-		specs = append(specs, spec)
-	}
-	return specs, rows.Err()
-}
-
 // SpawnTaskInstance creates a task instance from a definition. Children of
 // a container spawn immediately under parent_task_id, in pending (issue
 // #206/#209). A container that is itself ready opens in the same call: it
@@ -462,14 +439,6 @@ func spawnStateFor(def *TaskDefinition, parentTaskID string) string {
 		return taskStateReady
 	}
 	return taskStatePending
-}
-
-func spawnTaskForDefinitionByID(ctx context.Context, q scriptQuerier, defID, parentTaskID, requestedBy string, inputs map[string]any) (string, error) {
-	def, err := getTaskDefinition(ctx, q, defID)
-	if err != nil {
-		return "", err
-	}
-	return spawnTaskForDefinition(ctx, q, def, parentTaskID, requestedBy, inputs)
 }
 
 // StartTask advances a ready task to in_progress and runs engine hooks:
