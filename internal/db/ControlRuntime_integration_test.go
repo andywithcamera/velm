@@ -74,38 +74,6 @@ func controlTestBlock(t *testing.T, ctx context.Context, containerID, parentID, 
 	return id
 }
 
-// controlRunRows returns every task in a spawned run, keyed by task id, and
-// the run's root ids.
-func controlRunRows(t *testing.T, ctx context.Context, rootID string) map[string]map[string]any {
-	t.Helper()
-	rows, err := Pool.Query(ctx, `
-		SELECT _id::text, COALESCE(definition_id::text, ''), title,
-			COALESCE(work_type, ''), state, COALESCE(closure_reason, ''),
-			COALESCE(parent_task_id::text, ''), variables
-		FROM base_task
-		WHERE _id = $1 OR parent_task_id = $1
-		ORDER BY number`, rootID)
-	if err != nil {
-		t.Fatalf("read run rows: %v", err)
-	}
-	defer rows.Close()
-	out := map[string]map[string]any{}
-	for rows.Next() {
-		var id, defID, title, workType, state, reason, parent string
-		var vj []byte
-		if err := rows.Scan(&id, &defID, &title, &workType, &state, &reason, &parent, &vj); err != nil {
-			t.Fatalf("scan run row: %v", err)
-		}
-		vars := map[string]any{}
-		_ = json.Unmarshal(vj, &vars)
-		out[id] = map[string]any{
-			"id": id, "definition_id": defID, "title": title, "work_type": workType,
-			"state": state, "closure_reason": reason, "parent_task_id": parent, "variables": vars,
-		}
-	}
-	return out
-}
-
 // controlSeedLeaf seeds a leaf definition with one input so mapping has
 // something to bind.
 func controlSeedLeaf(t *testing.T, ctx context.Context, slug string) string {

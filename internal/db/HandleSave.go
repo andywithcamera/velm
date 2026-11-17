@@ -309,7 +309,11 @@ func HandleSave(w http.ResponseWriter, r *http.Request) {
 		// trigger pass records a cleared column in nullColumns only, so
 		// iterating formData alone would silently leave the old value in
 		// place (a group change kept the previous assignee).
-		columnNames := make([]string, 0, len(formData)+len(nullColumns))
+		// No capacity hint from the two lengths: adding them is the addition
+		// CodeQL reports as a possible overflow (the values are map lengths, so
+		// it cannot happen in practice, but an unbounded hint buys nothing on a
+		// handful of columns).
+		var columnNames []string
 		for k := range formData {
 			columnNames = append(columnNames, k)
 		}
