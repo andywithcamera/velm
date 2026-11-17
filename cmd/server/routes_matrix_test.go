@@ -92,6 +92,7 @@ var routeAccess = map[string]accessClass{
 	"POST /task-definitions/{slug}/inputs":                     accessWrite,
 	"POST /task-definitions/{slug}/inputs/raw":                 accessWrite,
 	"POST /task-definitions/{slug}/steps":                      accessWrite,
+	"POST /task-definitions/{slug}/structure":                  accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/remove":  accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/move":    accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/depends": accessWrite,

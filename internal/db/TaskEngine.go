@@ -1500,7 +1500,9 @@ func resolveScopeRef(scope map[string]any, ref any) (any, bool) {
 		return ref, true
 	}
 	parts := strings.Split(strings.TrimPrefix(s, "$"), ".")
-	if len(parts) < 2 {
+	// A single segment is a value in scope, not a path into one: a for_each
+	// element may itself be a scalar, and $item is then the whole pill.
+	if len(parts) < 1 || parts[0] == "" {
 		return nil, false
 	}
 	var cur any = scope

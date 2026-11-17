@@ -144,6 +144,7 @@ func registerRoutes() {
 	http.Handle("POST /task-definitions/{slug}/inputs", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionInputsSave), store)))
 	http.Handle("POST /task-definitions/{slug}/inputs/raw", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionRawSave), store)))
 	http.Handle("POST /task-definitions/{slug}/steps", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepAdd), store)))
+	http.Handle("POST /task-definitions/{slug}/structure", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStructureSave), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/remove", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepRemove), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/move", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepMove), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/depends", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepDepends), store)))

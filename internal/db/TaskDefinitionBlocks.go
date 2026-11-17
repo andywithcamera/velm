@@ -108,7 +108,7 @@ func getDefinitionBlocks(ctx context.Context, q scriptQuerier, containerID strin
 		ORDER BY sort_order, _created_at`
 	if tree {
 		query = `
-			SELECT _id::text, COALESCE(parent_block_id::text, ''), child_definition_id::text,
+			SELECT _id::text, COALESCE(parent_block_id::text, ''), COALESCE(child_definition_id::text, ''),
 				COALESCE(block_kind, 'task'), COALESCE(block_type, ''), config,
 				position, sort_order, input_mapping, depends_on,
 				COALESCE(depends_on_block_id, '{}'), depends_on_reason
@@ -176,8 +176,13 @@ func topLevelBlocks(blocks []DefinitionBlock, parentID string) []DefinitionBlock
 // parentScopeBlocks returns the blocks that describe the children of the
 // task whose variables are given: a container's own root scope, or the scope
 // of the control block the task was spawned from.
+//
+// Only a control task is scoped by its block id. A work task that happens to
+// carry block identity (any task under an if or for_each does) is a container
+// in its own right: its block id names its row in the *parent's* definition,
+// not a block of its own, so its children are its definition's root scope.
 func parentScopeBlocks(blocks []DefinitionBlock, parentVars map[string]any) []DefinitionBlock {
-	if id, _, _, _, _, _, ok := blockFromVars(parentVars); ok {
+	if id, _, kind, _, _, _, ok := blockFromVars(parentVars); ok && kind == "control" {
 		return topLevelBlocks(blocks, id)
 	}
 	return topLevelBlocks(blocks, "")
