@@ -24,8 +24,11 @@ import (
 )
 
 var (
-	// ErrDuplicateDefinitionStep reports uq_base_task_definition_child (078)
-	// refusing a second copy of the same child in one container.
+	// ErrDuplicateDefinitionStep reports a second copy of the same child in one
+	// container. 078 enforced this with uq_base_task_definition_child; 098
+	// drops that constraint because a tree may legitimately hold the same
+	// definition twice (two reboot_server blocks), so the rows view checks it
+	// explicitly and keeps the refusal its callers already translate.
 	ErrDuplicateDefinitionStep = errors.New("that definition is already a step in this container")
 
 	// ErrStepDependencyCycle reports 084's base_task_child_edge_acyclic trigger
@@ -64,7 +67,8 @@ func GetTaskDefinitionBySlugIncludingDeleted(ctx context.Context, slug string) (
 		FROM base_task_definition d
 		WHERE d.slug = $1`, slug).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &deleted)
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
+			&row.DefaultGroupID, &row.AssignmentStrategy, &deleted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TaskDefinitionRow{}, "", ErrTaskDefinitionNotFound
 	}
@@ -82,11 +86,19 @@ func GetTaskDefinitionBySlugIncludingDeleted(ctx context.Context, slug string) (
 // sort_order is the current maximum plus ten, leaving room to insert between
 // two steps later without renumbering.
 func AddDefinitionStep(ctx context.Context, containerID, childID string) error {
-	_, err := Pool.Exec(ctx, `
-		INSERT INTO base_task_definition_child (container_definition_id, child_definition_id, sort_order)
-		SELECT $1, $2, COALESCE(MAX(sort_order), 0) + 10
-		FROM base_task_definition_child
-		WHERE container_definition_id = $1`, containerID, childID)
+	tag, err := Pool.Exec(ctx, `
+		WITH next_position AS (
+			SELECT COALESCE(MAX(sort_order), 0) + 10 AS position
+			FROM base_task_definition_child
+			WHERE container_definition_id = $1
+		)
+		INSERT INTO base_task_definition_child (container_definition_id, child_definition_id, sort_order, position)
+		SELECT $1, $2, position, position
+		FROM next_position
+		WHERE NOT EXISTS (
+			SELECT 1 FROM base_task_definition_child
+			WHERE container_definition_id = $1 AND child_definition_id = $2
+		)`, containerID, childID)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" &&
@@ -94,6 +106,11 @@ func AddDefinitionStep(ctx context.Context, containerID, childID string) error {
 			return ErrDuplicateDefinitionStep
 		}
 		return err
+	}
+	// 098 removed the unique constraint that used to make this refusal, so the
+	// rows view decides it here: a row was inserted only when none existed.
+	if tag.RowsAffected() == 0 {
+		return ErrDuplicateDefinitionStep
 	}
 	return nil
 }
@@ -205,8 +222,11 @@ func MoveDefinitionStep(ctx context.Context, containerID, childID, direction str
 		id    string
 		value int
 	}{{earlier.id, firstValue}, {later.id, secondValue}} {
+		// position is the tree's sibling order from 098 on (Design Vision 4).
+		// The rows view below still stores sort_order, and the two must agree
+		// or the same step would read first in one view and second in another.
 		if _, err := tx.Exec(ctx, `
-			UPDATE base_task_definition_child SET sort_order = $3
+			UPDATE base_task_definition_child SET sort_order = $3, position = $3
 			WHERE container_definition_id = $1 AND child_definition_id = $2`,
 			containerID, update.id, update.value); err != nil {
 			return false, err

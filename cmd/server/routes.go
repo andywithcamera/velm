@@ -144,12 +144,16 @@ func registerRoutes() {
 	http.Handle("POST /task-definitions/{slug}/inputs", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionInputsSave), store)))
 	http.Handle("POST /task-definitions/{slug}/inputs/raw", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionRawSave), store)))
 	http.Handle("POST /task-definitions/{slug}/steps", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepAdd), store)))
+	http.Handle("POST /task-definitions/{slug}/structure", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStructureSave), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/remove", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepRemove), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/move", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepMove), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/depends", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepDepends), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/mapping", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepMapping), store)))
-	http.Handle("/task-catalog", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogPage)))
-	http.Handle("/task-catalog/order", withAuth(authz.PermissionWrite, http.HandlerFunc(handleTaskCatalogOrder)))
+	// Task catalogue: the order page and its order endpoint. The pre-spelling
+	// path /task-catalog is kept as a permanent redirect for bookmarks.
+	http.Handle("/task-catalogue", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogPage)))
+	http.Handle("/task-catalogue/order", withAuth(authz.PermissionWrite, http.HandlerFunc(handleTaskCatalogOrder)))
+	http.Handle("/task-catalog", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogueLegacyRedirect)))
 	http.Handle("/task", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))
 	http.Handle("/task/", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))
 	http.Handle("/t/", withAuth(authz.PermissionView, http.HandlerFunc(handleTableView)))

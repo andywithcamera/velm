@@ -35,7 +35,13 @@ func taskDefinitionsTestDB(t *testing.T) context.Context {
 	if err := db.ConnectToDB(); err != nil {
 		t.Fatalf("ConnectToDB: %v", err)
 	}
-	t.Cleanup(db.CloseDB)
+	// A closed pool left non-nil makes the next test that guards on
+	// db.Pool == nil skip ConnectToDB and fail with "closed pool", so tests
+	// run in one order and pass in another. Restore both halves of the state.
+	t.Cleanup(func() {
+		db.CloseDB()
+		db.Pool = nil
+	})
 	ctx := context.Background()
 	if err := db.RunMigrations(ctx); err != nil {
 		t.Fatalf("RunMigrations: %v", err)

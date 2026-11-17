@@ -15,6 +15,7 @@ import (
 
 	"velm/internal/auth"
 	"velm/internal/db"
+	"velm/internal/utils"
 )
 
 type formReferenceOption struct {
@@ -709,6 +710,20 @@ func buildFormFieldConfigs(ctx context.Context, currentTable string, columns []d
 		if currentTable == "base_task" && (col.NAME == "state_changed_at" || col.NAME == "started_at" || col.NAME == "closed_at") {
 			cfg.ReadOnly = true
 		}
+		if currentTable == "base_task" && col.NAME == "assignment_group_id" {
+			// Same rule the save path enforces (AC-95): the group is fixed
+			// once the task has moved past pending. The server refuses the
+			// write regardless; this keeps the control honest.
+			if recordMap, ok := record.(map[string]any); ok {
+				state := ""
+				if value, present := recordMap["state"]; present && value != nil {
+					state = fmt.Sprint(value)
+				}
+				if db.TaskAssignmentGroupLocked(state) {
+					cfg.ReadOnly = true
+				}
+			}
+		}
 		if currentTable == "base_task" && col.NAME == "definition_id" {
 			// The ask type is chosen at spawn time; a spawned task keeps its
 			// definition. Lock it once set so the pipeline can't be swapped.
@@ -932,6 +947,15 @@ func buildEnumOptions(enumValues string) []formReferenceOption {
 }
 
 func fetchReferenceOptionsFiltered(ctx context.Context, tableName, query string, limit int, selected string) []formReferenceOption {
+	return fetchReferenceOptionsScoped(ctx, tableName, query, limit, selected, "")
+}
+
+// fetchReferenceOptionsScoped is fetchReferenceOptionsFiltered with an extra
+// scope. The only scope today is a group: a task's Assigned To picker must not
+// offer a person who is not in the task's assignment group, so the members of
+// that group are the whole candidate set. An absent or malformed group id
+// leaves the list unscoped, so every existing caller keeps its behaviour.
+func fetchReferenceOptionsScoped(ctx context.Context, tableName, query string, limit int, selected, groupID string) []formReferenceOption {
 	if !db.IsSafeIdentifier(tableName) {
 		return nil
 	}
@@ -959,6 +983,17 @@ func fetchReferenceOptionsFiltered(ctx context.Context, tableName, query string,
 		whereClause += ` AND (_deleted_at IS NULL OR _id::text = $3)`
 	}
 
+	search := strings.TrimSpace(query)
+	selected = strings.TrimSpace(selected)
+	args := []any{search, "%" + search + "%", selected, limit}
+	groupID = strings.TrimSpace(groupID)
+	if strings.EqualFold(tableName, db.UserTableName) && utils.IsValidUUID(groupID) {
+		// _group_membership.user_id is text; compare as text so the scope
+		// never depends on a cast error for a malformed id.
+		whereClause += ` AND _id::text IN (SELECT gm.user_id FROM _group_membership gm WHERE gm.group_id = $5)`
+		args = append(args, groupID)
+	}
+
 	sqlQuery := fmt.Sprintf(
 		`SELECT _id::text, COALESCE(CAST(%s AS text), _id::text) AS label
 		 FROM %s
@@ -969,9 +1004,7 @@ func fetchReferenceOptionsFiltered(ctx context.Context, tableName, query string,
 		quotedTable,
 		whereClause,
 	)
-	search := strings.TrimSpace(query)
-	selected = strings.TrimSpace(selected)
-	rows, err := db.Pool.Query(ctx, sqlQuery, search, "%"+search+"%", selected, limit)
+	rows, err := db.Pool.Query(ctx, sqlQuery, args...)
 	if err != nil {
 		return nil
 	}

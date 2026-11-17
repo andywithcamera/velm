@@ -72,10 +72,11 @@ var routeAccess = map[string]accessClass{
 	"/api/agent-tokens": accessAdmin,
 
 	// Read.
-	"/p/":                 accessView,
-	"/map":                accessView,
-	"/task-catalog":       accessView,
-	"/task-catalog/order": accessWrite,
+	"/p/":                   accessView,
+	"/map":                  accessView,
+	"/task-catalogue":       accessView,
+	"/task-catalogue/order": accessWrite,
+	"/task-catalog":         accessView, // permanent redirect to /task-catalogue
 
 	// Task definition editor. Each method gets its own row because the read
 	// pages and the write actions share a path and must not share a gate: the
@@ -91,6 +92,7 @@ var routeAccess = map[string]accessClass{
 	"POST /task-definitions/{slug}/inputs":                     accessWrite,
 	"POST /task-definitions/{slug}/inputs/raw":                 accessWrite,
 	"POST /task-definitions/{slug}/steps":                      accessWrite,
+	"POST /task-definitions/{slug}/structure":                  accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/remove":  accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/move":    accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/depends": accessWrite,

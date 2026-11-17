@@ -225,6 +225,7 @@
                 data-reference-field-label="{{$x.LABEL}}"
                 data-reference-table="{{$cfg.ReferenceTo}}"
                 data-reference-table-label="{{if $cfg.ReferenceTableLabel}}{{$cfg.ReferenceTableLabel}}{{else}}Record{{end}}"
+                {{if and (eq $.FormTable "base_task") (eq $x.NAME "assigned_user_id")}}data-reference-scope-field="assignment_group_id"{{end}}
                 data-reference-nullable="{{if $x.IS_NULLABLE}}1{{else}}0{{end}}"
                 data-reference-readonly="{{if $readonly}}1{{else}}0{{end}}"
               >
@@ -1256,6 +1257,14 @@
       return picker?.getAttribute("data-reference-nullable") === "1";
     }
 
+    function referenceScopeValue(picker) {
+      const fieldName = (picker?.getAttribute("data-reference-scope-field") || "").trim();
+      if (!picker || !fieldName) return "";
+      const form = picker.closest("form");
+      const field = form ? form.querySelector(`[name="${fieldName}"]`) : null;
+      return field ? String(field.value || "").trim() : "";
+    }
+
     function pickerReadonly(picker) {
       return picker?.getAttribute("data-reference-readonly") === "1";
     }
@@ -1435,7 +1444,11 @@
       const selected = selectedReferenceData(activePicker)?.value || "";
       setModalStatus(query ? `Searching ${pickerTableLabel(activePicker)} records...` : `Showing ${pickerTableLabel(activePicker)} records.`);
 
-      const url = `/api/reference-options?table=${encodeURIComponent(table)}&q=${encodeURIComponent(query)}&selected=${encodeURIComponent(selected)}&limit=40`;
+      let url = `/api/reference-options?table=${encodeURIComponent(table)}&q=${encodeURIComponent(query)}&selected=${encodeURIComponent(selected)}&limit=40`;
+      const scopeValue = referenceScopeValue(activePicker);
+      if (scopeValue) {
+        url += `&group_id=${encodeURIComponent(scopeValue)}`;
+      }
       try {
         const response = await fetch(url, {
           method: "GET",
@@ -1533,6 +1546,23 @@
         select.addEventListener("change", function () {
           updatePickerPresentation(picker);
         });
+      }
+      const scopeFieldName = (picker.getAttribute("data-reference-scope-field") || "").trim();
+      if (scopeFieldName) {
+        const scopeForm = picker.closest("form");
+        const scopeField = scopeForm ? scopeForm.querySelector(`[name="${scopeFieldName}"]`) : null;
+        if (scopeField) {
+          // A value from the old scope does not belong to the new one. Clearing
+          // here is the visual half of the server rule that blanks Assigned To
+          // when the group changes.
+          const clearOnScopeChange = function () {
+            if ((selectedReferenceData(picker)?.value || "") !== "") {
+              setPickerValue(picker, "", "");
+            }
+          };
+          scopeField.addEventListener("change", clearOnScopeChange);
+          scopeField.addEventListener("input", clearOnScopeChange);
+        }
       }
       if (openButton) {
         openButton.addEventListener("click", function () {

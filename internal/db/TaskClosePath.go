@@ -100,7 +100,7 @@ func isTerminalTaskState(state string) bool {
 // container whose children are all terminal. Each roll-up runs the parent's
 // own close hooks, so outputs publish and its siblings re-evaluate, which is
 // what lets a whole pipeline collapse after its last stage.
-func rollUpAncestors(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) error {
+func rollUpAncestors(ctx context.Context, tx scriptQuerier, taskID, actorUserID string) error {
 	current := taskID
 	for depth := 0; depth < 32; depth++ {
 		parentID, state, err := loadParent(ctx, tx, current)
@@ -140,7 +140,7 @@ func rollUpAncestors(ctx context.Context, tx pgx.Tx, taskID, actorUserID string)
 }
 
 // loadParent returns a task's parent id and that parent's state.
-func loadParent(ctx context.Context, tx pgx.Tx, taskID string) (string, string, error) {
+func loadParent(ctx context.Context, tx scriptQuerier, taskID string) (string, string, error) {
 	var parentID *string
 	var state string
 	err := tx.QueryRow(ctx, `
@@ -162,7 +162,7 @@ func loadParent(ctx context.Context, tx pgx.Tx, taskID string) (string, string, 
 
 // loadChildStates reads a parent's live children, reusing the shape the
 // promotion path already works with.
-func loadChildStates(ctx context.Context, tx pgx.Tx, parentTaskID string) ([]childInstanceState, error) {
+func loadChildStates(ctx context.Context, tx scriptQuerier, parentTaskID string) ([]childInstanceState, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT _id::text, COALESCE(definition_id::text, ''), state, closure_reason
 		FROM base_task

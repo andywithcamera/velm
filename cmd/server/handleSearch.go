@@ -163,7 +163,7 @@ func searchTaskDefinitionResults(ctx context.Context, query string, limit int) (
 		}
 		results = append(results, MenuItem{
 			Title: "Start task: " + name,
-			Href:  "/task-catalog?q=" + url.QueryEscape(slug),
+			Href:  "/task-catalogue?q=" + url.QueryEscape(slug),
 		})
 	}
 	return results, rows.Err()

@@ -69,9 +69,12 @@ type TaskDefinition struct {
 	// Ask is what this definition asks of its doer (#225), inherited by
 	// every instance it spawns. Empty when the definition predates the
 	// column or has no verb; the spawn then falls back to the intake default.
-	Ask        string
-	SpawnRules []TaskSpawnRule
-	IsActive   bool
+	Ask string
+	// AssignmentStrategy is one of the six values in Assignment.go, or empty
+	// for the pre-strategy behaviour (098, Requirements AC-65).
+	AssignmentStrategy string
+	SpawnRules         []TaskSpawnRule
+	IsActive           bool
 }
 
 type TaskSpawnRule struct {
@@ -90,10 +93,14 @@ func getTaskDefinition(ctx context.Context, q scriptQuerier, id string) (*TaskDe
 	err := q.QueryRow(ctx, `
 		SELECT _id::text, slug, display_name, COALESCE(description, ''), is_container,
 			script_text, run_if_script, default_group_id::text, spawn_rules, is_active,
-			COALESCE(default_assignee_id::text, ''), COALESCE(ask, '')
-		FROM base_task_definition WHERE _id = $1 AND _deleted_at IS NULL`, id).Scan(
+			COALESCE(default_assignee_id::text, ''), COALESCE(ask, ''),
+			-- to_jsonb keeps this readable on a pre-098 schema, where the
+			-- column does not exist yet: the pre-migration parity test spawns
+			-- a definition in a scratch 097 database through this loader.
+			COALESCE(to_jsonb(d) ->> 'assignment_strategy', '')
+		FROM base_task_definition d WHERE d._id = $1 AND d._deleted_at IS NULL`, id).Scan(
 		&d.ID, &d.Slug, &d.DisplayName, &d.Description, &d.IsContainer, &d.ScriptText, &d.RunIfScript,
-		&groupID, &spawnRulesJSON, &d.IsActive, &d.DefaultAssigneeID, &d.Ask)
+		&groupID, &spawnRulesJSON, &d.IsActive, &d.DefaultAssigneeID, &d.Ask, &d.AssignmentStrategy)
 	if err != nil {
 		return nil, fmt.Errorf("load task definition: %w", err)
 	}
@@ -118,29 +125,6 @@ type childSpec struct {
 	InputMapping      map[string]any
 	DependsOn         []string
 	DependsOnReason   string
-}
-
-func getTaskDefinitionChildren(ctx context.Context, q scriptQuerier, containerID string) ([]childSpec, error) {
-	rows, err := q.Query(ctx, `
-		SELECT child_definition_id::text, input_mapping, depends_on, depends_on_reason
-		FROM base_task_definition_child
-		WHERE container_definition_id = $1
-		ORDER BY sort_order, _created_at`, containerID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var specs []childSpec
-	for rows.Next() {
-		var spec childSpec
-		var deps []string
-		if err := rows.Scan(&spec.ChildDefinitionID, &spec.InputMapping, &deps, &spec.DependsOnReason); err != nil {
-			return nil, err
-		}
-		spec.DependsOn = deps
-		specs = append(specs, spec)
-	}
-	return specs, rows.Err()
 }
 
 // SpawnTaskInstance creates a task instance from a definition. Children of
@@ -198,6 +182,27 @@ type taskRoute struct {
 	AssigneeID *string
 	Override   bool // apply GroupID/AssigneeID instead of the definition defaults
 	Ready      bool
+	// State, when set, is the state the instance is inserted in. The control
+	// runtime uses it for a skipped branch; empty keeps the engine default.
+	State string
+	// Skip marks a task that must not run: a branch whose `if` was false.
+	Skip bool
+	// BlockMeta and Scope stamp the block identity and the $item/$index/$parent
+	// values a control scope passes down (Design Vision §4).
+	BlockMeta map[string]any
+	Scope     map[string]any
+	// Assignment overrides from a block (098). A nil pointer means the block
+	// did not set that column, so the definition's value is inherited.
+	AssignGroupOverride *string
+	AssignStrategy      string
+	AssignUserOverride  *string
+	// AssignInputName is the user-typed input a from_input block reads, and
+	// AssignLabel names the block in refusals and logs.
+	AssignInputName string
+	AssignLabel     string
+	// AssignInputs is the run's inputs. A block spawns with empty inputs of
+	// its own, so from_input reads the container's request instead.
+	AssignInputs map[string]any
 }
 
 // spawnTaskWithRoute inserts one instance of def.
@@ -213,7 +218,21 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	}
 
 	inputs = nonNilInputs(inputs)
+	// A control tree can be refused before its first row exists: an
+	// unreadable collection or one over the v1 cap must not leave a
+	// half-spawned run behind (AC-34, AC-38).
+	if def.IsContainer {
+		if err := prevalidateControlBlocks(ctx, q, def.ID, inputs); err != nil {
+			return "", err
+		}
+	}
 	vars := map[string]any{"inputs": inputs, "locals": map[string]any{}, "outputs": map[string]any{}}
+	if route != nil && route.BlockMeta != nil {
+		vars["block"] = route.BlockMeta
+	}
+	if route != nil {
+		mergeScope(vars, route.Scope)
+	}
 	varsJSON, err := json.Marshal(vars)
 	if err != nil {
 		return "", err
@@ -236,11 +255,56 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 			assigneeID = *route.AssigneeID
 		}
 	}
-	assigneeID = resolveSpawnAssignee(ctx, q, groupID, assigneeID)
+	// Assignment (Plan T5). The definition names the group and the strategy;
+	// a block may override the group, the strategy, or the named user it
+	// reads. Resolved once, here, inside the spawn transaction.
+	spec := assignmentSpec{
+		GroupID:     groupID,
+		Strategy:    def.AssignmentStrategy,
+		NamedUserID: assigneeID,
+		Label:       def.Slug,
+	}
+	if route != nil && !route.Override {
+		if route.AssignGroupOverride != nil {
+			spec.GroupID = *route.AssignGroupOverride
+		}
+		if route.AssignStrategy != "" {
+			spec.Strategy = route.AssignStrategy
+		}
+		if route.AssignUserOverride != nil {
+			spec.NamedUserID = *route.AssignUserOverride
+		}
+		if route.AssignInputName != "" {
+			spec.InputName = route.AssignInputName
+		}
+		if route.AssignLabel != "" {
+			spec.Label = route.AssignLabel
+		}
+	}
+	if route != nil && route.Override {
+		// An explicit route (a spawn rule's "pool") is already the answer:
+		// the strategy must not pick somebody the rule did not name.
+		spec.Strategy = ""
+	}
+	inputForAssignment := inputs
+	if route != nil && route.AssignInputs != nil {
+		inputForAssignment = route.AssignInputs
+	}
+	groupID, assigneeID, err = resolveAssignment(ctx, q, spec, requestedBy, inputForAssignment)
+	if err != nil {
+		return "", err
+	}
+	if route != nil && route.Skip {
+		// Skips do not consume a round-robin position: the branch did not run.
+		assigneeID = ""
+	}
 
 	state := spawnStateFor(def, parentTaskID)
 	if route != nil && route.Ready {
 		state = taskStateReady
+	}
+	if route != nil && route.State != "" {
+		state = route.State
 	}
 
 	var taskID string
@@ -306,16 +370,12 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	}
 
 	if def.IsContainer {
-		children, err := getTaskDefinitionChildren(ctx, q, def.ID)
-		if err != nil {
+		// Children spawn with empty inputs; the container opening binds them
+		// from its scope via input_mapping. A control tree's blocks are
+		// spawned the same way, as rows the promotion pass then opens.
+		skip := route != nil && route.Skip
+		if err := spawnDefinitionScope(ctx, q, def.ID, taskID, requestedBy, inputs, nil, skip); err != nil {
 			return "", err
-		}
-		for _, child := range children {
-			// Children spawn with empty inputs; the container opening binds
-			// them from its scope via input_mapping.
-			if _, err := spawnTaskForDefinitionByID(ctx, q, child.ChildDefinitionID, taskID, requestedBy, map[string]any{}); err != nil {
-				return "", err
-			}
 		}
 		if state == taskStateReady {
 			if err := openContainer(ctx, q, taskID, requestedBy, 0); err != nil {
@@ -324,6 +384,15 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 		}
 	}
 	return taskID, nil
+}
+
+// spawnTaskWithRouteByID loads a definition and spawns one routed instance.
+func spawnTaskWithRouteByID(ctx context.Context, q scriptQuerier, defID, parentTaskID, requestedBy string, inputs map[string]any, route *taskRoute) (string, error) {
+	def, err := getTaskDefinition(ctx, q, defID)
+	if err != nil {
+		return "", err
+	}
+	return spawnTaskWithRoute(ctx, q, def, parentTaskID, requestedBy, inputs, route)
 }
 
 // openContainer starts a plan, not a job. A container holds no work of its
@@ -370,14 +439,6 @@ func spawnStateFor(def *TaskDefinition, parentTaskID string) string {
 		return taskStateReady
 	}
 	return taskStatePending
-}
-
-func spawnTaskForDefinitionByID(ctx context.Context, q scriptQuerier, defID, parentTaskID, requestedBy string, inputs map[string]any) (string, error) {
-	def, err := getTaskDefinition(ctx, q, defID)
-	if err != nil {
-		return "", err
-	}
-	return spawnTaskForDefinition(ctx, q, def, parentTaskID, requestedBy, inputs)
 }
 
 // StartTask advances a ready task to in_progress and runs engine hooks:
@@ -444,34 +505,33 @@ func runStartHooksInTx(ctx context.Context, tx pgx.Tx, taskID, actorUserID strin
 // spawn-time inputs for the same key. Unresolvable $refs are skipped, not
 // fatal — the child starts without that input and its run_if decides.
 func bindChildInputs(ctx context.Context, tx scriptQuerier, parentTaskID, actorUserID string) error {
-	defID, err := getDefinitionIDByTaskID(ctx, tx, parentTaskID)
+	defID, _, err := scopeDefinitionID(ctx, tx, parentTaskID)
 	if err != nil || defID == "" {
 		return err
-	}
-	children, err := getTaskDefinitionChildren(ctx, tx, defID)
-	if err != nil {
-		return err
-	}
-	if len(children) == 0 {
-		return nil
 	}
 	parentVars, err := readTaskVariables(ctx, tx, parentTaskID)
 	if err != nil {
 		return err
 	}
+	blocks, err := getDefinitionBlocks(ctx, tx, defID)
+	if err != nil {
+		return err
+	}
+	if len(blocks) == 0 {
+		return nil
+	}
 
-	// Instance children by definition id. One definition may appear twice
-	// in a container only via distinct rows, which the unique constraint
-	// forbids — so the mapping is 1:1 in practice.
+	// Instance children by block id, with definition id as the fallback for a
+	// row the engine did not create from a block.
 	rows, err := tx.Query(ctx, `
-		SELECT _id::text, definition_id::text, variables
+		SELECT _id::text, COALESCE(definition_id::text, ''), variables
 		FROM base_task
 		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, parentTaskID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	childTasks := map[string]string{} // definition id -> task id
+	childTasks := map[string]string{}
 	childVars := map[string]map[string]any{}
 	for rows.Next() {
 		var id, cid string
@@ -481,24 +541,42 @@ func bindChildInputs(ctx context.Context, tx scriptQuerier, parentTaskID, actorU
 		}
 		vars := map[string]any{}
 		_ = json.Unmarshal(vj, &vars)
-		childTasks[cid] = id
+		key := cid
+		if blockID, _, _, _, _, _, ok := blockFromVars(vars); ok {
+			key = "block:" + blockID
+		}
+		childTasks[key] = id
 		childVars[id] = vars
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 
-	for _, spec := range children {
-		taskID, ok := childTasks[spec.ChildDefinitionID]
+	for _, b := range parentScopeBlocks(blocks, parentVars) {
+		taskID, ok := childTasks["block:"+b.ID]
 		if !ok {
-			continue
+			taskID, ok = childTasks[b.ChildDefinitionID]
+			if !ok {
+				continue
+			}
 		}
 		inputs, _ := childVars[taskID]["inputs"].(map[string]any)
 		if inputs == nil {
 			inputs = map[string]any{}
 		}
-		for childInput, source := range spec.InputMapping {
-			val, ok := resolveScopeRef(parentVars, source)
+		// A for_each element's scope carries $item/$index; a mapping may name
+		// them, so they are part of what this child's inputs resolve against.
+		scope := map[string]any{}
+		for key, value := range parentVars {
+			scope[key] = value
+		}
+		for _, key := range []string{"item", "index"} {
+			if value, present := childVars[taskID][key]; present {
+				scope[key] = value
+			}
+		}
+		for childInput, source := range b.InputMapping {
+			val, ok := resolveScopeRef(scope, source)
 			if !ok {
 				log.Printf("task engine: input_mapping %q -> %v unresolvable against parent scope, omitted (task %s)", childInput, source, taskID)
 				continue
@@ -506,6 +584,8 @@ func bindChildInputs(ctx context.Context, tx scriptQuerier, parentTaskID, actorU
 			inputs[childInput] = val
 		}
 		childVars[taskID]["inputs"] = inputs
+		// $parent.* walks up one level from any spawned task (AC-31).
+		childVars[taskID]["parent"] = parentVars
 		updated, err := json.Marshal(childVars[taskID])
 		if err != nil {
 			return err
@@ -558,15 +638,20 @@ type childInstanceState struct {
 }
 
 func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, actorUserID string, depth int) (bool, error) {
-	// Sibling instances: def id -> (state, closure reason).
+	// Sibling instances: def id -> (state, closure reason), and block id ->
+	// instances. A run row carries its block identity in variables.block; a
+	// row without one (a spawn-rule follow-on, or a child the v1 editor
+	// created) keeps the definition-keyed path.
 	rows, err := tx.Query(ctx, `
-		SELECT _id::text, definition_id::text, state, closure_reason, variables
+		SELECT _id::text, COALESCE(definition_id::text, ''), state, closure_reason, variables
 		FROM base_task
 		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, parentTaskID)
 	if err != nil {
 		return false, err
 	}
 	siblings := map[string][]childInstanceState{}
+	siblingsByBlock := map[string][]childInstanceState{}
+	var unmarked []childInstanceState
 	for rows.Next() {
 		var st childInstanceState
 		var vj []byte
@@ -577,6 +662,11 @@ func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, ac
 		st.vars = map[string]any{}
 		_ = json.Unmarshal(vj, &st.vars)
 		siblings[st.defID] = append(siblings[st.defID], st)
+		if blockID, _, _, _, _, _, ok := blockFromVars(st.vars); ok {
+			siblingsByBlock[blockID] = append(siblingsByBlock[blockID], st)
+		} else {
+			unmarked = append(unmarked, st)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -584,52 +674,268 @@ func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, ac
 	}
 	rows.Close()
 
-	// Template edges for this container's definition.
-	defID, err := getDefinitionIDByTaskID(ctx, tx, parentTaskID)
+	// Template edges for this container's definition. A control task has no
+	// definition of its own; scopeDefinitionID reads the definition it was
+	// authored in from its block metadata. The blocks that matter are the
+	// parent's scope: a control block's children, not the definition's root
+	// scope.
+	defID, parentVars, err := scopeDefinitionID(ctx, tx, parentTaskID)
 	if err != nil || defID == "" {
 		return false, err
 	}
-	specs, err := getTaskDefinitionChildren(ctx, tx, defID)
+	blocks, err := getDefinitionBlocks(ctx, tx, defID)
 	if err != nil {
 		return false, err
 	}
-	specByChild := map[string]childSpec{}
-	for _, spec := range specs {
-		specByChild[spec.ChildDefinitionID] = spec
-	}
 
 	changed := false
-	for cid, instances := range siblings {
-		spec, hasSpec := specByChild[cid]
-		if !hasSpec {
-			continue
-		}
-		if len(spec.DependsOn) == 0 {
-			// Dependency-free: promote at parent start (pending -> ready).
+	scope := parentScopeBlocks(blocks, parentVars)
+	for index, b := range scope {
+		instances := siblingsByBlock[b.ID]
+		if b.IsControl() && b.Type == "end" {
+			// AC-37: `end` is a control task that closes when the siblings it
+			// scopes are closed, through this promotion pass rather than a
+			// second scheduler.
+			if len(instances) == 0 || !earlierSiblingsTerminal(scope[:index], siblingsByBlock) {
+				continue
+			}
 			for _, inst := range instances {
-				if inst.state != taskStatePending {
+				if inst.state != taskStatePending && inst.state != taskStateReady {
 					continue
 				}
-				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID, depth); err != nil {
+				if inst.state == taskStatePending {
+					if err := transitionTaskInTx(ctx, tx, inst.taskID, taskStateReady); err != nil {
+						return false, err
+					}
+				}
+				if err := transitionTaskInTx(ctx, tx, inst.taskID, taskStateDone); err != nil {
+					return false, err
+				}
+				if _, err := tx.Exec(ctx, `UPDATE base_task SET closure_reason = 'completed' WHERE _id = $1`,
+					inst.taskID); err != nil {
+					return false, err
+				}
+				if err := onTaskClosed(ctx, tx, inst.taskID, "completed", actorUserID); err != nil {
+					return false, err
+				}
+				if err := rollUpAncestors(ctx, tx, inst.taskID, actorUserID); err != nil {
 					return false, err
 				}
 				changed = true
 			}
+			continue
+		}
+		if len(instances) == 0 {
 			continue
 		}
 		for _, inst := range instances {
 			if inst.state != taskStatePending {
 				continue
 			}
-			if depsSatisfied(spec.DependsOn, spec.DependsOnReason, siblings) {
-				if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID, depth); err != nil {
-					return false, err
+			if !blockDepsSatisfied(b, siblingsByBlock) {
+				continue
+			}
+			if err := promoteBlockInstance(ctx, tx, parentTaskID, inst, b, actorUserID, depth); err != nil {
+				return false, err
+			}
+			changed = true
+		}
+	}
+
+	// Legacy path: instances with no block identity, matched to a block by
+	// their child definition id, exactly as before 098.
+	if len(unmarked) > 0 {
+		specByChild := map[string]childSpec{}
+		for _, b := range scope {
+			if b.Kind != "task" || b.ChildDefinitionID == "" {
+				continue
+			}
+			specByChild[b.ChildDefinitionID] = childSpec{
+				ChildDefinitionID: b.ChildDefinitionID,
+				InputMapping:      b.InputMapping,
+				DependsOn:         b.DependsOn,
+				DependsOnReason:   b.DependsOnReason,
+			}
+		}
+		legacySiblings := map[string][]childInstanceState{}
+		for _, inst := range unmarked {
+			legacySiblings[inst.defID] = append(legacySiblings[inst.defID], inst)
+		}
+		for cid, instances := range legacySiblings {
+			spec, hasSpec := specByChild[cid]
+			if !hasSpec {
+				continue
+			}
+			if len(spec.DependsOn) == 0 {
+				for _, inst := range instances {
+					if inst.state != taskStatePending {
+						continue
+					}
+					if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID, depth); err != nil {
+						return false, err
+					}
+					changed = true
 				}
-				changed = true
+				continue
+			}
+			for _, inst := range instances {
+				if inst.state != taskStatePending {
+					continue
+				}
+				if depsSatisfied(spec.DependsOn, spec.DependsOnReason, legacySiblings) {
+					if err := promoteInstance(ctx, tx, parentTaskID, inst, spec, actorUserID, depth); err != nil {
+						return false, err
+					}
+					changed = true
+				}
 			}
 		}
 	}
 	return changed, nil
+}
+
+// earlierSiblingsTerminal reports whether every instance of every block
+// before this one has reached a terminal state. An `end` waits for those.
+func earlierSiblingsTerminal(earlier []DefinitionBlock, instances map[string][]childInstanceState) bool {
+	for _, b := range earlier {
+		list := instances[b.ID]
+		if len(list) == 0 {
+			continue
+		}
+		for _, inst := range list {
+			if inst.state != taskStateDone && inst.state != taskStateSkipped {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// blockDepsSatisfied reports whether every block this one waits for has a
+// terminal sibling whose outcome satisfies the edge. Block edges win over
+// the legacy definition-id edges; a pre-098 row has only the latter, which
+// is mapped onto this scope's blocks by child definition id.
+func blockDepsSatisfied(b DefinitionBlock, instances map[string][]childInstanceState) bool {
+	deps := b.DependsOnBlockIDs
+	if len(deps) == 0 && len(b.DependsOn) > 0 {
+		for _, defID := range b.DependsOn {
+			for blockID, list := range instances {
+				if len(list) > 0 && list[0].defID == defID {
+					deps = append(deps, blockID)
+					break
+				}
+			}
+		}
+	}
+	if len(deps) == 0 {
+		return true
+	}
+	for _, dep := range deps {
+		list := instances[dep]
+		if len(list) == 0 {
+			return false
+		}
+		satisfied := false
+		for _, inst := range list {
+			if instanceSatisfies(inst, b.DependsOnReason) {
+				satisfied = true
+				break
+			}
+		}
+		if !satisfied {
+			return false
+		}
+	}
+	return true
+}
+
+// promoteBlockInstance opens one block's run row: bind its mapping from the
+// parent scope, then either promote a work task or evaluate a control block.
+func promoteBlockInstance(ctx context.Context, tx scriptQuerier, parentTaskID string, inst childInstanceState, b DefinitionBlock, actorUserID string, depth int) error {
+	parentVars, err := readTaskVariables(ctx, tx, parentTaskID)
+	if err != nil {
+		return err
+	}
+	inputs, _ := inst.vars["inputs"].(map[string]any)
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	// A mapping resolves against the enclosing task's scope, plus this
+	// instance's own $item/$index when it is one iteration of a for_each
+	// (AC-30). $parent.* is already part of the parent's variables.
+	mappingScope := map[string]any{}
+	for key, value := range parentVars {
+		mappingScope[key] = value
+	}
+	for _, key := range []string{"item", "index"} {
+		if value, present := inst.vars[key]; present {
+			mappingScope[key] = value
+		}
+	}
+	for childInput, source := range b.InputMapping {
+		val, ok := resolveScopeRef(mappingScope, source)
+		if !ok {
+			log.Printf("task engine: input_mapping %q -> %v unresolvable promoting block %q of task %s, omitted",
+				childInput, source, b.Label, parentTaskID)
+			continue
+		}
+		inputs[childInput] = val
+	}
+	inst.vars["inputs"] = inputs
+
+	if b.IsControl() {
+		return promoteControlInstance(ctx, tx, parentTaskID, inst, b, bConfigContainerID(inst.vars), actorUserID, depth)
+	}
+
+	defID := b.ChildDefinitionID
+	if defID == "" {
+		return fmt.Errorf("block %q has no definition to spawn", b.Label)
+	}
+	def, err := getTaskDefinition(ctx, tx, defID)
+	if err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(def.RunIfScript) != "" {
+		allowed, evalErr := evalTaskCondition(ctx, tx, inst.taskID, def.RunIfScript, inst.vars, actorUserID)
+		if evalErr != nil {
+			return fmt.Errorf("run_if evaluation failed for task %s: %w", inst.taskID, evalErr)
+		}
+		if !allowed {
+			return transitionTaskInTx(ctx, tx, inst.taskID, taskStateSkipped)
+		}
+	}
+	if err := transitionTaskInTx(ctx, tx, inst.taskID, taskStateReady); err != nil {
+		return err
+	}
+	updated, err := json.Marshal(inst.vars)
+	if err != nil {
+		return err
+	}
+	var currentDescription string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(description, '') FROM base_task WHERE _id = $1`,
+		inst.taskID).Scan(&currentDescription); err != nil {
+		return fmt.Errorf("load task description: %w", err)
+	}
+	description := instanceDescription(def, inputs)
+	refreshDescription := description != "" && descriptionIsEngineAuthored(currentDescription, def)
+	if _, err := tx.Exec(ctx, `
+		UPDATE base_task
+		SET variables = $2::jsonb,
+			description = CASE WHEN $3 THEN $4 ELSE description END
+		WHERE _id = $1`, inst.taskID, string(updated), refreshDescription, description); err != nil {
+		return err
+	}
+	if def.IsContainer {
+		return openContainer(ctx, tx, inst.taskID, actorUserID, depth)
+	}
+	return nil
+}
+
+// bConfigContainerID reads the definition a control task was authored in.
+func bConfigContainerID(vars map[string]any) string {
+	_, containerDefID, _, _, _, _, _ := blockFromVars(vars)
+	return containerDefID
 }
 
 // depsSatisfied reports whether every dependency definition has a sibling
@@ -950,7 +1256,7 @@ func CloseTaskWithReason(ctx context.Context, taskID, actorUserID, closureReason
 // onTaskClosed publishes the task's outputs into the parent's variables
 // (namespaced by child slug), promotes dependents whose edges this closure
 // satisfies, and fires spawn rules for the closure reason.
-func onTaskClosed(ctx context.Context, tx pgx.Tx, taskID, closureReason, actorUserID string) error {
+func onTaskClosed(ctx context.Context, tx scriptQuerier, taskID, closureReason, actorUserID string) error {
 	var parentID *string
 	var varsJSON []byte
 	err := tx.QueryRow(ctx,
@@ -1019,7 +1325,7 @@ func parentIDOrEmpty(p *string) string {
 // fireSpawnRules spawns follow-on tasks per the definition's spawn_rules
 // for the given closure reason. assign "same" copies this task's group;
 // "pool" leaves the follow-on ungrouped for manual routing.
-func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actorUserID string) error {
+func fireSpawnRules(ctx context.Context, tx scriptQuerier, taskID, closureReason, actorUserID string) error {
 	defID, err := getDefinitionIDByTaskID(ctx, tx, taskID)
 	if err != nil || defID == "" {
 		return err
@@ -1114,7 +1420,7 @@ func fireSpawnRules(ctx context.Context, tx pgx.Tx, taskID, closureReason, actor
 // spawnFollowOn spawns a spawn-rule follow-on. It inherits the closing
 // task's parent_task_id unless the rule says otherwise, so chained tasks
 // stay inside the container and their outputs publish upward (issue #209).
-func spawnFollowOn(ctx context.Context, tx pgx.Tx, slug string, route *taskRoute, parentTaskID *string, requestedBy string, inputs map[string]any) error {
+func spawnFollowOn(ctx context.Context, tx scriptQuerier, slug string, route *taskRoute, parentTaskID *string, requestedBy string, inputs map[string]any) error {
 	var defID string
 	err := tx.QueryRow(ctx,
 		`SELECT _id::text FROM base_task_definition WHERE slug = $1 AND is_active AND _deleted_at IS NULL`, slug).Scan(&defID)
@@ -1224,7 +1530,9 @@ func resolveScopeRef(scope map[string]any, ref any) (any, bool) {
 		return ref, true
 	}
 	parts := strings.Split(strings.TrimPrefix(s, "$"), ".")
-	if len(parts) < 2 {
+	// A single segment is a value in scope, not a path into one: a for_each
+	// element may itself be a scalar, and $item is then the whole pill.
+	if len(parts) < 1 || parts[0] == "" {
 		return nil, false
 	}
 	var cur any = scope
@@ -1285,25 +1593,29 @@ func SpawnTaskInstanceBySlug(ctx context.Context, q scriptQuerier, slug, parentT
 
 // TaskInstanceSummary describes a spawned task for API responses.
 type TaskInstanceSummary struct {
-	ID     string `json:"task_id"`
-	Number string `json:"number"`
-	Title  string `json:"title"`
-	State  string `json:"state"`
+	ID        string `json:"task_id"`
+	Number    string `json:"number"`
+	Title     string `json:"title"`
+	State     string `json:"state"`
+	WorkType  string `json:"work_type"`
+	BlockType string `json:"block_type,omitempty"`
 }
 
 // DescribeTaskInstance returns the spawned task plus its direct children,
 // so callers can see the whole instance graph that came into existence.
 func DescribeTaskInstance(ctx context.Context, q scriptQuerier, taskID string) (*TaskInstanceSummary, []TaskInstanceSummary, error) {
 	var root TaskInstanceSummary
+	var rootVars []byte
 	err := q.QueryRow(ctx, `
-		SELECT _id::text, number, title, state FROM base_task
+		SELECT _id::text, number, title, state, COALESCE(work_type, 'TASK'), variables FROM base_task
 		WHERE _id = $1 AND _deleted_at IS NULL`, taskID).Scan(
-		&root.ID, &root.Number, &root.Title, &root.State)
+		&root.ID, &root.Number, &root.Title, &root.State, &root.WorkType, &rootVars)
 	if err != nil {
 		return nil, nil, fmt.Errorf("load spawned task: %w", err)
 	}
+	root.BlockType = summaryBlockType(rootVars)
 	rows, err := q.Query(ctx, `
-		SELECT _id::text, number, title, state FROM base_task
+		SELECT _id::text, number, title, state, COALESCE(work_type, 'TASK'), variables FROM base_task
 		WHERE parent_task_id = $1 AND _deleted_at IS NULL
 		ORDER BY number`, taskID)
 	if err != nil {
@@ -1313,12 +1625,29 @@ func DescribeTaskInstance(ctx context.Context, q scriptQuerier, taskID string) (
 	children := []TaskInstanceSummary{}
 	for rows.Next() {
 		var c TaskInstanceSummary
-		if err := rows.Scan(&c.ID, &c.Number, &c.Title, &c.State); err != nil {
+		var vars []byte
+		if err := rows.Scan(&c.ID, &c.Number, &c.Title, &c.State, &c.WorkType, &vars); err != nil {
 			return nil, nil, err
 		}
+		c.BlockType = summaryBlockType(vars)
 		children = append(children, c)
 	}
 	return &root, children, rows.Err()
+}
+
+// summaryBlockType reports the control shape a run row was spawned from, so
+// a caller can tell structure from work (AC-43).
+func summaryBlockType(varsJSON []byte) string {
+	if len(varsJSON) == 0 {
+		return ""
+	}
+	vars := map[string]any{}
+	_ = json.Unmarshal(varsJSON, &vars)
+	_, _, _, typ, _, _, ok := blockFromVars(vars)
+	if !ok {
+		return ""
+	}
+	return typ
 }
 
 // runStartHooksBeforeClose runs the start half of the engine for a task that

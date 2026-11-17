@@ -317,6 +317,11 @@
     font-size: 0.85rem;
   }
 
+  .ui-def-edit-links {
+    margin: 0.35rem 0 0;
+    font-size: 0.85rem;
+  }
+
   .ui-def-card {
     border: 1px solid var(--border);
     border-radius: 14px;
@@ -634,6 +639,17 @@
   <div class="ui-def-edit-head">
     <h1 class="ui-def-edit-title">{{.Definition.DisplayName}}</h1>
     <p class="ui-def-edit-slug">{{.Definition.Slug}}</p>
+    {{/* Where this definition is ordered from. Filtered by slug, so the link
+         lands on this definition's own catalogue entry rather than the top of
+         a long page. */}}
+    <p class="ui-def-edit-links"><a href="/task-catalogue?q={{.Definition.Slug}}#definition-{{.Definition.Slug}}">{{if .Definition.IsContainer}}View this chain in the catalogue{{else}}View this task in the catalogue{{end}}</a></p>
+    {{/* Three views of one document (Requirements AC-69, AC-91). The canvas
+         is the default when the tree has any block that is not a plain task. */}}
+    <nav class="ui-def-views" aria-label="Definition views">
+      <a class="ui-def-view-tab{{if eq .EditorView "canvas"}} is-active{{end}}" href="/task-definitions/{{.Definition.Slug}}?view=canvas">Canvas</a>
+      <a class="ui-def-view-tab{{if eq .EditorView "rows"}} is-active{{end}}" href="/task-definitions/{{.Definition.Slug}}?view=rows">Rows</a>
+      <a class="ui-def-view-tab{{if eq .EditorView "raw"}} is-active{{end}}" href="/task-definitions/{{.Definition.Slug}}?view=raw">Raw</a>
+    </nav>
   </div>
 
   <section class="ui-def-card" id="basics">
@@ -660,10 +676,46 @@
       </label>
       <label class="ui-def-check">
         <input type="checkbox" name="is_active" value="yes"{{if .Definition.IsActive}} checked{{end}} />
-        <span>Active: this definition may be spawned from the catalog</span>
+        <span>Active: this definition may be spawned from the catalogue</span>
       </label>
+        <input type="hidden" name="default_group_id" value="{{.Definition.DefaultGroupID}}" />
+      <input type="hidden" name="assignment_strategy" value="{{.Definition.AssignmentStrategy}}" />
       <div class="ui-def-actions">
         <button class="ui-def-button" type="submit">Save basics</button>
+      </div>
+    </form>
+  </section>
+
+  {{/* Assignment (Requirements AC-67): group + strategy on the definition.
+       Its own form posts to the same basics endpoint, carrying the basics
+       values so saving this section cannot blank them. */}}
+  <section class="ui-def-card" id="assignment">
+    <h2 class="ui-def-card-title">Assignment</h2>
+    <p class="ui-def-help">Who a task spawned from this definition lands with. A block can override either setting.</p>
+    <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/basics">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <input type="hidden" name="display_name" value="{{.Definition.DisplayName}}" />
+      <input type="hidden" name="description" value="{{.Definition.Description}}" />
+      {{if .Definition.IsContainer}}<input type="hidden" name="is_container" value="yes" />{{end}}
+      {{if .Definition.IsActive}}<input type="hidden" name="is_active" value="yes" />{{end}}
+      <label class="ui-def-field">
+        <span class="ui-def-label">Assignment group</span>
+        <select class="ui-def-input" name="default_group_id">
+          <option value="">No group</option>
+          {{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Definition.DefaultGroupID}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+        <span class="ui-def-help">Spawned tasks land in this group's queue.</span>
+      </label>
+      <label class="ui-def-field">
+        <span class="ui-def-label">Assignment strategy</span>
+        <select class="ui-def-input" name="assignment_strategy">
+          <option value=""{{if eq .Definition.AssignmentStrategy ""}} selected{{end}}>Inherit / default</option>
+          {{range .AssignmentStrategies}}<option value="{{.}}"{{if eq . $.Definition.AssignmentStrategy}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+        <span class="ui-def-help">Resolved once, at spawn. A block may override it.</span>
+      </label>
+      <div class="ui-def-actions">
+        <button class="ui-def-button" type="submit">Save assignment</button>
       </div>
     </form>
   </section>
@@ -672,7 +724,9 @@
 
   {{template "task-definition-outputs-card" .}}
 
-  {{template "task-definition-steps-card" .}}
+  {{if eq .EditorView "canvas"}}{{template "task-definition-canvas-card" .}}{{end}}
+  {{if eq .EditorView "rows"}}{{template "task-definition-steps-card" .}}{{end}}
+  {{if eq .EditorView "raw"}}{{template "task-definition-raw-card" .}}{{end}}
 
   <p class="ui-def-back"><a href="/task-definitions">Back to the list</a></p>
 </div>
@@ -1118,4 +1172,420 @@
     </div>
   {{end}}
 </li>
+{{end}}
+
+{{define "task-definition-canvas-card"}}
+<style>
+  .ui-def-views {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+  }
+  .ui-def-view-tab {
+    border: 1px solid var(--border-mid);
+    border-radius: 999px;
+    padding: 0.2rem 0.75rem;
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+  }
+  .ui-def-view-tab.is-active {
+    background: var(--surface-soft);
+    color: var(--text-primary);
+  }
+  .ui-canvas-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) minmax(0, 18rem);
+    gap: 1rem;
+    align-items: start;
+  }
+  .ui-canvas-panel {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-base);
+    padding: 0.75rem;
+  }
+  .ui-canvas-title {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+  }
+  .ui-canvas-palette {
+    list-style: none;
+    margin: 0 0 0.75rem;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .ui-canvas-palette-item {
+    border: 1px solid var(--border-mid);
+    border-radius: 8px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    background: var(--surface-soft);
+  }
+  .ui-canvas-palette-item.is-disabled {
+    opacity: 0.55;
+  }
+  .ui-canvas-palette-item .ui-canvas-unavailable {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+  }
+  .ui-canvas-search {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 36px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    padding: 0.3rem 0.5rem;
+    margin-bottom: 0.5rem;
+    font-family: inherit;
+  }
+  .ui-canvas-candidates {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+    max-height: 18rem;
+    overflow: auto;
+  }
+  .ui-canvas-candidate {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.8rem;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+  }
+  .ui-canvas-tree {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.4rem;
+  }
+  .ui-canvas-block {
+    border: 1px solid var(--border-mid);
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    background: var(--bg-surface);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: baseline;
+    font-size: 0.86rem;
+  }
+  .ui-canvas-block.is-selected {
+    outline: 2px solid var(--border-mid);
+  }
+  .ui-canvas-depth-1 { margin-left: 1.5rem; }
+  .ui-canvas-depth-2 { margin-left: 3rem; }
+  .ui-canvas-depth-3 { margin-left: 4.5rem; }
+  .ui-canvas-depth-4 { margin-left: 6rem; }
+  .ui-canvas-kind {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+  }
+  .ui-canvas-position {
+    margin-left: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+  }
+  .ui-canvas-chain {
+    border: 1px solid var(--border-mid);
+    border-radius: 999px;
+    padding: 0.02rem 0.45rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+  }
+  .ui-canvas-pill {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-mid);
+    border-radius: 999px;
+    padding: 0.02rem 0.45rem;
+    color: var(--text-primary);
+  }
+  .ui-canvas-rail-field {
+    display: grid;
+    gap: 0.2rem;
+    margin-bottom: 0.6rem;
+  }
+  .ui-canvas-rail-field label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+  .ui-canvas-rail-field select,
+  .ui-canvas-rail-field textarea,
+  .ui-canvas-rail-field input {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.82rem;
+    padding: 0.3rem 0.45rem;
+  }
+  @media (max-width: 900px) {
+    .ui-canvas-layout { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>
+<section class="ui-def-card" id="canvas">
+  <h2 class="ui-def-card-title">Canvas</h2>
+  <p class="ui-def-help">Structure and nesting. Pick a block to edit it in the config rail; values are pills, so a typo cannot become a dangling reference.</p>
+  <form id="canvas-form" class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/structure">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+    <input type="hidden" id="canvas-document" name="structure" value="{{.Canvas.Document}}" />
+    <div class="ui-canvas-layout">
+      <aside class="ui-canvas-panel" id="canvas-palette">
+        <h3 class="ui-canvas-title">Palette</h3>
+        <ul class="ui-canvas-palette">
+          {{range .Canvas.Palette}}
+            <li class="ui-canvas-palette-item{{if not .Available}} is-disabled{{end}}" data-palette="{{.Key}}" data-kind="{{.Kind}}" data-type="{{.Type}}">
+              {{if .Available}}<button class="ui-def-mini" type="button" data-add-kind="{{.Kind}}" data-add-type="{{.Type}}" data-add-key="{{.Key}}">{{.Label}}</button>{{else}}{{.Label}}<span class="ui-canvas-unavailable">not in this release</span>{{end}}
+            </li>
+          {{end}}
+        </ul>
+        <h3 class="ui-canvas-title">Definitions</h3>
+        <input class="ui-canvas-search" type="search" id="palette-search" placeholder="Search definitions…" autocomplete="off" aria-label="Search definitions on the palette" />
+        <ul class="ui-canvas-candidates" id="palette-candidates">
+          {{range .Canvas.Candidates}}
+            <li class="ui-canvas-candidate" data-candidate="{{.Slug}}" data-name="{{.DisplayName}}">
+              <button class="ui-def-mini" type="button" data-add-task="{{.Slug}}">{{.DisplayName}}</button>
+              <code>{{.Slug}}</code>
+            </li>
+          {{end}}
+        </ul>
+      </aside>
+      <div class="ui-canvas-panel">
+        <h3 class="ui-canvas-title">Tree</h3>
+        {{if .Canvas.Blocks}}
+          <ol class="ui-canvas-tree" id="canvas-tree">
+            {{range .Canvas.Blocks}}
+              <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}">
+                <span class="ui-canvas-kind">{{.KindLabel}}</span>
+                <a href="/task-definitions/{{$.Definition.Slug}}?view=canvas&block={{.ID}}">{{.Label}}</a>
+                {{if .IsChain}}<span class="ui-canvas-chain">Chain · {{.StepCount}} {{if eq .StepCount 1}}step{{else}}steps{{end}}</span>{{end}}
+                {{if .Slug}}<code>{{.Slug}}</code>{{end}}
+                <span class="ui-canvas-position">#{{.Position}}</span>
+              </li>
+            {{end}}
+          </ol>
+        {{else}}
+          <p class="ui-def-help">No blocks yet. Add a task or a control block from the palette.</p>
+        {{end}}
+      </div>
+      <aside class="ui-canvas-panel" id="canvas-rail">
+        <h3 class="ui-canvas-title">Config</h3>
+        {{if .Canvas.HasSelection}}
+          <p class="ui-def-help">{{.Canvas.Selected.KindLabel}}: {{.Canvas.Selected.Label}}</p>
+          {{if .Canvas.Selected.HasCondition}}
+            <div class="ui-canvas-rail-field">
+              <label for="rail-condition">Condition</label>
+              <textarea id="rail-condition" rows="3" data-rail="condition">{{.Canvas.Selected.Condition}}</textarea>
+              <span class="ui-def-help">CEL behind the <code>expr:</code> prefix.</span>
+            </div>
+          {{end}}
+          {{range .Canvas.Selected.Mapping}}
+            {{$mapping := .}}
+            <div class="ui-canvas-rail-field">
+              <label>{{.Name}}</label>
+              <select data-rail-mapping="{{.Name}}">
+                <option value="">— nothing —</option>
+                <option value="__literal__">Literal…</option>
+                <option value="__expr__">Expression… (expr:)</option>
+                {{range .Options}}<option value="{{.Value}}"{{if eq .Value $mapping.Value}} selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+              <input type="text" data-rail-literal="{{.Name}}" value="{{.Value}}" placeholder="Literal or expr: value" />
+            </div>
+          {{end}}
+          <div class="ui-canvas-rail-field">
+            <label>Assignment group</label>
+            <select data-rail="assignment_group_id">
+              <option value="">Inherit</option>
+              {{range $.Groups}}<option value="{{.ID}}"{{if eq .ID $.Canvas.Selected.GroupID}} selected{{end}}>{{.Name}}</option>{{end}}
+            </select>
+          </div>
+          <div class="ui-canvas-rail-field">
+            <label>Assignment strategy</label>
+            <select data-rail="assignment_strategy">
+              <option value="">Inherit</option>
+              {{range $.Canvas.Strategies}}<option value="{{.}}"{{if eq . $.Canvas.Selected.Strategy}} selected{{end}}>{{.}}</option>{{end}}
+            </select>
+          </div>
+          <p class="ui-def-help">Pills in scope:</p>
+          <p>{{range .Canvas.Selected.Pills}}<span class="ui-canvas-pill">{{.Label}}</span> {{end}}</p>
+        {{else}}
+          <p class="ui-def-help">Select a block to configure it.</p>
+        {{end}}
+      </aside>
+    </div>
+    <div class="ui-def-actions"><button class="ui-def-button" type="submit">Save canvas</button></div>
+  </form>
+</section>
+<script nonce="{{.CSPNonce}}">
+(function () {
+  var form = document.getElementById("canvas-form");
+  var documentField = document.getElementById("canvas-document");
+  if (!form || !documentField) { return; }
+  var selected = "{{.Canvas.Selected.ID}}";
+
+  function readDocument() {
+    try { return JSON.parse(documentField.value || "{}"); } catch (err) { return {blocks: []}; }
+  }
+
+  function writeDocument(doc) {
+    documentField.value = JSON.stringify(doc);
+  }
+
+  function lastPosition(scopeParent, doc) {
+    var last = 0;
+    for (var i = 0; i < doc.blocks.length; i++) {
+      var block = doc.blocks[i];
+      if ((block.parent || "") === scopeParent) {
+        last = Math.max(last, block.position || 0);
+      }
+    }
+    return last + 10;
+  }
+
+  function addControlBlock(kind, type) {
+    var doc = readDocument();
+    var scope = "";
+    for (var i = 0; i < doc.blocks.length; i++) {
+      if (doc.blocks[i].key === selected && doc.blocks[i].kind === "control" &&
+          (doc.blocks[i].type === "if" || doc.blocks[i].type === "for_each")) {
+        scope = selected;
+      }
+    }
+    if (kind === "trigger") {
+      for (var j = 0; j < doc.blocks.length; j++) {
+        if (doc.blocks[j].kind === "trigger") { return; }
+      }
+      scope = "";
+    }
+    var block = {
+      key: "b" + Date.now(),
+      parent: scope,
+      kind: kind,
+      type: type || "",
+      position: lastPosition(scope, doc)
+    };
+    if (type === "if") {
+      block.label = "If";
+      block.config = {label: "If", condition: "expr: true"};
+    } else if (type === "for_each") {
+      block.label = "For each";
+      block.config = {label: "For each", collection: "$inputs.items"};
+    } else if (type === "end") {
+      block.label = "End";
+    } else {
+      block.label = "Trigger";
+    }
+    doc.blocks.push(block);
+    writeDocument(doc);
+    form.submit();
+  }
+
+  document.addEventListener("click", function (event) {
+    var kind = event.target.closest("[data-add-kind]");
+    if (kind) {
+      event.preventDefault();
+      var kindName = kind.getAttribute("data-add-kind");
+      if (kindName === "task") {
+        // A task block needs a definition, so the palette's definition list is
+        // the way to add one.
+        var searchField = document.getElementById("palette-search");
+        if (searchField) { searchField.focus(); }
+        return;
+      }
+      addControlBlock(kindName, kind.getAttribute("data-add-type"));
+      return;
+    }
+    var task = event.target.closest("[data-add-task]");
+    if (task) {
+      event.preventDefault();
+      var doc = readDocument();
+      var scope = "";
+      for (var i = 0; i < doc.blocks.length; i++) {
+        if (doc.blocks[i].key === selected && doc.blocks[i].kind === "control" &&
+            (doc.blocks[i].type === "if" || doc.blocks[i].type === "for_each")) {
+          scope = selected;
+        }
+      }
+      doc.blocks.push({
+        key: "b" + Date.now(),
+        parent: scope,
+        kind: "task",
+        slug: task.getAttribute("data-add-task"),
+        label: task.textContent.trim(),
+        position: lastPosition(scope, doc)
+      });
+      writeDocument(doc);
+      form.submit();
+    }
+  });
+
+  form.addEventListener("submit", function () {
+    var doc = readDocument();
+    for (var i = 0; i < doc.blocks.length; i++) {
+      var block = doc.blocks[i];
+      if (block.key !== selected) { continue; }
+      block.config = block.config || {};
+      var condition = document.querySelector("[data-rail='condition']");
+      if (condition) { block.config.condition = condition.value; }
+      var group = document.querySelector("[data-rail='assignment_group_id']");
+      if (group) { block.assignment_group_id = group.value; }
+      var strategy = document.querySelector("[data-rail='assignment_strategy']");
+      if (strategy) { block.assignment_strategy = strategy.value; }
+      block.input_mapping = block.input_mapping || {};
+      var picks = document.querySelectorAll("[data-rail-mapping]");
+      for (var j = 0; j < picks.length; j++) {
+        var name = picks[j].getAttribute("data-rail-mapping");
+        var value = picks[j].value;
+        if (value === "__literal__" || value === "__expr__") {
+          var literal = document.querySelector("[data-rail-literal='" + name + "']");
+          value = literal ? literal.value : "";
+        }
+        block.input_mapping[name] = value;
+      }
+    }
+    writeDocument(doc);
+  });
+
+  var search = document.getElementById("palette-search");
+  if (search) {
+    search.addEventListener("input", function () {
+      var needle = search.value.toLowerCase();
+      var items = document.querySelectorAll("#palette-candidates [data-candidate]");
+      for (var i = 0; i < items.length; i++) {
+        var hay = (items[i].getAttribute("data-candidate") + " " + (items[i].getAttribute("data-name") || "")).toLowerCase();
+        items[i].hidden = needle !== "" && hay.indexOf(needle) === -1;
+      }
+    });
+  }
+})();
+</script>
+{{end}}
+
+{{define "task-definition-raw-card"}}
+<section class="ui-def-card" id="raw-structure">
+  <h2 class="ui-def-card-title">Raw structure</h2>
+  <p class="ui-def-help">The escape hatch, always writable. This is the same document the canvas edits, and it posts to the same endpoint; keys the canvas does not model survive.</p>
+  <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/structure">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+    <textarea class="ui-def-input" name="structure" rows="18" spellcheck="false">{{.RawDocument}}</textarea>
+    <div class="ui-def-actions"><button class="ui-def-button" type="submit">Save raw structure</button></div>
+  </form>
+</section>
 {{end}}

@@ -47,8 +47,13 @@ func loadMenuFromDB() error {
 		appendItem(title, "/t/"+table.Name)
 	}
 
+	// Task Catalogue sits above Task Definitions: the catalogue is where work
+	// is ordered from, the definitions page is the library behind it. Ordered
+	// deliberately — ordering is the job, authoring is the exception.
+	appendItem("Task Catalogue", "/task-catalogue")
+
 	// Task definitions sit beside Docs: one is the process library, the other
-	// is the catalog of what those processes are made of.
+	// is the catalogue of what those processes are made of.
 	appendItem("Task Definitions", "/task-definitions")
 
 	if _, ok, err := db.GetPhysicalTable(ctx, "_docs_library"); err == nil && ok {

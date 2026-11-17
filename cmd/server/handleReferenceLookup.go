@@ -27,6 +27,9 @@ func handleReferenceLookup(w http.ResponseWriter, r *http.Request) {
 
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	selected := strings.TrimSpace(r.URL.Query().Get("selected"))
+	// Optional scope: a task's Assigned To picker passes the task's assignment
+	// group, so the list is that group's members and nobody else.
+	groupID := strings.TrimSpace(r.URL.Query().Get("group_id"))
 	const maxReferenceLookupLimit = 200
 	limit := 30
 	if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
@@ -35,7 +38,7 @@ func handleReferenceLookup(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	options := fetchReferenceOptionsFiltered(r.Context(), tableName, query, limit, selected)
+	options := fetchReferenceOptionsScoped(r.Context(), tableName, query, limit, selected, groupID)
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{
