@@ -43,6 +43,10 @@ type TaskDefinitionRow struct {
 	// outputs: list is used by the engine today.
 	VariablesYAML string
 	ChildCount    int
+	// Assignment (098, Requirements §3): the group the definition routes to
+	// and the strategy that picks a person from it. Empty means unset.
+	DefaultGroupID     string
+	AssignmentStrategy string
 }
 
 // InputCount is the number of declared requester inputs. A schema that fails to
@@ -76,7 +80,8 @@ type TaskDefinitionStep struct {
 
 const taskDefinitionColumns = `d._id::text, d.slug, d.display_name, d.description,
 	d.is_container, d.is_active, COALESCE(d.input_schema_yaml, ''),
-	COALESCE(d.variables_yaml, '')`
+	COALESCE(d.variables_yaml, ''), COALESCE(d.default_group_id::text, ''),
+	COALESCE(d.assignment_strategy, '')`
 
 // escapeLike makes a user's search text a literal needle rather than a pattern:
 // without this, typing "%" matches every definition and typing "_" matches any
@@ -113,7 +118,8 @@ func ListTaskDefinitionRows(ctx context.Context, query string) ([]TaskDefinition
 	for rows.Next() {
 		var row TaskDefinitionRow
 		if err := rows.Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &row.ChildCount); err != nil {
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
+			&row.DefaultGroupID, &row.AssignmentStrategy, &row.ChildCount); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -132,7 +138,8 @@ func GetTaskDefinitionBySlug(ctx context.Context, slug string) (TaskDefinitionRo
 		FROM base_task_definition d
 		WHERE d.slug = $1 AND d._deleted_at IS NULL`, strings.TrimSpace(slug)).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &row.ChildCount)
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
+			&row.DefaultGroupID, &row.AssignmentStrategy, &row.ChildCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TaskDefinitionRow{}, ErrTaskDefinitionNotFound
 	}
@@ -217,7 +224,8 @@ func CreateTaskDefinition(ctx context.Context, slug, displayName, description st
 		RETURNING `+strings.ReplaceAll(taskDefinitionColumns, "d.", "")+`, 0`,
 		strings.TrimSpace(slug), strings.TrimSpace(displayName), strings.TrimSpace(description), isContainer).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &row.ChildCount)
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
+			&row.DefaultGroupID, &row.AssignmentStrategy, &row.ChildCount)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_base_task_definition_slug_live" {
@@ -250,14 +258,15 @@ func UpdateTaskDefinitionInputSchema(ctx context.Context, slug, raw string) erro
 // UpdateTaskDefinitionBasics writes the four editable columns of the basics
 // section. The slug is deliberately not among them: it is the stable reference
 // other definitions and spawn rules hold.
-func UpdateTaskDefinitionBasics(ctx context.Context, slug, displayName, description string, isContainer, isActive bool) error {
+func UpdateTaskDefinitionBasics(ctx context.Context, slug, displayName, description string, isContainer, isActive bool, defaultGroupID, assignmentStrategy string) error {
 	tag, err := Pool.Exec(ctx, `
 		UPDATE base_task_definition
 		SET display_name = $2, description = $3, is_container = $4,
-		    is_active = $5, _updated_at = NOW()
+		    is_active = $5, default_group_id = $6, assignment_strategy = $7,
+		    _updated_at = NOW()
 		WHERE slug = $1 AND _deleted_at IS NULL`,
 		strings.TrimSpace(slug), strings.TrimSpace(displayName), strings.TrimSpace(description),
-		isContainer, isActive)
+		isContainer, isActive, nullIfEmpty(defaultGroupID), nullIfEmpty(assignmentStrategy))
 	if err != nil {
 		return err
 	}
@@ -265,4 +274,14 @@ func UpdateTaskDefinitionBasics(ctx context.Context, slug, displayName, descript
 		return ErrTaskDefinitionNotFound
 	}
 	return nil
+}
+
+// nullIfEmpty keeps an unset form field as SQL NULL rather than an empty
+// string: assignment_group_id and assignment_strategy are nullable columns.
+func nullIfEmpty(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }

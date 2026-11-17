@@ -69,8 +69,11 @@ type TaskDefinition struct {
 	// Ask is what this definition asks of its doer (#225), inherited by
 	// every instance it spawns. Empty when the definition predates the
 	// column or has no verb; the spawn then falls back to the intake default.
-	Ask        string
-	SpawnRules []TaskSpawnRule
+	Ask string
+	// AssignmentStrategy is one of the six values in Assignment.go, or empty
+	// for the pre-strategy behaviour (098, Requirements AC-65).
+	AssignmentStrategy string
+	SpawnRules         []TaskSpawnRule
 	IsActive   bool
 }
 
@@ -90,10 +93,14 @@ func getTaskDefinition(ctx context.Context, q scriptQuerier, id string) (*TaskDe
 	err := q.QueryRow(ctx, `
 		SELECT _id::text, slug, display_name, COALESCE(description, ''), is_container,
 			script_text, run_if_script, default_group_id::text, spawn_rules, is_active,
-			COALESCE(default_assignee_id::text, ''), COALESCE(ask, '')
-		FROM base_task_definition WHERE _id = $1 AND _deleted_at IS NULL`, id).Scan(
+			COALESCE(default_assignee_id::text, ''), COALESCE(ask, ''),
+			-- to_jsonb keeps this readable on a pre-098 schema, where the
+			-- column does not exist yet: the pre-migration parity test spawns
+			-- a definition in a scratch 097 database through this loader.
+			COALESCE(to_jsonb(d) ->> 'assignment_strategy', '')
+		FROM base_task_definition d WHERE d._id = $1 AND d._deleted_at IS NULL`, id).Scan(
 		&d.ID, &d.Slug, &d.DisplayName, &d.Description, &d.IsContainer, &d.ScriptText, &d.RunIfScript,
-		&groupID, &spawnRulesJSON, &d.IsActive, &d.DefaultAssigneeID, &d.Ask)
+		&groupID, &spawnRulesJSON, &d.IsActive, &d.DefaultAssigneeID, &d.Ask, &d.AssignmentStrategy)
 	if err != nil {
 		return nil, fmt.Errorf("load task definition: %w", err)
 	}
@@ -207,6 +214,18 @@ type taskRoute struct {
 	// values a control scope passes down (Design Vision §4).
 	BlockMeta map[string]any
 	Scope     map[string]any
+	// Assignment overrides from a block (098). A nil pointer means the block
+	// did not set that column, so the definition's value is inherited.
+	AssignGroupOverride *string
+	AssignStrategy      string
+	AssignUserOverride  *string
+	// AssignInputName is the user-typed input a from_input block reads, and
+	// AssignLabel names the block in refusals and logs.
+	AssignInputName string
+	AssignLabel     string
+	// AssignInputs is the run's inputs. A block spawns with empty inputs of
+	// its own, so from_input reads the container's request instead.
+	AssignInputs map[string]any
 }
 
 // spawnTaskWithRoute inserts one instance of def.
@@ -259,7 +278,49 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 			assigneeID = *route.AssigneeID
 		}
 	}
-	assigneeID = resolveSpawnAssignee(ctx, q, groupID, assigneeID)
+	// Assignment (Plan T5). The definition names the group and the strategy;
+	// a block may override the group, the strategy, or the named user it
+	// reads. Resolved once, here, inside the spawn transaction.
+	spec := assignmentSpec{
+		GroupID:     groupID,
+		Strategy:    def.AssignmentStrategy,
+		NamedUserID: assigneeID,
+		Label:       def.Slug,
+	}
+	if route != nil && !route.Override {
+		if route.AssignGroupOverride != nil {
+			spec.GroupID = *route.AssignGroupOverride
+		}
+		if route.AssignStrategy != "" {
+			spec.Strategy = route.AssignStrategy
+		}
+		if route.AssignUserOverride != nil {
+			spec.NamedUserID = *route.AssignUserOverride
+		}
+		if route.AssignInputName != "" {
+			spec.InputName = route.AssignInputName
+		}
+		if route.AssignLabel != "" {
+			spec.Label = route.AssignLabel
+		}
+	}
+	if route != nil && route.Override {
+		// An explicit route (a spawn rule's "pool") is already the answer:
+		// the strategy must not pick somebody the rule did not name.
+		spec.Strategy = ""
+	}
+	inputForAssignment := inputs
+	if route != nil && route.AssignInputs != nil {
+		inputForAssignment = route.AssignInputs
+	}
+	groupID, assigneeID, err = resolveAssignment(ctx, q, spec, requestedBy, inputForAssignment)
+	if err != nil {
+		return "", err
+	}
+	if route != nil && route.Skip {
+		// Skips do not consume a round-robin position: the branch did not run.
+		assigneeID = ""
+	}
 
 	state := spawnStateFor(def, parentTaskID)
 	if route != nil && route.Ready {
@@ -336,7 +397,7 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 		// from its scope via input_mapping. A control tree's blocks are
 		// spawned the same way, as rows the promotion pass then opens.
 		skip := route != nil && route.Skip
-		if err := spawnDefinitionScope(ctx, q, def.ID, taskID, requestedBy, nil, skip); err != nil {
+		if err := spawnDefinitionScope(ctx, q, def.ID, taskID, requestedBy, inputs, nil, skip); err != nil {
 			return "", err
 		}
 		if state == taskStateReady {

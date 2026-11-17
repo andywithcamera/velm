@@ -48,6 +48,11 @@ type DefinitionBlock struct {
 	DependsOn         []string
 	DependsOnReason   string
 	Config            map[string]any
+	// Per-block assignment (098, AC-47). Empty means the block did not set
+	// the column and inherits the definition's value.
+	AssignmentGroupID    string
+	AssignmentStrategy   string
+	AssignedUserID       string
 }
 
 // IsControl reports whether this block shapes the flow.
@@ -111,7 +116,9 @@ func getDefinitionBlocks(ctx context.Context, q scriptQuerier, containerID strin
 			SELECT _id::text, COALESCE(parent_block_id::text, ''), COALESCE(child_definition_id::text, ''),
 				COALESCE(block_kind, 'task'), COALESCE(block_type, ''), config,
 				position, sort_order, input_mapping, depends_on,
-				COALESCE(depends_on_block_id, '{}'), depends_on_reason
+				COALESCE(depends_on_block_id, '{}'), depends_on_reason,
+				COALESCE(assignment_group_id::text, ''), COALESCE(assignment_strategy, ''),
+				COALESCE(assigned_user_id::text, '')
 			FROM base_task_definition_child
 			WHERE container_definition_id = $1
 			ORDER BY position, sort_order, _created_at`
@@ -130,7 +137,8 @@ func getDefinitionBlocks(ctx context.Context, q scriptQuerier, containerID strin
 			var blockDeps []string
 			if err := rows.Scan(&b.ID, &b.ParentID, &b.ChildDefinitionID, &b.Kind, &b.Type,
 				&cfg, &b.Position, &b.SortOrder, &b.InputMapping, &deps, &blockDeps,
-				&b.DependsOnReason); err != nil {
+				&b.DependsOnReason, &b.AssignmentGroupID, &b.AssignmentStrategy,
+				&b.AssignedUserID); err != nil {
 				return nil, err
 			}
 			b.DependsOnBlockIDs = blockDeps
@@ -282,22 +290,52 @@ func scopeDefinitionID(ctx context.Context, q scriptQuerier, taskID string) (str
 // skip marks a scope whose `if` was false: every task in it is created in
 // the engine's terminal skipped state, so the run tree still matches the
 // definition tree (AC-27) and nothing publishes outputs (AC-28).
-func spawnDefinitionScope(ctx context.Context, q scriptQuerier, defID, containerTaskID, requestedBy string, scope map[string]any, skip bool) error {
+func spawnDefinitionScope(ctx context.Context, q scriptQuerier, defID, containerTaskID, requestedBy string, runInputs, scope map[string]any, skip bool) error {
 	blocks, err := getDefinitionBlocks(ctx, q, defID)
 	if err != nil {
 		return err
 	}
 	stamp := scopeNeedsBlockIdentity(blocks, "")
 	for _, b := range topLevelBlocks(blocks, "") {
-		if err := spawnBlockInstance(ctx, q, defID, containerTaskID, requestedBy, b, scope, skip, stamp); err != nil {
+		if err := spawnBlockInstance(ctx, q, defID, containerTaskID, requestedBy, b, runInputs, scope, skip, stamp); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// blockDisplayLabel names a block in a refusal or a log line: its own label,
+// else the definition it calls, else its kind.
+func blockDisplayLabel(b DefinitionBlock) string {
+	if b.Label != "" {
+		return b.Label
+	}
+	if b.ChildDefinitionID != "" {
+		return b.ChildDefinitionID
+	}
+	return b.Kind + " block"
+}
+
+// blockAssignmentRoute copies a block's assignment override onto a task route.
+// Nil pointers mean "not set on the block, inherit the definition's value".
+func blockAssignmentRoute(route *taskRoute, b DefinitionBlock) {
+	if b.AssignmentGroupID != "" {
+		group := b.AssignmentGroupID
+		route.AssignGroupOverride = &group
+	}
+	if b.AssignmentStrategy != "" {
+		route.AssignStrategy = b.AssignmentStrategy
+	}
+	if b.AssignedUserID != "" {
+		user := b.AssignedUserID
+		route.AssignUserOverride = &user
+	}
+	route.AssignInputName = b.blockConfigString("user_input")
+	route.AssignLabel = blockDisplayLabel(b)
+}
+
 // spawnBlockInstance creates one run row for one block.
-func spawnBlockInstance(ctx context.Context, q scriptQuerier, containerDefID, parentTaskID, requestedBy string, b DefinitionBlock, scope map[string]any, skip, stamp bool) error {
+func spawnBlockInstance(ctx context.Context, q scriptQuerier, containerDefID, parentTaskID, requestedBy string, b DefinitionBlock, runInputs, scope map[string]any, skip, stamp bool) error {
 	switch b.Kind {
 	case "trigger":
 		// The trigger is what started the run; the definition itself is the
@@ -305,13 +343,14 @@ func spawnBlockInstance(ctx context.Context, q scriptQuerier, containerDefID, pa
 		// the if and end below it are the root's first children (AC-22).
 		return nil
 	case "control":
-		return spawnControlTask(ctx, q, containerDefID, parentTaskID, requestedBy, b, scope, skip)
+		return spawnControlTask(ctx, q, containerDefID, parentTaskID, requestedBy, b, runInputs, scope, skip)
 	case "task":
 		var meta map[string]any
 		if stamp {
 			meta = blockMeta(containerDefID, b)
 		}
-		route := &taskRoute{BlockMeta: meta, Scope: scope, Skip: skip}
+		route := &taskRoute{BlockMeta: meta, Scope: scope, Skip: skip, AssignInputs: runInputs}
+		blockAssignmentRoute(route, b)
 		if skip {
 			route.State = taskStateSkipped
 		}
@@ -326,10 +365,47 @@ func spawnBlockInstance(ctx context.Context, q scriptQuerier, containerDefID, pa
 }
 
 // spawnControlTask inserts the CONTROL row for an if / for_each / end block.
-func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, parentTaskID, requestedBy string, b DefinitionBlock, scope map[string]any, skip bool) error {
+//
+// A control block does no work for a person, so it inherits the scope's
+// assignment rather than resolving a strategy of its own: it carries the
+// parent task's group and assignee, and only a block that sets assignment
+// columns resolves them (AC-66). A control task with no assignee is legal:
+// 084 only requires one at in_progress.
+func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, parentTaskID, requestedBy string, b DefinitionBlock, runInputs, scope map[string]any, skip bool) error {
 	state := taskStatePending
 	if skip {
 		state = taskStateSkipped
+	}
+	groupID, assigneeID := "", ""
+	if strings.TrimSpace(parentTaskID) != "" {
+		if err := q.QueryRow(ctx, `
+			SELECT COALESCE(assignment_group_id::text, ''), COALESCE(assigned_user_id::text, '')
+			FROM base_task WHERE _id = $1`, parentTaskID).Scan(&groupID, &assigneeID); err != nil {
+			return fmt.Errorf("control block %q: read parent assignment: %w", blockDisplayLabel(b), err)
+		}
+	}
+	if b.AssignmentGroupID != "" || b.AssignmentStrategy != "" || b.AssignedUserID != "" {
+		spec := assignmentSpec{
+			GroupID:     groupID,
+			Strategy:    b.AssignmentStrategy,
+			NamedUserID: assigneeID,
+			InputName:   b.blockConfigString("user_input"),
+			Label:       blockDisplayLabel(b),
+		}
+		if b.AssignmentGroupID != "" {
+			spec.GroupID = b.AssignmentGroupID
+		}
+		if b.AssignedUserID != "" {
+			spec.NamedUserID = b.AssignedUserID
+		}
+		var err error
+		groupID, assigneeID, err = resolveAssignment(ctx, q, spec, requestedBy, runInputs)
+		if err != nil {
+			return err
+		}
+	}
+	if skip {
+		assigneeID = ""
 	}
 	title := controlTaskTitle(ctx, q, parentTaskID, b)
 	vars := map[string]any{
@@ -346,10 +422,11 @@ func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, pare
 	var taskID, number string
 	if err := q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, parent_task_id,
-			requested_by_user_id, variables)
-		VALUES ('', $1, 'CONTROL', $2, $3, $4, $5::jsonb)
+			assignment_group_id, assigned_user_id, requested_by_user_id, variables)
+		VALUES ('', $1, 'CONTROL', $2, $3, $4, $5, $6, $7::jsonb)
 		RETURNING _id, number`,
-		title, state, parentTaskID, nullableText(requestedBy), string(varsJSON)).Scan(&taskID, &number); err != nil {
+		title, state, parentTaskID, nullableText(groupID), nullableText(assigneeID),
+		nullableText(requestedBy), string(varsJSON)).Scan(&taskID, &number); err != nil {
 		return fmt.Errorf("spawn control block %q: %w", b.Label, err)
 	}
 	if _, err := q.Exec(ctx, `UPDATE base_task SET title = $2 WHERE _id = $1`,
@@ -359,21 +436,21 @@ func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, pare
 	if skip {
 		// A skipped scope's own control blocks still exist in the run tree,
 		// and their scopes are skipped too.
-		return spawnDefinitionScopeForBlock(ctx, q, containerDefID, taskID, requestedBy, b, scope, true)
+		return spawnDefinitionScopeForBlock(ctx, q, containerDefID, taskID, requestedBy, b, runInputs, scope, true)
 	}
 	return nil
 }
 
 // spawnDefinitionScopeForBlock creates the children of one control block
 // under controlTaskID.
-func spawnDefinitionScopeForBlock(ctx context.Context, q scriptQuerier, containerDefID, controlTaskID, requestedBy string, b DefinitionBlock, scope map[string]any, skip bool) error {
+func spawnDefinitionScopeForBlock(ctx context.Context, q scriptQuerier, containerDefID, controlTaskID, requestedBy string, b DefinitionBlock, runInputs, scope map[string]any, skip bool) error {
 	blocks, err := getDefinitionBlocks(ctx, q, containerDefID)
 	if err != nil {
 		return err
 	}
 	stamp := scopeNeedsBlockIdentity(blocks, b.ID)
 	for _, child := range topLevelBlocks(blocks, b.ID) {
-		if err := spawnBlockInstance(ctx, q, containerDefID, controlTaskID, requestedBy, child, scope, skip, stamp); err != nil {
+		if err := spawnBlockInstance(ctx, q, containerDefID, controlTaskID, requestedBy, child, runInputs, scope, skip, stamp); err != nil {
 			return err
 		}
 	}
@@ -555,6 +632,8 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 		scope["locals"] = map[string]any{}
 	}
 	scope["parent"] = parentVars
+	// A block's from_input reads the run's request; the scope carries it.
+	runInputs, _ := scope["inputs"].(map[string]any)
 	if err := transitionTaskInTx(ctx, q, inst.taskID, taskStateReady); err != nil {
 		return err
 	}
@@ -577,12 +656,12 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 		if !condition {
 			// Spawn the scope skipped, then close the if as skipped: the run
 			// tree keeps the shape and nothing in the branch publishes.
-			if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, scope, true); err != nil {
+			if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, runInputs, scope, true); err != nil {
 				return err
 			}
 			return transitionTaskInTx(ctx, q, inst.taskID, taskStateSkipped)
 		}
-		if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, scope, false); err != nil {
+		if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, runInputs, scope, false); err != nil {
 			return err
 		}
 		return promoteChildrenDepth(ctx, q, inst.taskID, actorUserID, depth+1)
@@ -593,7 +672,7 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 		}
 		for index, item := range items {
 			elementScope := map[string]any{"item": item, "index": float64(index), "parent": parentVars}
-			if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, elementScope, false); err != nil {
+			if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, runInputs, elementScope, false); err != nil {
 				return err
 			}
 		}

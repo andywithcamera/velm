@@ -671,8 +671,44 @@
         <input type="checkbox" name="is_active" value="yes"{{if .Definition.IsActive}} checked{{end}} />
         <span>Active: this definition may be spawned from the catalogue</span>
       </label>
+        <input type="hidden" name="default_group_id" value="{{.Definition.DefaultGroupID}}" />
+      <input type="hidden" name="assignment_strategy" value="{{.Definition.AssignmentStrategy}}" />
       <div class="ui-def-actions">
         <button class="ui-def-button" type="submit">Save basics</button>
+      </div>
+    </form>
+  </section>
+
+  {{/* Assignment (Requirements AC-67): group + strategy on the definition.
+       Its own form posts to the same basics endpoint, carrying the basics
+       values so saving this section cannot blank them. */}}
+  <section class="ui-def-card" id="assignment">
+    <h2 class="ui-def-card-title">Assignment</h2>
+    <p class="ui-def-help">Who a task spawned from this definition lands with. A block can override either setting.</p>
+    <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/basics">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      <input type="hidden" name="display_name" value="{{.Definition.DisplayName}}" />
+      <input type="hidden" name="description" value="{{.Definition.Description}}" />
+      {{if .Definition.IsContainer}}<input type="hidden" name="is_container" value="yes" />{{end}}
+      {{if .Definition.IsActive}}<input type="hidden" name="is_active" value="yes" />{{end}}
+      <label class="ui-def-field">
+        <span class="ui-def-label">Assignment group</span>
+        <select class="ui-def-input" name="default_group_id">
+          <option value="">No group</option>
+          {{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.Definition.DefaultGroupID}} selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+        <span class="ui-def-help">Spawned tasks land in this group's queue.</span>
+      </label>
+      <label class="ui-def-field">
+        <span class="ui-def-label">Assignment strategy</span>
+        <select class="ui-def-input" name="assignment_strategy">
+          <option value=""{{if eq .Definition.AssignmentStrategy ""}} selected{{end}}>Inherit / default</option>
+          {{range .AssignmentStrategies}}<option value="{{.}}"{{if eq . $.Definition.AssignmentStrategy}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+        <span class="ui-def-help">Resolved once, at spawn. A block may override it.</span>
+      </label>
+      <div class="ui-def-actions">
+        <button class="ui-def-button" type="submit">Save assignment</button>
       </div>
     </form>
   </section>

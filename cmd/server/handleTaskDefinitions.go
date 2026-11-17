@@ -199,6 +199,14 @@ func editorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitio
 	viewData["Outputs"] = buildOutputsView(row.VariablesYAML)
 	stampStepTokens(&steps, viewData["CSRFToken"].(string))
 	viewData["Steps"] = steps
+	groups, err := db.ListAuthzGroups(r.Context())
+	if err != nil {
+		log.Printf("task definition %q group list failed: %v", row.Slug, err)
+		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
+		return nil, false
+	}
+	viewData["Groups"] = groups
+	viewData["AssignmentStrategies"] = db.AssignmentStrategies
 	return viewData, true
 }
 
@@ -238,6 +246,8 @@ func handleTaskDefinitionBasicsSave(w http.ResponseWriter, r *http.Request) {
 	description := strings.TrimSpace(r.PostFormValue("description"))
 	isContainer := r.PostFormValue("is_container") != ""
 	isActive := r.PostFormValue("is_active") != ""
+	defaultGroupID := strings.TrimSpace(r.PostFormValue("default_group_id"))
+	assignmentStrategy := strings.TrimSpace(r.PostFormValue("assignment_strategy"))
 
 	// Re-read the submitted values into the row so a refusal renders what the
 	// author typed rather than what is still stored.
@@ -245,10 +255,29 @@ func handleTaskDefinitionBasicsSave(w http.ResponseWriter, r *http.Request) {
 	row.Description = description
 	row.IsContainer = isContainer
 	row.IsActive = isActive
+	row.DefaultGroupID = defaultGroupID
+	row.AssignmentStrategy = assignmentStrategy
 
 	if displayName == "" {
 		renderEditorPage(w, r, row, http.StatusBadRequest, displayNameRequired)
 		return
+	}
+	if assignmentStrategy != "" && !db.IsAssignmentStrategy(assignmentStrategy) {
+		renderEditorPage(w, r, row, http.StatusBadRequest,
+			"Assignment strategy must be one of unassigned, named_user, requester, from_input, random_member or round_robin")
+		return
+	}
+	if defaultGroupID != "" {
+		exists, err := db.GroupExists(r.Context(), defaultGroupID)
+		if err != nil {
+			log.Printf("task definition %q group check failed: %v", row.Slug, err)
+			http.Error(w, "Failed to save task definition", http.StatusInternalServerError)
+			return
+		}
+		if !exists {
+			renderEditorPage(w, r, row, http.StatusBadRequest, "Assignment group does not exist")
+			return
+		}
 	}
 	if !isContainer && row.ChildCount > 0 {
 		// A leaf does no work itself, so its steps would silently never run.
@@ -256,7 +285,7 @@ func handleTaskDefinitionBasicsSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := db.UpdateTaskDefinitionBasics(r.Context(), row.Slug, displayName, description, isContainer, isActive); err != nil {
+	if err := db.UpdateTaskDefinitionBasics(r.Context(), row.Slug, displayName, description, isContainer, isActive, defaultGroupID, assignmentStrategy); err != nil {
 		if errors.Is(err, db.ErrTaskDefinitionNotFound) {
 			http.NotFound(w, r)
 			return
