@@ -88,12 +88,24 @@ func TestCatalogOrderConfirmation(t *testing.T) {
 		VALUES ($1, 'trigger', 10, 10)`, containerID); err != nil {
 		t.Fatalf("seed trigger: %v", err)
 	}
-	if _, err := db.Pool.Exec(ctx, `
+	// The plumbing check (AC-80) refuses an if with an empty scope, so the if
+	// holds one task. Two blocks are still at the root: the if and the end.
+	var ifID string
+	if err := db.Pool.QueryRow(ctx, `
 		INSERT INTO base_task_definition_child
 			(container_definition_id, block_kind, block_type, config, position, sort_order)
-		VALUES ($1, 'control', 'if', '{"label":"always","condition":"expr: true"}'::jsonb, 20, 20)`,
-		containerID); err != nil {
+		VALUES ($1, 'control', 'if', '{"label":"always","condition":"expr: true"}'::jsonb, 20, 20)
+		RETURNING _id::text`,
+		containerID).Scan(&ifID); err != nil {
 		t.Fatalf("seed if: %v", err)
+	}
+	branchSlug := tdeSlug(t, "catalogue-control-branch")
+	branchID := insertDefinition(t, ctx, branchSlug, "Branch task", "", "", false, true)
+	if _, err := db.Pool.Exec(ctx, `
+		INSERT INTO base_task_definition_child
+			(container_definition_id, child_definition_id, parent_block_id, block_kind, position, sort_order)
+		VALUES ($1, $2, $3, 'task', 25, 25)`, containerID, branchID, ifID); err != nil {
+		t.Fatalf("seed branch task: %v", err)
 	}
 	if _, err := db.Pool.Exec(ctx, `
 		INSERT INTO base_task_definition_child

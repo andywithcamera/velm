@@ -33,6 +33,10 @@ type StructureBlock struct {
 	Config    map[string]any `json:"config"`
 	DependsOn []string       `json:"depends_on"`
 	Mapping   map[string]any `json:"input_mapping"`
+	// Per-block assignment overrides (Requirements AC-77). Empty means
+	// inherit the definition's default.
+	AssignmentGroupID  string `json:"assignment_group_id"`
+	AssignmentStrategy string `json:"assignment_strategy"`
 }
 
 // SaveDefinitionStructure replaces a definition's block tree with blocks.
@@ -114,11 +118,14 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO base_task_definition_child
 				(container_definition_id, child_definition_id, parent_block_id,
-				 position, sort_order, block_kind, block_type, config, input_mapping)
-			VALUES ($1, $2, $3, $4, $4, $5, NULLIF($6, ''), $7::jsonb, $8::jsonb)
+				 position, sort_order, block_kind, block_type, config, input_mapping,
+				 assignment_group_id, assignment_strategy)
+			VALUES ($1, $2, $3, $4, $4, $5, NULLIF($6, ''), $7::jsonb, $8::jsonb,
+				NULLIF($9, '')::uuid, NULLIF($10, ''))
 			RETURNING _id::text`,
 			containerDefinitionID, childID, parentID, position, b.Kind,
-			strings.TrimSpace(b.Type), string(configJSON), string(mappingJSON)).Scan(&blockID); err != nil {
+			strings.TrimSpace(b.Type), string(configJSON), string(mappingJSON),
+			strings.TrimSpace(b.AssignmentGroupID), strings.TrimSpace(b.AssignmentStrategy)).Scan(&blockID); err != nil {
 			return fmt.Errorf("block %q: %w", b.Label, err)
 		}
 		if key := strings.TrimSpace(b.Key); key != "" {
@@ -239,24 +246,18 @@ func StoredStructureDocument(ctx context.Context, containerDefinitionID string) 
 		return nil, err
 	}
 	document := make([]StructureBlock, 0, len(blocks))
-	location := make(map[string]DocumentBlock, len(blocks))
-	for _, b := range blocks {
-		location[b.ID] = b
-	}
 	for _, b := range blocks {
 		label := b.Label
 		if label == "" {
 			label = b.DisplayName
 		}
 		parent := b.ParentID
-		if parent != "" {
-			parent = parent
-		}
 		document = append(document, StructureBlock{
 			Key: b.ID, Parent: parent, Kind: b.Kind, Type: b.Type,
 			Slug: b.Slug, Label: label, Position: b.Position,
 			Config: b.Config, Mapping: b.InputMapping,
-			DependsOn: b.DependsOnBlockIDs,
+			DependsOn:         b.DependsOnBlockIDs,
+			AssignmentGroupID: b.AssignmentGroupID, AssignmentStrategy: b.AssignmentStrategy,
 		})
 	}
 	return document, nil

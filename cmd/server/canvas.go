@@ -219,16 +219,18 @@ func documentToStructure(blocks []db.DocumentBlock) []db.StructureBlock {
 			mapping[key] = value
 		}
 		out = append(out, db.StructureBlock{
-			Key:       block.ID,
-			Parent:    block.ParentID,
-			Kind:      block.Kind,
-			Type:      block.Type,
-			Slug:      block.Slug,
-			Label:     canvasBlockLabel(block),
-			Position:  block.Position,
-			Config:    block.Config,
-			Mapping:   mapping,
-			DependsOn: block.DependsOnBlockIDs,
+			Key:                block.ID,
+			Parent:             block.ParentID,
+			Kind:               block.Kind,
+			Type:               block.Type,
+			Slug:               block.Slug,
+			Label:              canvasBlockLabel(block),
+			Position:           block.Position,
+			Config:             block.Config,
+			Mapping:            mapping,
+			DependsOn:          block.DependsOnBlockIDs,
+			AssignmentGroupID:  block.AssignmentGroupID,
+			AssignmentStrategy: block.AssignmentStrategy,
 		})
 	}
 	return out

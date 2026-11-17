@@ -137,6 +137,18 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 		default:
 			return "Block " + strconvQuote(label) + ": that block kind is not available in this release"
 		}
+		if strategy := strings.TrimSpace(b.AssignmentStrategy); strategy != "" {
+			valid := false
+			for _, known := range db.AssignmentStrategies {
+				if strategy == known {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return "Block " + strconvQuote(label) + ": " + strconvQuote(strategy) + " is not an assignment strategy"
+			}
+		}
 		key := strings.TrimSpace(b.Key)
 		if key != "" {
 			kindByKey[key] = b

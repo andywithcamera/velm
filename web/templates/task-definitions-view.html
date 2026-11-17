@@ -1352,7 +1352,7 @@
         <ul class="ui-canvas-palette">
           {{range .Canvas.Palette}}
             <li class="ui-canvas-palette-item{{if not .Available}} is-disabled{{end}}" data-palette="{{.Key}}" data-kind="{{.Kind}}" data-type="{{.Type}}">
-              {{.Label}}{{if not .Available}}<span class="ui-canvas-unavailable">not in this release</span>{{end}}
+              {{if .Available}}<button class="ui-def-mini" type="button" data-add-kind="{{.Kind}}" data-add-type="{{.Type}}" data-add-key="{{.Key}}">{{.Label}}</button>{{else}}{{.Label}}<span class="ui-canvas-unavailable">not in this release</span>{{end}}
             </li>
           {{end}}
         </ul>
@@ -1397,13 +1397,14 @@
             </div>
           {{end}}
           {{range .Canvas.Selected.Mapping}}
+            {{$mapping := .}}
             <div class="ui-canvas-rail-field">
               <label>{{.Name}}</label>
               <select data-rail-mapping="{{.Name}}">
                 <option value="">— nothing —</option>
                 <option value="__literal__">Literal…</option>
                 <option value="__expr__">Expression… (expr:)</option>
-                {{range .Options}}<option value="{{.Value}}"{{if eq .Value $.Canvas.Selected.Condition}} selected{{end}}>{{.Label}}</option>{{end}}
+                {{range .Options}}<option value="{{.Value}}"{{if eq .Value $mapping.Value}} selected{{end}}>{{.Label}}</option>{{end}}
               </select>
               <input type="text" data-rail-literal="{{.Name}}" value="{{.Value}}" placeholder="Literal or expr: value" />
             </div>
@@ -1458,7 +1459,59 @@
     return last + 10;
   }
 
+  function addControlBlock(kind, type) {
+    var doc = readDocument();
+    var scope = "";
+    for (var i = 0; i < doc.blocks.length; i++) {
+      if (doc.blocks[i].key === selected && doc.blocks[i].kind === "control" &&
+          (doc.blocks[i].type === "if" || doc.blocks[i].type === "for_each")) {
+        scope = selected;
+      }
+    }
+    if (kind === "trigger") {
+      for (var j = 0; j < doc.blocks.length; j++) {
+        if (doc.blocks[j].kind === "trigger") { return; }
+      }
+      scope = "";
+    }
+    var block = {
+      key: "b" + Date.now(),
+      parent: scope,
+      kind: kind,
+      type: type || "",
+      position: lastPosition(scope, doc)
+    };
+    if (type === "if") {
+      block.label = "If";
+      block.config = {label: "If", condition: "expr: true"};
+    } else if (type === "for_each") {
+      block.label = "For each";
+      block.config = {label: "For each", collection: "$inputs.items"};
+    } else if (type === "end") {
+      block.label = "End";
+    } else {
+      block.label = "Trigger";
+    }
+    doc.blocks.push(block);
+    writeDocument(doc);
+    form.submit();
+  }
+
   document.addEventListener("click", function (event) {
+    var kind = event.target.closest("[data-add-kind]");
+    if (kind) {
+      event.preventDefault();
+      var kindName = kind.getAttribute("data-add-kind");
+      if (kindName === "task") {
+        // A task block needs a definition, so the palette's definition list is
+        // the way to add one.
+        var searchField = document.getElementById("palette-search");
+        if (searchField) { searchField.focus(); }
+        return;
+      }
+      addControlBlock(kindName, kind.getAttribute("data-add-type"));
+      return;
+    }
     var task = event.target.closest("[data-add-task]");
     if (task) {
       event.preventDefault();
