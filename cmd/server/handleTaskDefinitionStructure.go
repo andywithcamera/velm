@@ -52,6 +52,10 @@ func handleTaskDefinitionStructureSave(w http.ResponseWriter, r *http.Request) {
 		refuseStep(w, r, row, message)
 		return
 	}
+	if message := checkPlumbing(r.Context(), row.Slug, blocks); message != "" {
+		refuseStep(w, r, row, message)
+		return
+	}
 	if err := db.SaveDefinitionStructure(r.Context(), row.ID, blocks); err != nil {
 		log.Printf("task definition %q structure save failed: %v", row.Slug, err)
 		refuseStep(w, r, row, "The structure could not be saved: "+err.Error())
@@ -104,8 +108,9 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 			if strings.TrimSpace(b.Slug) == "" {
 				return "Block " + strconvQuote(label) + " calls no definition: choose one"
 			}
-		case "trigger", "stage":
-			// Structure only: no runtime branch, no definition.
+		case "trigger", "stage", "gate":
+			// Structure only: no definition to resolve. A gate's exits are
+			// checked by the plumbing check, not here.
 		case "control":
 			switch strings.TrimSpace(b.Type) {
 			case "if":
@@ -117,7 +122,7 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 					return "Block " + strconvQuote(label) + ": the condition must be a CEL expression behind the expr: prefix, for example expr: inputs.exit_code == 0"
 				}
 			case "for_each":
-				if blockConfigText(b, "collection") == "" {
+				if !blockConfigPresent(b, "collection") {
 					return "Block " + strconvQuote(label) + ": a for_each block needs a collection"
 				}
 			case "end":
@@ -137,6 +142,9 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 			kindByKey[key] = b
 		}
 		if parent := strings.TrimSpace(b.Parent); parent != "" {
+			if parent == key && key != "" {
+				return "Block " + strconvQuote(label) + ": a block cannot be its own parent: that cycle cannot run"
+			}
 			parentBlock, found := kindByKey[parent]
 			if !found {
 				return "Block " + strconvQuote(label) + ": its parent must be a block earlier in the document"
@@ -148,6 +156,16 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 		_ = index
 	}
 	return ""
+}
+
+// blockConfigPresent treats an empty array or object as present: a for_each
+// over a literal list is authored as config["collection"] = [].
+func blockConfigPresent(b db.StructureBlock, key string) bool {
+	if b.Config == nil {
+		return false
+	}
+	value, found := b.Config[key]
+	return found && value != nil
 }
 
 func blockConfigText(b db.StructureBlock, key string) string {

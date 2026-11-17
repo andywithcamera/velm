@@ -87,11 +87,16 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 		}
 		position := b.Position
 		if position == 0 {
-			position = (index + 1) * 10
+			position = index * 10
 		}
-		config := b.Config
-		if config == nil {
-			config = map[string]any{}
+		config := map[string]any{}
+		for key, value := range b.Config {
+			config[key] = value
+		}
+		// The label is part of the document: the canvas and the plumbing
+		// errors name the author's words, not a uuid.
+		if label := strings.TrimSpace(b.Label); label != "" {
+			config["label"] = label
 		}
 		configJSON, err := json.Marshal(config)
 		if err != nil {
@@ -147,4 +152,112 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 		}
 	}
 	return tx.Commit(ctx)
+}
+
+// DocumentBlock is one block of a stored definition tree, with the facts the
+// canvas needs to render it: the child definition's name and whether that
+// child is a container (so a chain is visible before it is ordered), and the
+// block's own assignment override. Requirements AC-69 to AC-73.
+type DocumentBlock struct {
+	ID                 string
+	ParentID           string
+	ChildDefinitionID  string
+	Slug               string
+	DisplayName        string
+	IsContainer        bool
+	ChildStepCount     int
+	InputSchemaYAML    string
+	VariablesYAML      string
+	Kind               string
+	Type               string
+	Label              string
+	Position           int
+	Config             map[string]any
+	InputMapping       map[string]any
+	DependsOnBlockIDs  []string
+	AssignmentGroupID  string
+	AssignmentStrategy string
+	AssignedUserID     string
+}
+
+// LoadDefinitionDocument reads a definition's block tree in document order,
+// joined to the child definitions. It is the one loader behind the canvas and
+// the raw view (Requirements AC-70).
+func LoadDefinitionDocument(ctx context.Context, containerDefinitionID string) ([]DocumentBlock, error) {
+	rows, err := Pool.Query(ctx, `
+		SELECT c._id::text, COALESCE(c.parent_block_id::text, ''),
+			COALESCE(c.child_definition_id::text, ''),
+			COALESCE(d.slug, ''), COALESCE(d.display_name, ''),
+			COALESCE(d.is_container, false),
+			(SELECT count(*) FROM base_task_definition_child cc
+			  WHERE cc.container_definition_id = c.child_definition_id),
+			COALESCE(d.input_schema_yaml, ''), COALESCE(d.variables_yaml, ''),
+			COALESCE(c.block_kind, 'task'), COALESCE(c.block_type, ''),
+			COALESCE(c.config->>'label', ''), c.position, c.config, c.input_mapping,
+			COALESCE(c.depends_on_block_id, '{}'),
+			COALESCE(c.assignment_group_id::text, ''),
+			COALESCE(c.assignment_strategy, ''),
+			COALESCE(c.assigned_user_id::text, '')
+		FROM base_task_definition_child c
+		LEFT JOIN base_task_definition d ON d._id = c.child_definition_id
+		WHERE c.container_definition_id = $1
+		ORDER BY c.position, c.sort_order, c._created_at`, containerDefinitionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var blocks []DocumentBlock
+	for rows.Next() {
+		var b DocumentBlock
+		var cfg []byte
+		if err := rows.Scan(&b.ID, &b.ParentID, &b.ChildDefinitionID,
+			&b.Slug, &b.DisplayName, &b.IsContainer, &b.ChildStepCount,
+			&b.InputSchemaYAML, &b.VariablesYAML, &b.Kind, &b.Type, &b.Label,
+			&b.Position, &cfg, &b.InputMapping, &b.DependsOnBlockIDs,
+			&b.AssignmentGroupID, &b.AssignmentStrategy, &b.AssignedUserID); err != nil {
+			return nil, err
+		}
+		b.Config = map[string]any{}
+		if len(cfg) > 0 {
+			_ = json.Unmarshal(cfg, &b.Config)
+		}
+		if b.InputMapping == nil {
+			b.InputMapping = map[string]any{}
+		}
+		blocks = append(blocks, b)
+	}
+	return blocks, rows.Err()
+}
+
+// StoredStructureDocument turns the stored tree back into the document the
+// canvas posts. Used by the order gate (Requirements AC-86) so a definition
+// that cannot be saved cannot be started either. Keys are block ids because
+// the stored tree has no document-local keys.
+func StoredStructureDocument(ctx context.Context, containerDefinitionID string) ([]StructureBlock, error) {
+	blocks, err := LoadDefinitionDocument(ctx, containerDefinitionID)
+	if err != nil {
+		return nil, err
+	}
+	document := make([]StructureBlock, 0, len(blocks))
+	location := make(map[string]DocumentBlock, len(blocks))
+	for _, b := range blocks {
+		location[b.ID] = b
+	}
+	for _, b := range blocks {
+		label := b.Label
+		if label == "" {
+			label = b.DisplayName
+		}
+		parent := b.ParentID
+		if parent != "" {
+			parent = parent
+		}
+		document = append(document, StructureBlock{
+			Key: b.ID, Parent: parent, Kind: b.Kind, Type: b.Type,
+			Slug: b.Slug, Label: label, Position: b.Position,
+			Config: b.Config, Mapping: b.InputMapping,
+			DependsOn: b.DependsOnBlockIDs,
+		})
+	}
+	return document, nil
 }
