@@ -212,6 +212,7 @@ func TestTaskDefinitionWriteRoutesCarryCSRF(t *testing.T) {
 		"POST /task-definitions/{slug}/basics",
 		"POST /task-definitions/{slug}/inputs",
 		"POST /task-definitions/{slug}/inputs/raw",
+		"POST /task-definitions/{slug}/structure",
 		"POST /task-definitions/{slug}/steps",
 		"POST /task-definitions/{slug}/steps/{child_slug}/remove",
 		"POST /task-definitions/{slug}/steps/{child_slug}/move",

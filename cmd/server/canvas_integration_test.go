@@ -214,16 +214,41 @@ func TestCanvasDropAppendsAtEndOfScope(t *testing.T) {
 	seedCanvasTree(t, ctx, slug, []db.StructureBlock{
 		{Key: "t", Kind: "trigger", Label: "Ordered", Position: 0},
 		{Key: "a", Kind: "task", Slug: firstSlug, Label: "First", Position: 10},
-		{Key: "b", Kind: "task", Slug: secondSlug, Label: "Second", Position: 20},
 	})
-	var position int
-	if err := db.Pool.QueryRow(ctx,
-		`SELECT position FROM base_task_definition_child WHERE container_definition_id = $1
-		 ORDER BY position DESC LIMIT 1`, containerID).Scan(&position); err != nil {
-		t.Fatalf("read last position: %v", err)
+
+	// The palette appends a dropped definition at the end of its scope with
+	// position = last sibling + 10; this is the document it submits.
+	dropped := []db.StructureBlock{
+		{Key: "t", Kind: "trigger", Label: "Ordered", Position: 0},
+		{Key: "a", Kind: "task", Slug: firstSlug, Label: "First", Position: 10},
+		{Key: "b", Kind: "task", Slug: secondSlug, Label: "Second", Position: 20},
 	}
-	if position != 20 {
-		t.Fatalf("last block position = %d, want 20 (spaced by 10)", position)
+	if rec := postStructure(t, slug, dropped); rec.Code != http.StatusOK {
+		t.Fatalf("dropped block save = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+
+	rows, err := db.Pool.Query(ctx,
+		`SELECT block_kind, position FROM base_task_definition_child
+		 WHERE container_definition_id = $1 ORDER BY position`, containerID)
+	if err != nil {
+		t.Fatalf("read stored blocks: %v", err)
+	}
+	defer rows.Close()
+	type stored struct {
+		Kind     string
+		Position int
+	}
+	var got []stored
+	for rows.Next() {
+		var item stored
+		if err := rows.Scan(&item.Kind, &item.Position); err != nil {
+			t.Fatalf("scan stored block: %v", err)
+		}
+		got = append(got, item)
+	}
+	want := []stored{{"trigger", 0}, {"task", 10}, {"task", 20}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("stored blocks = %+v, want %+v (the drop spaced by 10)", got, want)
 	}
 }
 
@@ -529,8 +554,10 @@ func TestPlumbingRefusalPreservesDocument(t *testing.T) {
 		Config     string
 	}
 	read := func() []row {
+		// config::jsonb::text is canonical, so key order and whitespace do
+		// not count (AC-88 compares config by jsonb equality).
 		rows, err := db.Pool.Query(ctx,
-			`SELECT block_kind, COALESCE(block_type, ''), position, config::text
+			`SELECT block_kind, COALESCE(block_type, ''), position, config::jsonb::text
 			 FROM base_task_definition_child WHERE container_definition_id = $1 ORDER BY position`, containerID)
 		if err != nil {
 			t.Fatalf("read document: %v", err)
@@ -574,24 +601,40 @@ func TestThreeViewsWriteOneDocument(t *testing.T) {
 	if rec := postStructure(t, slug, doc); rec.Code != http.StatusOK {
 		t.Fatalf("canvas shape = %d: %s", rec.Code, rec.Body.String())
 	}
-	read := func() [][3]string {
+
+	type storedRow struct {
+		Kind, Type string
+		Position   int
+		Config     string
+	}
+	read := func() []storedRow {
 		rows, err := db.Pool.Query(ctx,
-			`SELECT block_kind, COALESCE(block_type, ''), position::text, config::text
+			`SELECT block_kind, COALESCE(block_type, ''), position, config::jsonb::text
 			 FROM base_task_definition_child WHERE container_definition_id = $1 ORDER BY position`, containerID)
 		if err != nil {
 			t.Fatalf("read rows: %v", err)
 		}
 		defer rows.Close()
-		var out [][3]string
+		var out []storedRow
 		for rows.Next() {
-			var kind, typ, position, config string
-			if err := rows.Scan(&kind, &typ, &position, &config); err != nil {
+			var item storedRow
+			if err := rows.Scan(&item.Kind, &item.Type, &item.Position, &item.Config); err != nil {
 				t.Fatalf("scan: %v", err)
 			}
-			out = append(out, [3]string{kind, typ, position})
+			out = append(out, item)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("rows: %v", err)
 		}
 		return out
 	}
+	canvasRows := read()
+	if len(canvasRows) == 0 {
+		t.Fatal("the canvas save wrote no rows")
+	}
+
+	// The raw view sends the same document as a bare array rather than the
+	// {"blocks": [...]} wrapper the canvas uses.
 	enc, _ := json.Marshal(doc)
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/task-definitions/"+slug+"/structure",
@@ -602,7 +645,10 @@ func TestThreeViewsWriteOneDocument(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("raw shape = %d: %s", rec.Code, rec.Body.String())
 	}
-	_ = read
+	rawRows := read()
+	if !reflect.DeepEqual(canvasRows, rawRows) {
+		t.Fatalf("the two views stored different documents:\ncanvas=%+v\nraw=%+v", canvasRows, rawRows)
+	}
 }
 
 // AC-90: a config key the canvas does not model survives a raw save.
