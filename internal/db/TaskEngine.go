@@ -74,7 +74,7 @@ type TaskDefinition struct {
 	// for the pre-strategy behaviour (098, Requirements AC-65).
 	AssignmentStrategy string
 	SpawnRules         []TaskSpawnRule
-	IsActive   bool
+	IsActive           bool
 }
 
 type TaskSpawnRule struct {

@@ -50,9 +50,9 @@ type DefinitionBlock struct {
 	Config            map[string]any
 	// Per-block assignment (098, AC-47). Empty means the block did not set
 	// the column and inherits the definition's value.
-	AssignmentGroupID    string
-	AssignmentStrategy   string
-	AssignedUserID       string
+	AssignmentGroupID  string
+	AssignmentStrategy string
+	AssignedUserID     string
 }
 
 // IsControl reports whether this block shapes the flow.
