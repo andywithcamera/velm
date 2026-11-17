@@ -67,7 +67,8 @@ func GetTaskDefinitionBySlugIncludingDeleted(ctx context.Context, slug string) (
 		FROM base_task_definition d
 		WHERE d.slug = $1`, slug).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
-			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML, &deleted)
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
+			&row.DefaultGroupID, &row.AssignmentStrategy, &deleted)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TaskDefinitionRow{}, "", ErrTaskDefinitionNotFound
 	}
