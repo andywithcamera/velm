@@ -48,6 +48,20 @@ func handleTaskDefinitionStructureSave(w http.ResponseWriter, r *http.Request) {
 		refuseStep(w, r, row, message)
 		return
 	}
+	// A keyboard move posts the whole document plus the one move it means
+	// (Requirements AC-46). Apply it here, before validation, so the rules
+	// for a move and for a stored document cannot drift apart.
+	selectedKey := strings.TrimSpace(r.PostFormValue("selected"))
+	if direction := strings.TrimSpace(r.PostFormValue("move")); direction != "" {
+		moveKey := strings.TrimSpace(r.PostFormValue("move_key"))
+		moved, refusal := applyStructureMove(blocks, moveKey, direction)
+		if refusal != "" {
+			refuseStep(w, r, row, refusal)
+			return
+		}
+		blocks = moved
+		selectedKey = moveKey
+	}
 	if message := validateStructureBlocks(blocks); message != "" {
 		refuseStep(w, r, row, message)
 		return
@@ -61,17 +75,23 @@ func handleTaskDefinitionStructureSave(w http.ResponseWriter, r *http.Request) {
 		refuseStep(w, r, row, "The structure could not be saved: "+err.Error())
 		return
 	}
+	selectedIndex := structureBlockIndex(blocks, selectedKey)
 	if isHTMXRequest(r) {
-		succeedStep(w, r, row, "Structure saved.", "")
+		if id := storedBlockIDAt(r, row.ID, selectedIndex); id != "" {
+			w.Header().Set("HX-Redirect", "/task-definitions/"+row.Slug+"?view=canvas&block="+id)
+		}
+		w.WriteHeader(http.StatusOK)
 		return
 	}
-	renderEditorNotice(w, r, row, "Structure saved.")
+	renderEditorNotice(w, r, row, "Structure saved.", selectedIndex)
 }
 
 // renderEditorNotice re-renders the whole editor after a plain (non-HTMX)
 // canvas save, for the same reason a refusal does: the canvas form must work
-// without JavaScript and never replace the page with a fragment.
-func renderEditorNotice(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, notice string) {
+// without JavaScript and never replace the page with a fragment. selectedIndex
+// is the position, in document order, of the block the author just moved, so
+// the response comes back with that block still expanded (-1 for none).
+func renderEditorNotice(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, notice string, selectedIndex int) {
 	viewData, ok := editorViewData(w, r, row)
 	if !ok {
 		return
@@ -80,7 +100,28 @@ func renderEditorNotice(w http.ResponseWriter, r *http.Request, row db.TaskDefin
 	canvas, _ := viewData["Canvas"].(canvasView)
 	canvas.Notice = notice
 	viewData["Canvas"] = canvas
+	if selectedIndex >= 0 {
+		if blocks, err := db.ReadStoredDefinitionDocument(r.Context(), row.ID); err == nil && selectedIndex < len(blocks) {
+			if selected, buildErr := buildCanvasView(r.Context(), row, blocks, blocks[selectedIndex].ID); buildErr == nil {
+				selected.Notice = notice
+				viewData["Canvas"] = selected
+			}
+		}
+	}
 	writeTaskDefinitionPage(w, "layout.html", viewData, http.StatusOK)
+}
+
+// storedBlockIDAt returns the id of the block at a document position after a
+// save; ids change on every structural write, so selection travels by index.
+func storedBlockIDAt(r *http.Request, definitionID string, index int) string {
+	if index < 0 {
+		return ""
+	}
+	blocks, err := db.ReadStoredDefinitionDocument(r.Context(), definitionID)
+	if err != nil || index >= len(blocks) {
+		return ""
+	}
+	return blocks[index].ID
 }
 
 // readStructureDocument accepts the JSON body the canvas sends or the

@@ -1188,7 +1188,7 @@
   }
   .ui-canvas-layout {
     display: grid;
-    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr) minmax(0, 18rem);
+    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
     gap: 1rem;
     align-items: start;
   }
@@ -1278,6 +1278,60 @@
   .ui-canvas-block.is-selected {
     outline: 2px solid var(--border-mid);
   }
+  .ui-canvas-block.is-expanded {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+  }
+  .ui-canvas-block[draggable="true"] {
+    cursor: grab;
+  }
+  .ui-canvas-block.is-drop-before {
+    box-shadow: inset 0 2px 0 0 var(--text-secondary);
+  }
+  .ui-canvas-block.is-drop-after {
+    box-shadow: inset 0 -2px 0 0 var(--text-secondary);
+  }
+  .ui-canvas-block.is-drop-into,
+  .ui-canvas-tree.is-drop-into {
+    border-color: var(--text-secondary);
+    background: var(--surface-soft);
+  }
+  .ui-canvas-config {
+    display: grid;
+    gap: 0.5rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.5rem;
+    margin-top: 0.25rem;
+  }
+  .ui-canvas-field {
+    display: grid;
+    gap: 0.2rem;
+  }
+  .ui-canvas-field label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+  }
+  .ui-canvas-field select,
+  .ui-canvas-field textarea,
+  .ui-canvas-field input {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-surface);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.82rem;
+    padding: 0.3rem 0.45rem;
+  }
+  .ui-canvas-moves {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+  .ui-canvas-moves button[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
   .ui-canvas-depth-1 { margin-left: 1.5rem; }
   .ui-canvas-depth-2 { margin-left: 3rem; }
   .ui-canvas-depth-3 { margin-left: 4.5rem; }
@@ -1335,13 +1389,15 @@
 </style>
 <section class="ui-def-card" id="canvas">
   <h2 class="ui-def-card-title">Canvas</h2>
-  <p class="ui-def-help">Structure and nesting. Pick a block to edit it in the config rail; values are pills, so a typo cannot become a dangling reference.</p>
+  <p class="ui-def-help">Drag a block by its card to move it, or use the keyboard buttons on the expanded block. Configuration opens inside the block itself; one block is open at a time.</p>
   <div id="step-errors" role="alert">{{if .Canvas.Error}}<div class="ui-def-error" role="alert">{{.Canvas.Error}}</div>{{end}}</div>
   {{if .Canvas.Notice}}<p class="ui-def-help" role="status">{{.Canvas.Notice}}</p>{{end}}
   <form id="canvas-form" class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/structure"
         hx-post="/task-definitions/{{.Definition.Slug}}/structure" hx-target="#step-errors" hx-swap="innerHTML">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
     <input type="hidden" id="canvas-document" name="structure" value="{{.Canvas.Document}}" />
+    <input type="hidden" id="canvas-selected" name="selected" value="{{.Canvas.Selected.ID}}" />
+    <input type="hidden" name="move_key" value="{{.Canvas.Selected.ID}}" />
     <div class="ui-canvas-layout">
       <aside class="ui-canvas-panel" id="canvas-palette">
         <h3 class="ui-canvas-title">Palette</h3>
@@ -1365,15 +1421,62 @@
       </aside>
       <div class="ui-canvas-panel">
         <h3 class="ui-canvas-title">Tree</h3>
+        <p class="ui-def-help" id="canvas-drag-error" role="alert"></p>
         {{if .Canvas.Blocks}}
-          <ol class="ui-canvas-tree" id="canvas-tree">
+          <ol class="ui-canvas-tree" id="canvas-tree" data-drop-root="true">
             {{range .Canvas.Blocks}}
-              <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected{{end}}{{if eq .Kind "trigger"}} is-trigger{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}"{{if eq .Kind "trigger"}} data-trigger="true"{{end}}>
+              <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected is-expanded{{end}}{{if eq .Kind "trigger"}} is-trigger{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-block-key="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}"{{if eq .Kind "trigger"}} data-trigger="true"{{else}} draggable="true"{{end}}>
                 <span class="ui-canvas-kind">{{.KindLabel}}</span>
-                <a href="/task-definitions/{{$.Definition.Slug}}?view=canvas&block={{.ID}}">{{.Label}}</a>
+                <a class="ui-canvas-label" href="/task-definitions/{{$.Definition.Slug}}?view=canvas&block={{.ID}}">{{.Label}}</a>
                 {{if .IsChain}}<span class="ui-canvas-chain">Chain · {{.StepCount}} {{if eq .StepCount 1}}step{{else}}steps{{end}}</span>{{end}}
                 {{if .Slug}}<code>{{.Slug}}</code>{{end}}
                 <span class="ui-canvas-position">#{{.Position}}</span>
+                {{if and .Expanded (ne .Kind "trigger")}}
+                  <div class="ui-canvas-config">
+                    {{if .HasCondition}}
+                      <div class="ui-canvas-field">
+                        <label for="config-condition-{{.ID}}">Condition</label>
+                        <textarea id="config-condition-{{.ID}}" rows="3" data-config="condition">{{.Condition}}</textarea>
+                        <span class="ui-def-help">CEL behind the <code>expr:</code> prefix.</span>
+                      </div>
+                    {{end}}
+                    {{range .Mapping}}
+                      {{$mapping := .}}
+                      <div class="ui-canvas-field">
+                        <label>{{.Name}}</label>
+                        <select data-config-mapping="{{.Name}}">
+                          <option value="">— nothing —</option>
+                          <option value="__literal__">Literal…</option>
+                          <option value="__expr__">Expression… (expr:)</option>
+                          {{range .Options}}<option value="{{.Value}}"{{if eq .Value $mapping.Value}} selected{{end}}>{{.Label}}</option>{{end}}
+                        </select>
+                        <input type="text" data-config-literal="{{.Name}}" value="{{.Value}}" placeholder="Literal or expr: value" />
+                      </div>
+                    {{end}}
+                    <div class="ui-canvas-field">
+                      <label for="config-group-{{.ID}}">Assignment group</label>
+                      <select id="config-group-{{.ID}}" data-config="assignment_group_id">
+                        <option value="">Inherit</option>
+                        {{range $.Groups}}<option value="{{.ID}}"{{if eq .ID $.Canvas.Selected.GroupID}} selected{{end}}>{{.Name}}</option>{{end}}
+                      </select>
+                    </div>
+                    <div class="ui-canvas-field">
+                      <label for="config-strategy-{{.ID}}">Assignment strategy</label>
+                      <select id="config-strategy-{{.ID}}" data-config="assignment_strategy">
+                        <option value="">Inherit</option>
+                        {{range $.Canvas.Strategies}}<option value="{{.}}"{{if eq . $.Canvas.Selected.Strategy}} selected{{end}}>{{.}}</option>{{end}}
+                      </select>
+                    </div>
+                    <p class="ui-def-help">Pills in scope:</p>
+                    <p>{{range .Pills}}<span class="ui-canvas-pill">{{.Label}}</span> {{end}}</p>
+                    <div class="ui-canvas-moves">
+                      <button class="ui-def-mini" type="submit" name="move" value="up" aria-label="Move up"{{if not .CanMoveUp}} disabled{{end}}>Move up</button>
+                      <button class="ui-def-mini" type="submit" name="move" value="down" aria-label="Move down"{{if not .CanMoveDown}} disabled{{end}}>Move down</button>
+                      <button class="ui-def-mini" type="submit" name="move" value="indent" aria-label="Indent"{{if not .CanIndent}} disabled{{end}}>Indent</button>
+                      <button class="ui-def-mini" type="submit" name="move" value="outdent" aria-label="Outdent"{{if not .CanOutdent}} disabled{{end}}>Outdent</button>
+                    </div>
+                  </div>
+                {{end}}
               </li>
             {{end}}
           </ol>
@@ -1381,60 +1484,19 @@
           <p class="ui-def-help">No blocks yet. Add a task or a control block from the palette.</p>
         {{end}}
       </div>
-      <aside class="ui-canvas-panel" id="canvas-rail">
-        <h3 class="ui-canvas-title">Config</h3>
-        {{if .Canvas.HasSelection}}
-          <p class="ui-def-help">{{.Canvas.Selected.KindLabel}}: {{.Canvas.Selected.Label}}</p>
-          {{if .Canvas.Selected.HasCondition}}
-            <div class="ui-canvas-rail-field">
-              <label for="rail-condition">Condition</label>
-              <textarea id="rail-condition" rows="3" data-rail="condition">{{.Canvas.Selected.Condition}}</textarea>
-              <span class="ui-def-help">CEL behind the <code>expr:</code> prefix.</span>
-            </div>
-          {{end}}
-          {{range .Canvas.Selected.Mapping}}
-            {{$mapping := .}}
-            <div class="ui-canvas-rail-field">
-              <label>{{.Name}}</label>
-              <select data-rail-mapping="{{.Name}}">
-                <option value="">— nothing —</option>
-                <option value="__literal__">Literal…</option>
-                <option value="__expr__">Expression… (expr:)</option>
-                {{range .Options}}<option value="{{.Value}}"{{if eq .Value $mapping.Value}} selected{{end}}>{{.Label}}</option>{{end}}
-              </select>
-              <input type="text" data-rail-literal="{{.Name}}" value="{{.Value}}" placeholder="Literal or expr: value" />
-            </div>
-          {{end}}
-          <div class="ui-canvas-rail-field">
-            <label>Assignment group</label>
-            <select data-rail="assignment_group_id">
-              <option value="">Inherit</option>
-              {{range $.Groups}}<option value="{{.ID}}"{{if eq .ID $.Canvas.Selected.GroupID}} selected{{end}}>{{.Name}}</option>{{end}}
-            </select>
-          </div>
-          <div class="ui-canvas-rail-field">
-            <label>Assignment strategy</label>
-            <select data-rail="assignment_strategy">
-              <option value="">Inherit</option>
-              {{range $.Canvas.Strategies}}<option value="{{.}}"{{if eq . $.Canvas.Selected.Strategy}} selected{{end}}>{{.}}</option>{{end}}
-            </select>
-          </div>
-          <p class="ui-def-help">Pills in scope:</p>
-          <p>{{range .Canvas.Selected.Pills}}<span class="ui-canvas-pill">{{.Label}}</span> {{end}}</p>
-        {{else}}
-          <p class="ui-def-help">Select a block to configure it.</p>
-        {{end}}
-      </aside>
     </div>
     <div class="ui-def-actions"><button class="ui-def-button" type="submit">Save canvas</button></div>
   </form>
 </section>
+<script nonce="{{.CSPNonce}}" src="/static/js/designer-canvas.js"></script>
 <script nonce="{{.CSPNonce}}">
 (function () {
   var form = document.getElementById("canvas-form");
   var documentField = document.getElementById("canvas-document");
+  var selectedField = document.getElementById("canvas-selected");
   if (!form || !documentField) { return; }
-  var selected = "{{.Canvas.Selected.ID}}";
+  var tree = document.getElementById("canvas-tree");
+  var dragError = document.getElementById("canvas-drag-error");
 
   function readDocument() {
     try { return JSON.parse(documentField.value || "{}"); } catch (err) { return {blocks: []}; }
@@ -1444,26 +1506,40 @@
     documentField.value = JSON.stringify(doc);
   }
 
+  function selectedKey() {
+    return selectedField ? selectedField.value : "";
+  }
+
+  var VC = window.VelmCanvas;
+  function blockIndex(doc, key) { return VC.blockIndex(doc, key); }
+  function isDescendant(doc, key, ancestorKey) { return VC.isDescendant(doc, key, ancestorKey); }
+  function relocate(doc, key, newParent, anchorKey, before) {
+    return VC.relocate(doc, key, newParent, anchorKey, before);
+  }
+
   function lastPosition(scopeParent, doc) {
     var last = 0;
     for (var i = 0; i < doc.blocks.length; i++) {
-      var block = doc.blocks[i];
-      if ((block.parent || "") === scopeParent) {
-        last = Math.max(last, block.position || 0);
+      if ((doc.blocks[i].parent || "") === scopeParent) {
+        last = Math.max(last, doc.blocks[i].position || 0);
       }
     }
     return last + 10;
   }
 
+  function currentScope(doc) {
+    var index = blockIndex(doc, selectedKey());
+    if (index < 0) { return ""; }
+    var block = doc.blocks[index];
+    if (block.kind === "control" && (block.type === "if" || block.type === "for_each")) {
+      return block.key;
+    }
+    return "";
+  }
+
   function addControlBlock(kind, type) {
     var doc = readDocument();
-    var scope = "";
-    for (var i = 0; i < doc.blocks.length; i++) {
-      if (doc.blocks[i].key === selected && doc.blocks[i].kind === "control" &&
-          (doc.blocks[i].type === "if" || doc.blocks[i].type === "for_each")) {
-        scope = selected;
-      }
-    }
+    var scope = currentScope(doc);
     if (kind === "trigger") {
       for (var j = 0; j < doc.blocks.length; j++) {
         if (doc.blocks[j].kind === "trigger") { return; }
@@ -1490,6 +1566,7 @@
     }
     doc.blocks.push(block);
     writeDocument(doc);
+    if (selectedField) { selectedField.value = block.key; }
     form.submit();
   }
 
@@ -1499,8 +1576,6 @@
       event.preventDefault();
       var kindName = kind.getAttribute("data-add-kind");
       if (kindName === "task") {
-        // A task block needs a definition, so the palette's definition list is
-        // the way to add one.
         var searchField = document.getElementById("palette-search");
         if (searchField) { searchField.focus(); }
         return;
@@ -1512,48 +1587,122 @@
     if (task) {
       event.preventDefault();
       var doc = readDocument();
-      var scope = "";
-      for (var i = 0; i < doc.blocks.length; i++) {
-        if (doc.blocks[i].key === selected && doc.blocks[i].kind === "control" &&
-            (doc.blocks[i].type === "if" || doc.blocks[i].type === "for_each")) {
-          scope = selected;
-        }
-      }
-      doc.blocks.push({
+      var scope = currentScope(doc);
+      var block = {
         key: "b" + Date.now(),
         parent: scope,
         kind: "task",
         slug: task.getAttribute("data-add-task"),
         label: task.textContent.trim(),
         position: lastPosition(scope, doc)
-      });
+      };
+      doc.blocks.push(block);
       writeDocument(doc);
+      if (selectedField) { selectedField.value = block.key; }
       form.submit();
     }
   });
 
+  // ---- Drag and drop (Design Vision D3) -------------------------------
+  // A drag posts the same whole document as every other path: resolveDrop
+  // rewrites the block list, then the form submits once.
+  var dragging = "";
+
+  function clearIndicators() {
+    var all = document.querySelectorAll(".is-drop-before, .is-drop-after, .is-drop-into");
+    for (var i = 0; i < all.length; i++) {
+      all[i].classList.remove("is-drop-before", "is-drop-after", "is-drop-into");
+    }
+  }
+
+  if (tree) {
+    tree.addEventListener("dragstart", function (event) {
+      var li = event.target.closest("[data-block-key]");
+      if (!li || li.getAttribute("data-trigger") === "true") { return; }
+      dragging = li.getAttribute("data-block-key");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", dragging);
+    });
+    tree.addEventListener("dragend", function () {
+      dragging = "";
+      clearIndicators();
+    });
+    tree.addEventListener("dragover", function (event) {
+      event.preventDefault();
+      clearIndicators();
+      var li = event.target.closest("[data-block-key]");
+      if (!li || li.getAttribute("data-trigger") === "true") {
+        tree.classList.add("is-drop-into");
+        return;
+      }
+      var rect = li.getBoundingClientRect();
+      var ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+      var isControl = li.getAttribute("data-kind") === "control";
+      if (isControl && ratio > 0.3 && ratio < 0.7) {
+        li.classList.add("is-drop-into");
+      } else if (ratio < 0.5) {
+        li.classList.add("is-drop-before");
+      } else {
+        li.classList.add("is-drop-after");
+      }
+    });
+    tree.addEventListener("drop", function (event) {
+      event.preventDefault();
+      clearIndicators();
+      var li = event.target.closest("[data-block-key]");
+      var dragKey = dragging || event.dataTransfer.getData("text/plain");
+      dragging = "";
+      if (dragError) { dragError.textContent = ""; }
+      if (!dragKey) { return; }
+      var doc = readDocument();
+      var mode = "root";
+      if (li && li.getAttribute("data-trigger") !== "true") {
+        var rect = li.getBoundingClientRect();
+        var ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
+        if (li.getAttribute("data-kind") === "control" && ratio > 0.3 && ratio < 0.7) {
+          mode = "into";
+        } else {
+          mode = ratio < 0.5 ? "before" : "after";
+        }
+      }
+      var result = VC.resolveDrop(doc, dragKey, li ? li.getAttribute("data-block-key") : "", mode);
+      if (result.error) {
+        if (dragError) { dragError.textContent = result.error; }
+        return;
+      }
+      if (result.noop) { return; }
+      writeDocument(result.doc);
+      if (selectedField) { selectedField.value = dragKey; }
+      form.submit();
+    });
+  }
+
   form.addEventListener("submit", function () {
     var doc = readDocument();
-    for (var i = 0; i < doc.blocks.length; i++) {
-      var block = doc.blocks[i];
-      if (block.key !== selected) { continue; }
+    var key = selectedKey();
+    var index = blockIndex(doc, key);
+    if (index >= 0) {
+      var block = doc.blocks[index];
       block.config = block.config || {};
-      var condition = document.querySelector("[data-rail='condition']");
-      if (condition) { block.config.condition = condition.value; }
-      var group = document.querySelector("[data-rail='assignment_group_id']");
-      if (group) { block.assignment_group_id = group.value; }
-      var strategy = document.querySelector("[data-rail='assignment_strategy']");
-      if (strategy) { block.assignment_strategy = strategy.value; }
-      block.input_mapping = block.input_mapping || {};
-      var picks = document.querySelectorAll("[data-rail-mapping]");
-      for (var j = 0; j < picks.length; j++) {
-        var name = picks[j].getAttribute("data-rail-mapping");
-        var value = picks[j].value;
-        if (value === "__literal__" || value === "__expr__") {
-          var literal = document.querySelector("[data-rail-literal='" + name + "']");
-          value = literal ? literal.value : "";
+      var card = document.getElementById("block-" + key);
+      if (card) {
+        var condition = card.querySelector("[data-config='condition']");
+        if (condition) { block.config.condition = condition.value; }
+        var group = card.querySelector("[data-config='assignment_group_id']");
+        if (group) { block.assignment_group_id = group.value; }
+        var strategy = card.querySelector("[data-config='assignment_strategy']");
+        if (strategy) { block.assignment_strategy = strategy.value; }
+        block.input_mapping = block.input_mapping || {};
+        var picks = card.querySelectorAll("[data-config-mapping]");
+        for (var j = 0; j < picks.length; j++) {
+          var name = picks[j].getAttribute("data-config-mapping");
+          var value = picks[j].value;
+          if (value === "__literal__" || value === "__expr__") {
+            var literal = card.querySelector("[data-config-literal='" + name + "']");
+            value = literal ? literal.value : "";
+          }
+          block.input_mapping[name] = value;
         }
-        block.input_mapping[name] = value;
       }
     }
     writeDocument(doc);

@@ -280,16 +280,22 @@ func TestConfigRailSections(t *testing.T) {
 			taskID = block.ID
 		}
 	}
-	rail := renderDefinitionView(t, slug, "?view=canvas&block="+ifID).Body.String()
-	for _, want := range []string{`id="canvas-rail"`, "Condition", "Assignment group", "Assignment strategy"} {
-		if !strings.Contains(rail, want) {
-			t.Errorf("config rail is missing %q", want)
+	// Design Vision D14 replaced the floating rail with config rendered inline
+	// on the selected block, so the control fields must appear inside that
+	// block's own card rather than in a separate panel.
+	expanded := renderDefinitionView(t, slug, "?view=canvas&block="+ifID).Body.String()
+	for _, want := range []string{`data-config="condition"`, "Assignment group", "Assignment strategy"} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("inline config is missing %q", want)
 		}
 	}
-	rail = renderDefinitionView(t, slug, "?view=canvas&block="+taskID).Body.String()
-	for _, want := range []string{`data-rail-mapping="server"`, "$inputs.server"} {
-		if !strings.Contains(rail, want) {
-			t.Errorf("task config rail is missing %q", want)
+	if strings.Contains(expanded, `id="canvas-rail"`) {
+		t.Errorf("the floating config rail is still rendered; config belongs inside the block card")
+	}
+	expanded = renderDefinitionView(t, slug, "?view=canvas&block="+taskID).Body.String()
+	for _, want := range []string{`data-config-mapping="server"`, "$inputs.server"} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("inline task config is missing %q", want)
 		}
 	}
 }

@@ -52,6 +52,16 @@ type canvasBlockView struct {
 	Pills        []pillOptionView
 	BlockJSON    string
 	HasCondition bool
+	// Inline configuration (Design Vision D13): the selected block is the one
+	// expanded block, and its config renders inside its own card.
+	Expanded bool
+	// Keyboard move affordances (Requirements AC-43 to AC-45). Bounds are
+	// resolved on the server from the stored tree so a disabled control is
+	// never a lie about what the engine will accept.
+	CanMoveUp   bool
+	CanMoveDown bool
+	CanIndent   bool
+	CanOutdent  bool
 }
 
 type paletteKindView struct {
@@ -161,7 +171,7 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 			KindLabel:    canvasKindLabel(block),
 			Position:     block.Position,
 			Depth:        d,
-			IndentClass:  "ui-canvas-depth-" + itoa(d),
+			IndentClass:  canvasIndentClass(d),
 			ParentID:     block.ParentID,
 			IsChain:      block.IsContainer,
 			StepCount:    block.ChildStepCount,
@@ -172,6 +182,16 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 		})
 	}
 	return view
+}
+
+// canvasIndentClass caps the indent ladder at depth 4 (Requirements AC-49):
+// nesting is unconstrained at save, so a seven-level chain must render rather
+// than silently lose its indentation class.
+func canvasIndentClass(depth int) string {
+	if depth > 4 {
+		depth = 4
+	}
+	return "ui-canvas-depth-" + itoa(depth)
 }
 
 func itoa(n int) string {
@@ -311,6 +331,7 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 		Strategies: db.AssignmentStrategies,
 	}
 	view.Blocks = buildCanvasDocument(blocks)
+	applyMoveCapabilities(blocks, view.Blocks)
 	if selectedID == "" {
 		for _, block := range blocks {
 			if block.Kind != "trigger" {
@@ -327,21 +348,25 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 		block := blocks[index]
 		if block.ID == selectedID {
 			view.Blocks[index].Selected = true
-			view.Selected = view.Blocks[index]
-			view.HasSelection = true
+			view.Blocks[index].Expanded = true
 			pills, err := scopePillsFor(ctx, inputFields, blocks, block)
 			if err != nil {
 				return view, err
 			}
-			view.Selected.Pills = pills
+			// The card template ranges over Blocks, so the pills and mapping
+			// rows belong on the block itself; Selected is a copy for the
+			// sections that read it directly.
+			view.Blocks[index].Pills = pills
 			names, _ := declaredInputNames(block.InputSchemaYAML)
 			for _, name := range names {
-				view.Selected.Mapping = append(view.Selected.Mapping, canvasMappingView{
+				view.Blocks[index].Mapping = append(view.Blocks[index].Mapping, canvasMappingView{
 					Name:    name,
 					Value:   mappingString(block.InputMapping[name]),
 					Options: pills,
 				})
 			}
+			view.Selected = view.Blocks[index]
+			view.HasSelection = true
 		}
 		if block.Kind == "control" && (block.Type == "if" || block.Type == "for_each") {
 			view.Scopes = append(view.Scopes, canvasScopeView{ID: block.ID, Label: canvasBlockLabel(block), Depth: view.Blocks[index].Depth})

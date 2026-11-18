@@ -140,7 +140,8 @@ func TestDeliveryFullSeedRendersInEngineOrder(t *testing.T) {
 	containerID := seedDeliveryFull(t, ctx)
 
 	before := deliveryFullSnapshot(t, ctx, containerID)
-	rec := getEditor(t, "delivery_full")
+	// The stepper is the rows surface now that the canvas is the default.
+	rec := renderDefinitionView(t, "delivery_full", "?view=rows")
 	if rec.Code != 200 {
 		t.Fatalf("editor status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 	}
