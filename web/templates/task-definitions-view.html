@@ -643,13 +643,6 @@
          lands on this definition's own catalogue entry rather than the top of
          a long page. */}}
     <p class="ui-def-edit-links"><a href="/task-catalogue?q={{.Definition.Slug}}#definition-{{.Definition.Slug}}">{{if .Definition.IsContainer}}View this chain in the catalogue{{else}}View this task in the catalogue{{end}}</a></p>
-    {{/* Three views of one document (Requirements AC-69, AC-91). The canvas
-         is the default when the tree has any block that is not a plain task. */}}
-    <nav class="ui-def-views" aria-label="Definition views">
-      <a class="ui-def-view-tab{{if eq .EditorView "canvas"}} is-active{{end}}" href="/task-definitions/{{.Definition.Slug}}?view=canvas">Canvas</a>
-      <a class="ui-def-view-tab{{if eq .EditorView "rows"}} is-active{{end}}" href="/task-definitions/{{.Definition.Slug}}?view=rows">Rows</a>
-      <a class="ui-def-view-tab{{if eq .EditorView "raw"}} is-active{{end}}" href="/task-definitions/{{.Definition.Slug}}?view=raw">Raw</a>
-    </nav>
   </div>
 
   <section class="ui-def-card" id="basics">
@@ -1040,7 +1033,7 @@
 {{end}}
 
 {{define "task-definition-stepper"}}
-<div id="step-stepper">
+<div id="step-stepper" class="ui-def-stepper">
   <div id="step-errors" role="alert">{{template "task-definition-step-errors" .}}</div>
   {{if .Steps.Notice}}<p class="ui-def-help" role="status">{{.Steps.Notice}}</p>{{end}}
   {{if .Steps.Warning}}<p class="ui-def-warning" role="status">{{.Steps.Warning}}</p>{{end}}
@@ -1343,7 +1336,10 @@
 <section class="ui-def-card" id="canvas">
   <h2 class="ui-def-card-title">Canvas</h2>
   <p class="ui-def-help">Structure and nesting. Pick a block to edit it in the config rail; values are pills, so a typo cannot become a dangling reference.</p>
-  <form id="canvas-form" class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/structure">
+  <div id="step-errors" role="alert">{{if .Canvas.Error}}<div class="ui-def-error" role="alert">{{.Canvas.Error}}</div>{{end}}</div>
+  {{if .Canvas.Notice}}<p class="ui-def-help" role="status">{{.Canvas.Notice}}</p>{{end}}
+  <form id="canvas-form" class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/structure"
+        hx-post="/task-definitions/{{.Definition.Slug}}/structure" hx-target="#step-errors" hx-swap="innerHTML">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
     <input type="hidden" id="canvas-document" name="structure" value="{{.Canvas.Document}}" />
     <div class="ui-canvas-layout">
@@ -1372,7 +1368,7 @@
         {{if .Canvas.Blocks}}
           <ol class="ui-canvas-tree" id="canvas-tree">
             {{range .Canvas.Blocks}}
-              <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}">
+              <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected{{end}}{{if eq .Kind "trigger"}} is-trigger{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}"{{if eq .Kind "trigger"}} data-trigger="true"{{end}}>
                 <span class="ui-canvas-kind">{{.KindLabel}}</span>
                 <a href="/task-definitions/{{$.Definition.Slug}}?view=canvas&block={{.ID}}">{{.Label}}</a>
                 {{if .IsChain}}<span class="ui-canvas-chain">Chain · {{.StepCount}} {{if eq .StepCount 1}}step{{else}}steps{{end}}</span>{{end}}
@@ -1582,7 +1578,7 @@
 <section class="ui-def-card" id="raw-structure">
   <h2 class="ui-def-card-title">Raw structure</h2>
   <p class="ui-def-help">The escape hatch, always writable. This is the same document the canvas edits, and it posts to the same endpoint; keys the canvas does not model survive.</p>
-  <form class="ui-def-form" method="post" action="/task-definitions/{{.Definition.Slug}}/structure">
+  <form class="ui-def-form" id="raw-form" method="post" action="/task-definitions/{{.Definition.Slug}}/structure">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
     <textarea class="ui-def-input" name="structure" rows="18" spellcheck="false">{{.RawDocument}}</textarea>
     <div class="ui-def-actions"><button class="ui-def-button" type="submit">Save raw structure</button></div>

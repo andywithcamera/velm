@@ -61,7 +61,26 @@ func handleTaskDefinitionStructureSave(w http.ResponseWriter, r *http.Request) {
 		refuseStep(w, r, row, "The structure could not be saved: "+err.Error())
 		return
 	}
-	succeedStep(w, r, row, "Structure saved.", "")
+	if isHTMXRequest(r) {
+		succeedStep(w, r, row, "Structure saved.", "")
+		return
+	}
+	renderEditorNotice(w, r, row, "Structure saved.")
+}
+
+// renderEditorNotice re-renders the whole editor after a plain (non-HTMX)
+// canvas save, for the same reason a refusal does: the canvas form must work
+// without JavaScript and never replace the page with a fragment.
+func renderEditorNotice(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, notice string) {
+	viewData, ok := editorViewData(w, r, row)
+	if !ok {
+		return
+	}
+	viewData["EditorView"] = "canvas"
+	canvas, _ := viewData["Canvas"].(canvasView)
+	canvas.Notice = notice
+	viewData["Canvas"] = canvas
+	writeTaskDefinitionPage(w, "layout.html", viewData, http.StatusOK)
 }
 
 // readStructureDocument accepts the JSON body the canvas sends or the

@@ -187,10 +187,69 @@ type DocumentBlock struct {
 	AssignedUserID     string
 }
 
+// ensureTriggerBlock gives a definition the trigger it must have (Design
+// Vision D6). A trigger is structural: the author should never have to add
+// one, and an existing tree that predates the canvas gains one the first time
+// it is opened, which removes the "exactly one trigger block" dead end that
+// made every palette click fail. The write is idempotent and serialised per
+// definition, so two opens cannot create two triggers.
+func ensureTriggerBlock(ctx context.Context, containerDefinitionID string) error {
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Lock the definition row so a concurrent open waits rather than racing.
+	if _, err := tx.Exec(ctx,
+		`SELECT _id FROM base_task_definition WHERE _id = $1 FOR UPDATE`,
+		containerDefinitionID); err != nil {
+		return err
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM base_task_definition_child
+			WHERE container_definition_id = $1 AND block_kind = 'trigger'
+		)`, containerDefinitionID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return tx.Commit(ctx)
+	}
+	// Make room at position 0 without changing the order of what is stored.
+	if _, err := tx.Exec(ctx,
+		`UPDATE base_task_definition_child SET position = position + 10
+		 WHERE container_definition_id = $1`, containerDefinitionID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO base_task_definition_child
+			(container_definition_id, child_definition_id, parent_block_id,
+			 position, sort_order, block_kind, block_type, config)
+		VALUES ($1, NULL, NULL, 0, 0, 'trigger', NULL, '{"label":"Start"}'::jsonb)`,
+		containerDefinitionID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // LoadDefinitionDocument reads a definition's block tree in document order,
 // joined to the child definitions. It is the one loader behind the canvas and
-// the raw view (Requirements AC-70).
+// the raw view (Requirements AC-70). A tree without a trigger gains one here
+// (AC-5 to AC-7) rather than at the point the author tries to save.
 func LoadDefinitionDocument(ctx context.Context, containerDefinitionID string) ([]DocumentBlock, error) {
+	if err := ensureTriggerBlock(ctx, containerDefinitionID); err != nil {
+		return nil, err
+	}
+	return ReadStoredDefinitionDocument(ctx, containerDefinitionID)
+}
+
+// ReadStoredDefinitionDocument reads the tree exactly as stored. It is the
+// loader for a path that must not write — a refusal re-render, where AC-12
+// requires the stored rows to be untouched. LoadDefinitionDocument adds the
+// trigger first; this one does not.
+func ReadStoredDefinitionDocument(ctx context.Context, containerDefinitionID string) ([]DocumentBlock, error) {
 	rows, err := Pool.Query(ctx, `
 		SELECT c._id::text, COALESCE(c.parent_block_id::text, ''),
 			COALESCE(c.child_definition_id::text, ''),

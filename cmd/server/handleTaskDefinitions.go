@@ -181,10 +181,18 @@ func renderEditorPage(w http.ResponseWriter, r *http.Request, row db.TaskDefinit
 	writeTaskDefinitionPage(w, "layout.html", viewData, status)
 }
 
-// editorViewData builds the sections every editor render needs: basics, inputs,
-// outputs and the stepper. The stepper is a database read, so it can fail; the
-// 500 is written here rather than halfway through a template.
+// editorViewData builds the sections every editor render needs. It may write:
+// the document loader adds a missing trigger (Design Vision D6).
 func editorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow) (map[string]any, bool) {
+	return buildEditorViewData(w, r, row, true)
+}
+
+// buildEditorViewData builds the sections every editor render needs: basics,
+// inputs, outputs, the stepper and the canvas. The stepper is a database read,
+// so it can fail; the 500 is written here rather than halfway through a
+// template. backfill selects whether a missing trigger is written, which a
+// refusal must not do (Requirements AC-12).
+func buildEditorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, backfill bool) (map[string]any, bool) {
 	steps, err := buildStepsView(r.Context(), row)
 	if err != nil {
 		log.Printf("task definition %q steps load failed: %v", row.Slug, err)
@@ -202,23 +210,26 @@ func editorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitio
 
 	// One document behind all three views (Requirements AC-69, AC-70). The
 	// rows view keeps its v1 stepper; canvas and raw read this tree.
-	blocks, err := db.LoadDefinitionDocument(r.Context(), row.ID)
-	if err != nil {
-		log.Printf("task definition %q document load failed: %v", row.Slug, err)
+	var blocks []db.DocumentBlock
+	var blockErr error
+	if backfill {
+		blocks, blockErr = db.LoadDefinitionDocument(r.Context(), row.ID)
+	} else {
+		blocks, blockErr = db.ReadStoredDefinitionDocument(r.Context(), row.ID)
+	}
+	if blockErr != nil {
+		log.Printf("task definition %q document load failed: %v", row.Slug, blockErr)
 		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
 		return nil, false
 	}
+	// The canvas is the only authoring view (Design Vision D1). Rows and raw
+	// stay reachable by URL as support surfaces for a human rescuing a
+	// definition the canvas cannot render; they are unlinked from the header.
 	editorView := strings.TrimSpace(r.URL.Query().Get("view"))
 	switch editorView {
-	case "canvas", "rows", "raw":
+	case "rows", "raw":
 	default:
-		editorView = "rows"
-		for _, block := range blocks {
-			if block.Kind != "task" {
-				editorView = "canvas"
-				break
-			}
-		}
+		editorView = "canvas"
 	}
 	canvas, err := buildCanvasView(r.Context(), row, blocks, strings.TrimSpace(r.URL.Query().Get("block")))
 	if err != nil {

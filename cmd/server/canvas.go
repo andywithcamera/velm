@@ -107,8 +107,12 @@ func canvasKindLabel(block db.DocumentBlock) string {
 }
 
 // canvasBlockLabel is what the author called the block, falling back to the
-// definition it calls so an unlabelled block is never "block 3".
+// definition it calls so an unlabelled block is never "block 3". The trigger
+// is structural, so it always reads Start (Design Vision D6).
 func canvasBlockLabel(block db.DocumentBlock) string {
+	if block.Kind == "trigger" {
+		return "Start"
+	}
 	if label := strings.TrimSpace(block.Label); label != "" {
 		return label
 	}
@@ -190,12 +194,13 @@ func configString(config map[string]any, key string) string {
 	return strings.TrimSpace(value)
 }
 
-// canvasPalette is the six block kinds of Design Vision §3, plus the control
-// types. Kinds the engine cannot evaluate in this release are shown disabled
-// with "not in this release" (Requirements AC-74).
+// canvasPalette is the block kinds an author can add. The trigger is absent
+// on purpose: it is rendered as a fixed Start node and never inserted from the
+// palette (Design Vision D6, Requirements AC-11). Kinds the engine cannot
+// evaluate in this release are shown disabled with "not in this release"
+// (Requirements AC-74).
 func canvasPalette() []paletteKindView {
 	return []paletteKindView{
-		{Key: "trigger", Label: "Trigger", Kind: "trigger", Description: "What starts a run", Available: true},
 		{Key: "task", Label: "Task", Kind: "task", Description: "Call a definition", Available: true},
 		{Key: "control-if", Label: "If", Kind: "control", Type: "if", Description: "Run a scope when a condition holds", Available: true},
 		{Key: "control-for-each", Label: "For each", Kind: "control", Type: "for_each", Description: "Run a scope once per item", Available: true},

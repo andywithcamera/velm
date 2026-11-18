@@ -60,6 +60,9 @@ func postStepAction(t *testing.T, slug, childSlug, action string, values url.Val
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// These tests exercise the HTMX path: the stepper is swapped into
+	// #step-errors. The non-HTMX path has its own test (AC-16).
+	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("slug", slug)
 	if childSlug != "" {
 		req.SetPathValue("child_slug", childSlug)
