@@ -201,6 +201,31 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 						return "Block " + strconvQuote(label) + ": timeout_ms must be between 100 and 60000"
 					}
 				}
+			case "retry":
+				if raw, present := b.Config["attempts"]; present && raw != nil && fmt.Sprint(raw) != "" {
+					n, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(raw)))
+					if err != nil || n < 1 || n > 10 {
+						return "Block " + strconvQuote(label) + ": attempts must be between 1 and 10"
+					}
+				}
+				if raw, present := b.Config["delay_seconds"]; present && raw != nil && fmt.Sprint(raw) != "" {
+					n, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(raw)))
+					if err != nil || n < 0 || n > 3600 {
+						return "Block " + strconvQuote(label) + ": delay_seconds must be between 0 and 3600"
+					}
+				}
+				if backoff := blockConfigText(b, "backoff"); backoff != "" {
+					switch backoff {
+					case "none", "linear", "exponential":
+					default:
+						return "Block " + strconvQuote(label) + ": backoff must be none, linear or exponential"
+					}
+				}
+				if onExhausted := blockConfigText(b, "on_exhausted"); onExhausted != "" {
+					if onExhausted != "fail" && onExhausted != "continue" {
+						return "Block " + strconvQuote(label) + ": on_exhausted must be fail or continue"
+					}
+				}
 			case "end":
 				// No configuration.
 			case "wait":

@@ -71,6 +71,13 @@ type canvasBlockView struct {
 	ScriptBody      string
 	ScriptTimeout   string
 	ScriptOutputVar string
+	// retry (Design Vision D17). HasRetry marks the block type; the rest are
+	// its policy fields, rendered in the block's own card.
+	HasRetry        bool
+	RetryAttempts   string
+	RetryDelay      string
+	RetryBackoff    string
+	RetryOnExhausted string
 }
 
 type paletteKindView struct {
@@ -116,6 +123,8 @@ func canvasKindLabel(block db.DocumentBlock) string {
 			return "For each"
 		case "end":
 			return "End"
+		case "retry":
+			return "Retry"
 		default:
 			return "Control"
 		}
@@ -192,7 +201,12 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 			HasScript:       block.Kind == "control" && block.Type == "run_script",
 			ScriptBody:      configString(block.Config, "script"),
 			ScriptTimeout:   configString(block.Config, "timeout_ms"),
-			ScriptOutputVar: configString(block.Config, "output_var"),
+			ScriptOutputVar:  configString(block.Config, "output_var"),
+			HasRetry:         block.Kind == "control" && block.Type == "retry",
+			RetryAttempts:    configString(block.Config, "attempts"),
+			RetryDelay:       configString(block.Config, "delay_seconds"),
+			RetryBackoff:     configString(block.Config, "backoff"),
+			RetryOnExhausted: configString(block.Config, "on_exhausted"),
 		})
 	}
 	return view
@@ -240,6 +254,7 @@ func canvasPalette(admin ...bool) []paletteKindView {
 		{Key: "control-if", Label: "If", Kind: "control", Type: "if", Description: "Run a scope when a condition holds", Available: true},
 		{Key: "control-for-each", Label: "For each", Kind: "control", Type: "for_each", Description: "Run a scope once per item", Available: true},
 		{Key: "control-end", Label: "End", Kind: "control", Type: "end", Description: "Close a scope", Available: true},
+		{Key: "control-retry", Label: "Retry", Kind: "control", Type: "retry", Description: "Run a scope again when it fails", Available: true},
 		{Key: "control-parallel", Label: "Parallel", Kind: "control", Type: "parallel", Description: "Run branches together", Available: false},
 		{Key: "control-wait", Label: "Wait", Kind: "control", Type: "wait", Description: "Pause until a time or task", Available: false},
 		{Key: "action", Label: "Action", Kind: "action", Description: "A non-human step", Available: false},
@@ -393,7 +408,7 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 		if block.Kind == "control" && block.Type == "run_script" && !isAdmin {
 			view.Blocks[index].ScriptRefused = true
 		}
-		if block.Kind == "control" && (block.Type == "if" || block.Type == "for_each") {
+		if block.Kind == "control" && (block.Type == "if" || block.Type == "for_each" || block.Type == "retry") {
 			view.Scopes = append(view.Scopes, canvasScopeView{ID: block.ID, Label: canvasBlockLabel(block), Depth: view.Blocks[index].Depth})
 		}
 	}

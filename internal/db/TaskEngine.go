@@ -1257,6 +1257,15 @@ func CloseTaskWithReason(ctx context.Context, taskID, actorUserID, closureReason
 // (namespaced by child slug), promotes dependents whose edges this closure
 // satisfies, and fires spawn rules for the closure reason.
 func onTaskClosed(ctx context.Context, tx scriptQuerier, taskID, closureReason, actorUserID string) error {
+	// A child of a retry block is not an ordinary sibling: its closure decides
+	// what the attempt did, and the retry block owns when its own row closes
+	// (Requirements slice 5). Handled here, before promotion, so a failed
+	// attempt does not first promote the work it is about to discard.
+	if handled, err := retryChildClosed(ctx, tx, taskID, actorUserID); err != nil {
+		return err
+	} else if handled {
+		return nil
+	}
 	var parentID *string
 	var varsJSON []byte
 	err := tx.QueryRow(ctx,

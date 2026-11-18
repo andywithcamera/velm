@@ -124,6 +124,15 @@ func rollUpAncestors(ctx context.Context, tx scriptQuerier, taskID, actorUserID 
 		if !complete {
 			return nil
 		}
+		// A retry block is not rolled up from its children: it either starts
+		// another attempt or closes itself (and, on exhaustion, fails its
+		// parent). Closing it here would consume the failure as final after
+		// the first attempt (AC-88).
+		if _, _, isRetry, err := loadRetryBlock(ctx, tx, parentID); err != nil {
+			return err
+		} else if isRetry {
+			return nil
+		}
 		if !allowedTaskTransition(state, taskStateDone) {
 			return fmt.Errorf("container %s cannot close from state %s", parentID, state)
 		}

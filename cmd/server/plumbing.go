@@ -138,6 +138,10 @@ func checkTrigger(blocks []db.StructureBlock) string {
 
 // Invariant 2: every control scope has a body, and is closed by an end or by
 // its last block. An `if` with no blocks in its scope cannot terminate.
+//
+// A retry block is a scope of its own but never a root one: it re-runs its
+// own children, so it needs a parent scope and cannot contain another retry
+// (Design Vision D17, AC-82/83).
 func checkScopes(blocks []db.StructureBlock, keyIndex map[string]int) string {
 	parentKeys := map[string]bool{}
 	for _, block := range blocks {
@@ -145,8 +149,26 @@ func checkScopes(blocks []db.StructureBlock, keyIndex map[string]int) string {
 			parentKeys[parent] = true
 		}
 	}
+	byKey := map[string]db.StructureBlock{}
+	for _, block := range blocks {
+		if key := strings.TrimSpace(block.Key); key != "" {
+			byKey[key] = block
+		}
+	}
 	for _, block := range blocks {
 		if strings.TrimSpace(block.Kind) != "control" {
+			continue
+		}
+		if block.Type == "retry" {
+			parentKey := strings.TrimSpace(block.Parent)
+			if parentKey == "" {
+				return fmt.Sprintf("Block %q: a retry block needs a parent scope", plumbingLabel(block))
+			}
+			if parent, found := byKey[parentKey]; found &&
+				strings.TrimSpace(parent.Kind) == "control" && strings.TrimSpace(parent.Type) == "retry" {
+				return fmt.Sprintf("Block %q cannot contain Block %q: a retry block cannot contain another retry",
+					plumbingLabel(parent), plumbingLabel(block))
+			}
 			continue
 		}
 		if block.Type != "if" && block.Type != "for_each" {

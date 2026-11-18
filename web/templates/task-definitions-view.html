@@ -1440,6 +1440,34 @@
                         <span class="ui-def-help">CEL behind the <code>expr:</code> prefix.</span>
                       </div>
                     {{end}}
+                    {{if .HasRetry}}
+                      <div class="ui-canvas-field">
+                        <label for="config-attempts-{{.ID}}">Attempts</label>
+                        <input id="config-attempts-{{.ID}}" type="number" min="1" max="10" data-config="attempts" value="{{.RetryAttempts}}" placeholder="1" />
+                        <span class="ui-def-help">1 to 10. Every attempt runs the scope from its first block.</span>
+                      </div>
+                      <div class="ui-canvas-field">
+                        <label for="config-delay-{{.ID}}">Delay (seconds)</label>
+                        <input id="config-delay-{{.ID}}" type="number" min="0" max="3600" data-config="delay_seconds" value="{{.RetryDelay}}" placeholder="0" />
+                      </div>
+                      <div class="ui-canvas-field">
+                        <label for="config-backoff-{{.ID}}">Backoff</label>
+                        <select id="config-backoff-{{.ID}}" data-config="backoff">
+                          <option value=""{{if eq .RetryBackoff ""}} selected{{end}}>none</option>
+                          <option value="none"{{if eq .RetryBackoff "none"}} selected{{end}}>none</option>
+                          <option value="linear"{{if eq .RetryBackoff "linear"}} selected{{end}}>linear</option>
+                          <option value="exponential"{{if eq .RetryBackoff "exponential"}} selected{{end}}>exponential</option>
+                        </select>
+                      </div>
+                      <div class="ui-canvas-field">
+                        <label for="config-on-exhausted-{{.ID}}">When attempts run out</label>
+                        <select id="config-on-exhausted-{{.ID}}" data-config="on_exhausted">
+                          <option value=""{{if eq .RetryOnExhausted ""}} selected{{end}}>fail</option>
+                          <option value="fail"{{if eq .RetryOnExhausted "fail"}} selected{{end}}>fail</option>
+                          <option value="continue"{{if eq .RetryOnExhausted "continue"}} selected{{end}}>continue</option>
+                        </select>
+                      </div>
+                    {{end}}
                     {{if .HasScript}}
                       {{if .ScriptRefused}}
                         <p class="ui-canvas-refusal" role="alert">run script blocks require the admin role</p>
@@ -1707,6 +1735,11 @@
       if (card) {
         var condition = card.querySelector("[data-config='condition']");
         if (condition) { block.config.condition = condition.value; }
+        var retryFields = ["attempts", "delay_seconds", "backoff", "on_exhausted"];
+        for (var k = 0; k < retryFields.length; k++) {
+          var retryField = card.querySelector("[data-config='" + retryFields[k] + "']");
+          if (retryField) { block.config[retryFields[k]] = retryField.value; }
+        }
         var group = card.querySelector("[data-config='assignment_group_id']");
         if (group) { block.assignment_group_id = group.value; }
         var strategy = card.querySelector("[data-config='assignment_strategy']");

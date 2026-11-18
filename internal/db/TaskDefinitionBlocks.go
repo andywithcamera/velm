@@ -67,6 +67,8 @@ func (b DefinitionBlock) controlKindLabel() string {
 	switch b.Type {
 	case "run_script":
 		return "Run script"
+	case "retry":
+		return "Retry"
 	case "if":
 		return "If"
 	case "for_each":
@@ -722,6 +724,10 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 			return transitionTaskInTx(ctx, q, inst.taskID, taskStateSkipped)
 		}
 		return promoteChildrenDepth(ctx, q, inst.taskID, actorUserID, depth+1)
+	case "retry":
+		// One attempt opens now; the attempt's own children are created
+		// afresh from the first block (D17, AC-84/85).
+		return startRetryAttempt(ctx, q, inst.taskID, b, containerDefID, actorUserID, runInputs, scope, depth)
 	case "for_each":
 		items, collErr := resolveForEachCollection(b, scope)
 		if collErr != nil {
@@ -964,6 +970,11 @@ func closeScriptTask(ctx context.Context, q scriptQuerier, taskID, actorUserID s
 				_, _ = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(raw))
 			}
 		}
+	}
+	// A failed close does not reach onTaskClosed, so a retry parent hears
+	// about the failure here instead (AC-84/88).
+	if _, err := retryChildClosed(ctx, q, taskID, actorUserID); err != nil {
+		return err
 	}
 	return nil
 }
