@@ -30,7 +30,10 @@ type plumbingChild struct {
 // checkPlumbing validates the submitted document for the definition named by
 // containerSlug. It returns a readable message, or "" when the document is
 // sound. It reads child definitions, which is why it needs a context.
-func checkPlumbing(ctx context.Context, containerSlug string, blocks []db.StructureBlock) string {
+func checkPlumbing(ctx context.Context, containerSlug string, blocks []db.StructureBlock, admin ...bool) string {
+	if message := checkScriptAdmin(blocks, len(admin) > 0 && admin[0]); message != "" {
+		return message
+	}
 	if len(blocks) == 0 {
 		return "A structure needs at least one block"
 	}
@@ -69,6 +72,27 @@ func checkPlumbing(ctx context.Context, containerSlug string, blocks []db.Struct
 	}
 	if message := checkGates(blocks, keyIndex); message != "" {
 		return message
+	}
+	return ""
+}
+
+// checkScriptAdmin is Design Vision D5's second layer: a tree containing a
+// run_script block cannot be saved by a non-admin. The palette and the card
+// are the other two layers; this one is the only one a hand-written POST
+// cannot skip.
+func checkScriptAdmin(blocks []db.StructureBlock, admin bool) string {
+	if admin {
+		return ""
+	}
+	for _, block := range blocks {
+		if strings.TrimSpace(block.Kind) != "control" || strings.TrimSpace(block.Type) != "run_script" {
+			continue
+		}
+		label := strings.TrimSpace(block.Label)
+		if label == "" {
+			label = strings.TrimSpace(block.Key)
+		}
+		return "Block " + strconvQuote(label) + ": run script requires the admin role"
 	}
 	return ""
 }
@@ -375,7 +399,7 @@ func checkGates(blocks []db.StructureBlock, keyIndex map[string]int) string {
 // checkStoredPlumbing runs the plumbing check against a definition's stored
 // document. The catalogue's order path uses it so a definition that could not
 // be saved cannot be started either (Requirements AC-86).
-func checkStoredPlumbing(ctx context.Context, slug string) (string, error) {
+func checkStoredPlumbing(ctx context.Context, slug string, admin ...bool) (string, error) {
 	var id string
 	var isContainer bool
 	if err := db.Pool.QueryRow(ctx,
@@ -393,5 +417,5 @@ func checkStoredPlumbing(ctx context.Context, slug string) (string, error) {
 	if len(blocks) == 0 {
 		return "", nil
 	}
-	return checkPlumbing(ctx, slug, blocks), nil
+	return checkPlumbing(ctx, slug, blocks, admin...), nil
 }

@@ -1403,7 +1403,7 @@
         <h3 class="ui-canvas-title">Palette</h3>
         <ul class="ui-canvas-palette">
           {{range .Canvas.Palette}}
-            <li class="ui-canvas-palette-item{{if not .Available}} is-disabled{{end}}" data-palette="{{.Key}}" data-kind="{{.Kind}}" data-type="{{.Type}}">
+            <li class="ui-canvas-palette-item{{if not .Available}} is-disabled{{end}}" data-palette="{{.Key}}" data-kind="{{.Kind}}" data-type="{{.Type}}" data-block-type="{{.Type}}">
               {{if .Available}}<button class="ui-def-mini" type="button" data-add-kind="{{.Kind}}" data-add-type="{{.Type}}" data-add-key="{{.Key}}">{{.Label}}</button>{{else}}{{.Label}}<span class="ui-canvas-unavailable">not in this release</span>{{end}}
             </li>
           {{end}}
@@ -1439,6 +1439,25 @@
                         <textarea id="config-condition-{{.ID}}" rows="3" data-config="condition">{{.Condition}}</textarea>
                         <span class="ui-def-help">CEL behind the <code>expr:</code> prefix.</span>
                       </div>
+                    {{end}}
+                    {{if .HasScript}}
+                      {{if .ScriptRefused}}
+                        <p class="ui-canvas-refusal" role="alert">run script blocks require the admin role</p>
+                      {{else}}
+                        <div class="ui-canvas-field">
+                          <label for="config-script-{{.ID}}">Script</label>
+                          <textarea id="config-script-{{.ID}}" rows="8" data-config="script" spellcheck="false">{{.ScriptBody}}</textarea>
+                          <span class="ui-def-help">JavaScript. It runs in the engine sandbox and has no network access.</span>
+                        </div>
+                        <div class="ui-canvas-field">
+                          <label for="config-timeout-{{.ID}}">Timeout (ms)</label>
+                          <input id="config-timeout-{{.ID}}" type="number" min="100" max="60000" data-config="timeout_ms" value="{{.ScriptTimeout}}" />
+                        </div>
+                        <div class="ui-canvas-field">
+                          <label for="config-output-var-{{.ID}}">Result variable</label>
+                          <input id="config-output-var-{{.ID}}" type="text" data-config="output_var" value="{{.ScriptOutputVar}}" placeholder="result" />
+                        </div>
+                      {{end}}
                     {{end}}
                     {{range .Mapping}}
                       {{$mapping := .}}

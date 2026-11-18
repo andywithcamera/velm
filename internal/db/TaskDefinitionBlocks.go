@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"cel.dev/cel-go/cel"
 )
@@ -48,6 +49,8 @@ type DefinitionBlock struct {
 	DependsOn         []string
 	DependsOnReason   string
 	Config            map[string]any
+	// Branch is "then"/"else" under an if; empty elsewhere.
+	Branch string
 	// Per-block assignment (098, AC-47). Empty means the block did not set
 	// the column and inherits the definition's value.
 	AssignmentGroupID  string
@@ -62,6 +65,8 @@ func (b DefinitionBlock) IsControl() bool { return b.Kind == "control" }
 // "If", "For each", "End".
 func (b DefinitionBlock) controlKindLabel() string {
 	switch b.Type {
+	case "run_script":
+		return "Run script"
 	case "if":
 		return "If"
 	case "for_each":
@@ -118,7 +123,7 @@ func getDefinitionBlocks(ctx context.Context, q scriptQuerier, containerID strin
 				position, sort_order, input_mapping, depends_on,
 				COALESCE(depends_on_block_id, '{}'), depends_on_reason,
 				COALESCE(assignment_group_id::text, ''), COALESCE(assignment_strategy, ''),
-				COALESCE(assigned_user_id::text, '')
+				COALESCE(assigned_user_id::text, ''), COALESCE(branch, '')
 			FROM base_task_definition_child
 			WHERE container_definition_id = $1
 			ORDER BY position, sort_order, _created_at`
@@ -138,7 +143,7 @@ func getDefinitionBlocks(ctx context.Context, q scriptQuerier, containerID strin
 			if err := rows.Scan(&b.ID, &b.ParentID, &b.ChildDefinitionID, &b.Kind, &b.Type,
 				&cfg, &b.Position, &b.SortOrder, &b.InputMapping, &deps, &blockDeps,
 				&b.DependsOnReason, &b.AssignmentGroupID, &b.AssignmentStrategy,
-				&b.AssignedUserID); err != nil {
+				&b.AssignedUserID, &b.Branch); err != nil {
 				return nil, err
 			}
 			b.DependsOnBlockIDs = blockDeps
@@ -175,6 +180,33 @@ func topLevelBlocks(blocks []DefinitionBlock, parentID string) []DefinitionBlock
 	out := make([]DefinitionBlock, 0, len(blocks))
 	for _, b := range blocks {
 		if b.ParentID == parentID {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// branchOf is the stored discriminator with 098/102's NULL semantics: a
+// child of an `if` that predates the branch column is THEN, and a row that is
+// not under an `if` has no branch at all.
+func branchOf(b DefinitionBlock) string {
+	if b.Branch == "else" {
+		return "else"
+	}
+	return "then"
+}
+
+// scopeBlocks returns the children of one scope, optionally restricted to one
+// branch of an `if`. branch "" means every child (a for_each scope has no
+// branches).
+func scopeBlocks(blocks []DefinitionBlock, parentID, branch string) []DefinitionBlock {
+	children := topLevelBlocks(blocks, parentID)
+	if branch == "" {
+		return children
+	}
+	out := make([]DefinitionBlock, 0, len(children))
+	for _, b := range children {
+		if branchOf(b) == branch {
 			out = append(out, b)
 		}
 	}
@@ -444,12 +476,18 @@ func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, pare
 // spawnDefinitionScopeForBlock creates the children of one control block
 // under controlTaskID.
 func spawnDefinitionScopeForBlock(ctx context.Context, q scriptQuerier, containerDefID, controlTaskID, requestedBy string, b DefinitionBlock, runInputs, scope map[string]any, skip bool) error {
+	return spawnDefinitionBranchScope(ctx, q, containerDefID, controlTaskID, requestedBy, b, runInputs, scope, skip, "")
+}
+
+// spawnDefinitionBranchScope creates the children of one branch of a control
+// block. branch "" means the whole scope (for_each, end, run_script).
+func spawnDefinitionBranchScope(ctx context.Context, q scriptQuerier, containerDefID, controlTaskID, requestedBy string, b DefinitionBlock, runInputs, scope map[string]any, skip bool, branch string) error {
 	blocks, err := getDefinitionBlocks(ctx, q, containerDefID)
 	if err != nil {
 		return err
 	}
 	stamp := scopeNeedsBlockIdentity(blocks, b.ID)
-	for _, child := range topLevelBlocks(blocks, b.ID) {
+	for _, child := range scopeBlocks(blocks, b.ID, branch) {
 		if err := spawnBlockInstance(ctx, q, containerDefID, controlTaskID, requestedBy, child, runInputs, scope, skip, stamp); err != nil {
 			return err
 		}
@@ -534,8 +572,7 @@ func evaluateControlCondition(b DefinitionBlock, vars map[string]any) (bool, err
 	if condition == "" {
 		return false, fmt.Errorf("block %q has no condition", b.Label)
 	}
-	inputs, _ := vars["inputs"].(map[string]any)
-	return EvaluateIfCondition(condition, inputs)
+	return evaluateIfWithScope(condition, vars)
 }
 
 // resolveForEachCollection resolves config.collection against a task's
@@ -631,6 +668,11 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 	if _, ok := scope["locals"].(map[string]any); !ok {
 		scope["locals"] = map[string]any{}
 	}
+	// Sibling results ($blocks.<key>.output.*) are written onto the
+	// enclosing task, so the condition of an `if` reads them from there.
+	if blocks, ok := parentVars["blocks"].(map[string]any); ok {
+		scope["blocks"] = blocks
+	}
 	scope["parent"] = parentVars
 	// A block's from_input reads the run's request; the scope carries it.
 	runInputs, _ := scope["inputs"].(map[string]any)
@@ -648,21 +690,36 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 		return err
 	}
 	switch b.Type {
+	case "run_script":
+		return runScriptBlock(ctx, q, inst, b, actorUserID)
 	case "if":
 		condition, evalErr := evaluateControlCondition(b, scope)
 		if evalErr != nil {
 			return fmt.Errorf("block %q: %w", b.Label, evalErr)
 		}
+		// AC-68: the taken branch runs, the other is created skipped so the
+		// run tree keeps both halves of the document.
+		taken, other := "then", "else"
 		if !condition {
-			// Spawn the scope skipped, then close the if as skipped: the run
-			// tree keeps the shape and nothing in the branch publishes.
-			if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, runInputs, scope, true); err != nil {
-				return err
-			}
-			return transitionTaskInTx(ctx, q, inst.taskID, taskStateSkipped)
+			taken, other = "else", "then"
 		}
-		if err := spawnDefinitionScopeForBlock(ctx, q, containerDefID, inst.taskID, actorUserID, b, runInputs, scope, false); err != nil {
+		if err := spawnDefinitionBranchScope(ctx, q, containerDefID, inst.taskID, actorUserID, b, runInputs, scope, false, taken); err != nil {
 			return err
+		}
+		if err := spawnDefinitionBranchScope(ctx, q, containerDefID, inst.taskID, actorUserID, b, runInputs, scope, true, other); err != nil {
+			return err
+		}
+		// AC-27: an `if` whose taken branch is empty is skipped rather than
+		// left ready forever; with branch content it runs like any scope.
+		var takenChildren int
+		if err := q.QueryRow(ctx, `
+			SELECT COUNT(*) FROM base_task_definition_child
+			WHERE parent_block_id = $1 AND COALESCE(branch, 'then') = $2`,
+			b.ID, taken).Scan(&takenChildren); err != nil {
+			return fmt.Errorf("block %q: read taken branch: %w", b.Label, err)
+		}
+		if takenChildren == 0 {
+			return transitionTaskInTx(ctx, q, inst.taskID, taskStateSkipped)
 		}
 		return promoteChildrenDepth(ctx, q, inst.taskID, actorUserID, depth+1)
 	case "for_each":
@@ -680,4 +737,283 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 	default:
 		return fmt.Errorf("block %q: %s blocks are not evaluable in this release", b.Label, b.Type)
 	}
+}
+
+// runScriptBlock executes a `run_script` control block (Design Vision D4/D5,
+// Requirements AC-60 to AC-71).
+//
+// The body is a goja script through the existing ExecuteJavaScript path, not
+// a shell. It is admin-only at run time as well as at save time: a row may
+// have been written straight into the table, so the runtime cannot trust the
+// save gate.
+func runScriptBlock(ctx context.Context, q scriptQuerier, inst childInstanceState, b DefinitionBlock, actorUserID string) error {
+	if actorUserID != "" {
+		admin, err := UserHasPermission(ctx, actorUserID, "admin", "")
+		if err != nil {
+			return fmt.Errorf("block %q: read the actor role: %w", b.Label, err)
+		}
+		if !admin {
+			return closeScriptTask(ctx, q, inst.taskID, actorUserID, false,
+				fmt.Errorf("run script blocks require the admin role"))
+		}
+	}
+
+	body := b.blockConfigString("script")
+	if body == "" {
+		return closeScriptTask(ctx, q, inst.taskID, actorUserID, false,
+			fmt.Errorf("block %q: the script body is empty", b.Label))
+	}
+	timeout := time.Duration(0)
+	if ms := b.Config["timeout_ms"]; ms != nil {
+		if n, ok := numberValue(ms); ok && n > 0 {
+			timeout = time.Duration(int64(n)) * time.Millisecond
+		}
+	}
+	outputVar := b.blockConfigString("output_var")
+	if outputVar == "" {
+		outputVar = "result"
+	}
+	vars, err := readTaskVariables(ctx, q, inst.taskID)
+	if err != nil {
+		return err
+	}
+	inputs, _ := vars["inputs"].(map[string]any)
+	if inputs == nil {
+		inputs = map[string]any{}
+	}
+	taskGlobals := map[string]any{"number": "", "description": ""}
+	// The spawning task record: its number and description are what the
+	// author sees on the board.
+	if parentID := parentTaskOf(ctx, q, inst.taskID); parentID != "" {
+		var number, description string
+		_ = q.QueryRow(ctx, `SELECT number, COALESCE(description, '') FROM base_task WHERE _id = $1`,
+			parentID).Scan(&number, &description)
+		taskGlobals = map[string]any{"number": number, "description": description}
+	}
+	assigned := map[string]any{}
+	result, runErr := executeJavaScriptWithQuerier(ctx, q, ScriptExecutionOptions{
+		Code:        body,
+		TableName:   "base_task",
+		TriggerType: "task_engine",
+		EventName:   "run_script",
+		UserID:      actorUserID,
+		System:      strings.TrimSpace(actorUserID) == "",
+		Timeout:     timeout,
+		Input:       inputs,
+		Globals: map[string]any{
+			"inputs":  inputs,
+			"outputs": assigned,
+			"task":    taskGlobals,
+		},
+		Capture: []string{outputVar, "outputs"},
+	})
+	if captured, ok := result.Globals["outputs"].(map[string]any); ok {
+		assigned = captured
+	}
+	shape := scriptResultShape(result, runErr, outputVar)
+	if runErr != nil {
+		shape["stderr"] = runErr.Error()
+		shape["success"] = false
+	}
+	// AC-65: all four keys, always.
+	outputs := map[string]any{
+		"success": shape["success"],
+		"stdout":  shape["stdout"],
+		"stderr":  shape["stderr"],
+		"json":    shape["json"],
+	}
+	if len(assigned) > 0 {
+		outputs["outputs"] = assigned
+	}
+	// AC-64: the assigned outputs live at variables.block.outputs.
+	block := map[string]any{}
+	if raw, ok := vars["block"].(map[string]any); ok {
+		for k, v := range raw {
+			block[k] = v
+		}
+	}
+	block["outputs"] = assigned
+	block["result"] = outputs
+	if runErr != nil {
+		block["log"] = []any{runErr.Error()}
+	}
+	vars["block"] = block
+	varsJSON, err := json.Marshal(vars)
+	if err != nil {
+		return err
+	}
+	if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`,
+		inst.taskID, string(varsJSON)); err != nil {
+		return err
+	}
+	// A failed script is still readable by a following `if`: publish the
+	// result object with success:false before closing.
+	if key := b.blockConfigString("key"); key != "" {
+		if err := publishBlockOutput(ctx, q, inst.taskID, key, outputs); err != nil {
+			return err
+		}
+	}
+	if runErr != nil {
+		return closeScriptTask(ctx, q, inst.taskID, actorUserID, false, runErr)
+	}
+	return closeScriptTask(ctx, q, inst.taskID, actorUserID, true, nil)
+}
+
+func numberValue(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
+}
+
+func parentTaskOf(ctx context.Context, q scriptQuerier, taskID string) string {
+	var parent string
+	_ = q.QueryRow(ctx, `SELECT COALESCE(parent_task_id::text, '') FROM base_task WHERE _id = $1`,
+		taskID).Scan(&parent)
+	return parent
+}
+
+// scriptResultShape assembles AC-65's four keys. The body's `result` global
+// is the source of `json`; a string is parsed, anything else is null.
+func scriptResultShape(result ScriptExecutionResult, runErr error, outputVar string) map[string]any {
+	shape := map[string]any{"success": runErr == nil, "stdout": result.Output, "stderr": "", "json": nil}
+	raw, ok := result.Globals[outputVar]
+	if !ok {
+		// The body may simply return its object instead of assigning the
+		// result variable; that object is the JSON result too.
+		if result.Result == nil {
+			return shape
+		}
+		raw = result.Result
+	}
+	switch value := raw.(type) {
+	case map[string]any:
+		shape["json"] = value
+	case string:
+		var parsed map[string]any
+		if json.Unmarshal([]byte(value), &parsed) == nil {
+			shape["json"] = parsed
+		}
+	}
+	return shape
+}
+
+// publishBlockOutput makes a block's result readable as
+// $blocks.<key>.output.<field> on the enclosing task.
+func publishBlockOutput(ctx context.Context, q scriptQuerier, taskID, key string, output map[string]any) error {
+	parentID := parentTaskOf(ctx, q, taskID)
+	if parentID == "" {
+		return nil
+	}
+	vars, err := readTaskVariables(ctx, q, parentID)
+	if err != nil {
+		return err
+	}
+	blocks, _ := vars["blocks"].(map[string]any)
+	if blocks == nil {
+		blocks = map[string]any{}
+	}
+	blocks[key] = map[string]any{"output": output}
+	vars["blocks"] = blocks
+	raw, err := json.Marshal(vars)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, parentID, string(raw))
+	return err
+}
+
+// closeScriptTask closes the script's control row. A refusal or a thrown body
+// is a failed closure (084's reason), so the board says what happened.
+func closeScriptTask(ctx context.Context, q scriptQuerier, taskID, actorUserID string, ok bool, cause error) error {
+	reason := "completed"
+	if !ok {
+		reason = "failed"
+	}
+	if err := transitionTaskInTx(ctx, q, taskID, taskStateDone); err != nil {
+		return err
+	}
+	if _, err := q.Exec(ctx, `UPDATE base_task SET closure_reason = $2 WHERE _id = $1`, taskID, reason); err != nil {
+		return err
+	}
+	if ok {
+		if err := onTaskClosed(ctx, q, taskID, reason, actorUserID); err != nil {
+			return err
+		}
+		return rollUpAncestors(ctx, q, taskID, actorUserID)
+	}
+	// A failed block records why. The run stays where it is: the failure is
+	// visible on the block rather than silently rolled up as complete.
+	if cause != nil {
+		vars, err := readTaskVariables(ctx, q, taskID)
+		if err == nil {
+			block, _ := vars["block"].(map[string]any)
+			if block == nil {
+				block = map[string]any{}
+			}
+			block["error"] = cause.Error()
+			block["log"] = []any{cause.Error()}
+			vars["block"] = block
+			if raw, err := json.Marshal(vars); err == nil {
+				_, _ = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(raw))
+			}
+		}
+	}
+	return nil
+}
+
+// evaluateIfWithScope evaluates an `if` against the whole task scope. AC-68
+// writes `$blocks.<key>.output.success`; the `$` reference form is rewritten
+// to a CEL identifier and the block outputs are passed in.
+func evaluateIfWithScope(condition string, vars map[string]any) (bool, error) {
+	trimmed := strings.TrimSpace(condition)
+	if !strings.HasPrefix(trimmed, "expr:") {
+		return false, fmt.Errorf("condition %q is not an expression: prefix it with %q", condition, "expr:")
+	}
+	expression := strings.TrimSpace(strings.TrimPrefix(trimmed, "expr:"))
+	expression = strings.ReplaceAll(expression, "$blocks.", "blocks.")
+	expression = strings.ReplaceAll(expression, "$inputs.", "inputs.")
+	expression = strings.ReplaceAll(expression, "$outputs.", "outputs.")
+	expression = strings.ReplaceAll(expression, "$locals.", "locals.")
+	env, err := cel.NewEnv(
+		cel.Variable("inputs", cel.DynType),
+		cel.Variable("item", cel.DynType),
+		cel.Variable("index", cel.DynType),
+		cel.Variable("outputs", cel.DynType),
+		cel.Variable("locals", cel.DynType),
+		cel.Variable("blocks", cel.DynType),
+	)
+	if err != nil {
+		return false, err
+	}
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		return false, fmt.Errorf("condition %q: %w", expression, issues.Err())
+	}
+	program, err := env.Program(ast)
+	if err != nil {
+		return false, fmt.Errorf("condition %q: %w", expression, err)
+	}
+	activation := map[string]any{}
+	for _, key := range []string{"inputs", "item", "index", "outputs", "locals", "blocks"} {
+		activation[key] = vars[key]
+	}
+	if activation["inputs"] == nil {
+		activation["inputs"] = map[string]any{}
+	}
+	out, _, err := program.Eval(activation)
+	if err != nil {
+		return false, fmt.Errorf("condition %q: %w", expression, err)
+	}
+	value, ok := out.Value().(bool)
+	if !ok {
+		return false, fmt.Errorf("condition %q is not a boolean", expression)
+	}
+	return value, nil
 }

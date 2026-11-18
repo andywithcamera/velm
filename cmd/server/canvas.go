@@ -15,8 +15,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 
+	"velm/internal/auth"
 	"velm/internal/db"
 )
 
@@ -62,6 +64,13 @@ type canvasBlockView struct {
 	CanMoveDown bool
 	CanIndent   bool
 	CanOutdent  bool
+	// run_script (Design Vision D4/D5). HasScript marks the block type;
+	// ScriptRefused renders the refusal instead of the body for a non-admin.
+	HasScript       bool
+	ScriptRefused   bool
+	ScriptBody      string
+	ScriptTimeout   string
+	ScriptOutputVar string
 }
 
 type paletteKindView struct {
@@ -91,6 +100,7 @@ type canvasView struct {
 	Notice       string
 	Groups       []db.AuthzGroup
 	Strategies   []string
+	IsAdmin      bool
 }
 
 // canvasKindLabel is the word the canvas prints beside a block.
@@ -163,22 +173,26 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 	for _, block := range blocks {
 		d := depth(block.ID)
 		view = append(view, canvasBlockView{
-			ID:           block.ID,
-			Label:        canvasBlockLabel(block),
-			Slug:         block.Slug,
-			Kind:         block.Kind,
-			Type:         block.Type,
-			KindLabel:    canvasKindLabel(block),
-			Position:     block.Position,
-			Depth:        d,
-			IndentClass:  canvasIndentClass(d),
-			ParentID:     block.ParentID,
-			IsChain:      block.IsContainer,
-			StepCount:    block.ChildStepCount,
-			Condition:    configString(block.Config, "condition"),
-			GroupID:      block.AssignmentGroupID,
-			Strategy:     block.AssignmentStrategy,
-			HasCondition: block.Kind == "control" && block.Type == "if",
+			ID:              block.ID,
+			Label:           canvasBlockLabel(block),
+			Slug:            block.Slug,
+			Kind:            block.Kind,
+			Type:            block.Type,
+			KindLabel:       canvasKindLabel(block),
+			Position:        block.Position,
+			Depth:           d,
+			IndentClass:     canvasIndentClass(d),
+			ParentID:        block.ParentID,
+			IsChain:         block.IsContainer,
+			StepCount:       block.ChildStepCount,
+			Condition:       configString(block.Config, "condition"),
+			GroupID:         block.AssignmentGroupID,
+			Strategy:        block.AssignmentStrategy,
+			HasCondition:    block.Kind == "control" && block.Type == "if",
+			HasScript:       block.Kind == "control" && block.Type == "run_script",
+			ScriptBody:      configString(block.Config, "script"),
+			ScriptTimeout:   configString(block.Config, "timeout_ms"),
+			ScriptOutputVar: configString(block.Config, "output_var"),
 		})
 	}
 	return view
@@ -219,8 +233,9 @@ func configString(config map[string]any, key string) string {
 // palette (Design Vision D6, Requirements AC-11). Kinds the engine cannot
 // evaluate in this release are shown disabled with "not in this release"
 // (Requirements AC-74).
-func canvasPalette() []paletteKindView {
-	return []paletteKindView{
+func canvasPalette(admin ...bool) []paletteKindView {
+	isAdmin := len(admin) > 0 && admin[0]
+	palette := []paletteKindView{
 		{Key: "task", Label: "Task", Kind: "task", Description: "Call a definition", Available: true},
 		{Key: "control-if", Label: "If", Kind: "control", Type: "if", Description: "Run a scope when a condition holds", Available: true},
 		{Key: "control-for-each", Label: "For each", Kind: "control", Type: "for_each", Description: "Run a scope once per item", Available: true},
@@ -231,6 +246,11 @@ func canvasPalette() []paletteKindView {
 		{Key: "gate", Label: "Gate", Kind: "gate", Description: "A human approve/reject", Available: false},
 		{Key: "stage", Label: "Stage", Kind: "stage", Description: "A human-facing lane", Available: false},
 	}
+	// AC-57: run_script is hidden, not disabled, for a non-admin.
+	if isAdmin {
+		palette = append(palette, paletteKindView{Key: "control-run-script", Label: "Run script", Kind: "control", Type: "run_script", Description: "Run a JavaScript body (admin only)", Available: true})
+	}
+	return palette
 }
 
 // documentToStructure turns the stored tree into the payload the structure
@@ -324,9 +344,11 @@ func scopePillsFor(ctx context.Context, containerInputs []db.TaskInputField, blo
 
 // buildCanvasView assembles the canvas, its palette, the candidate list and
 // the config rail. The rail's selection comes from ?block=<id>.
-func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.DocumentBlock, selectedID string) (canvasView, error) {
+func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.DocumentBlock, selectedID string, admin ...bool) (canvasView, error) {
+	isAdmin := len(admin) > 0 && admin[0]
 	view := canvasView{
-		Palette:    canvasPalette(),
+		IsAdmin:    isAdmin,
+		Palette:    canvasPalette(isAdmin),
 		Document:   encodeStructure(documentToStructure(blocks)),
 		Strategies: db.AssignmentStrategies,
 	}
@@ -368,6 +390,9 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 			view.Selected = view.Blocks[index]
 			view.HasSelection = true
 		}
+		if block.Kind == "control" && block.Type == "run_script" && !isAdmin {
+			view.Blocks[index].ScriptRefused = true
+		}
 		if block.Kind == "control" && (block.Type == "if" || block.Type == "for_each") {
 			view.Scopes = append(view.Scopes, canvasScopeView{ID: block.ID, Label: canvasBlockLabel(block), Depth: view.Blocks[index].Depth})
 		}
@@ -407,4 +432,10 @@ func mappingString(value any) string {
 		return ""
 	}
 	return string(encoded)
+}
+
+// isAdminRequest is the existing role predicate (Design Vision D5): the same
+// context role the rest of the server reads, not a new role.
+func isAdminRequest(r *http.Request) bool {
+	return strings.EqualFold(strings.TrimSpace(auth.UserRoleFromRequest(r)), "admin")
 }

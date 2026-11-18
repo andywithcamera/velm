@@ -19,9 +19,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"velm/internal/db"
@@ -66,7 +68,11 @@ func handleTaskDefinitionStructureSave(w http.ResponseWriter, r *http.Request) {
 		refuseStep(w, r, row, message)
 		return
 	}
-	if message := checkPlumbing(r.Context(), row.Slug, blocks); message != "" {
+	if message := checkScriptAdmin(blocks, isAdminRequest(r)); message != "" {
+		refuseStep(w, r, row, message)
+		return
+	}
+	if message := checkPlumbing(r.Context(), row.Slug, blocks, isAdminRequest(r)); message != "" {
 		refuseStep(w, r, row, message)
 		return
 	}
@@ -102,7 +108,7 @@ func renderEditorNotice(w http.ResponseWriter, r *http.Request, row db.TaskDefin
 	viewData["Canvas"] = canvas
 	if selectedIndex >= 0 {
 		if blocks, err := db.ReadStoredDefinitionDocument(r.Context(), row.ID); err == nil && selectedIndex < len(blocks) {
-			if selected, buildErr := buildCanvasView(r.Context(), row, blocks, blocks[selectedIndex].ID); buildErr == nil {
+			if selected, buildErr := buildCanvasView(r.Context(), row, blocks, blocks[selectedIndex].ID, isAdminRequest(r)); buildErr == nil {
 				selected.Notice = notice
 				viewData["Canvas"] = selected
 			}
@@ -185,6 +191,16 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 				if !blockConfigPresent(b, "collection") {
 					return "Block " + strconvQuote(label) + ": a for_each block needs a collection"
 				}
+			case "run_script":
+				if blockConfigText(b, "script") == "" {
+					return "Block " + strconvQuote(label) + ": a run script block needs a script body"
+				}
+				if raw, present := b.Config["timeout_ms"]; present && raw != nil && fmt.Sprint(raw) != "" {
+					ms, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(raw)))
+					if err != nil || ms < 100 || ms > 60000 {
+						return "Block " + strconvQuote(label) + ": timeout_ms must be between 100 and 60000"
+					}
+				}
 			case "end":
 				// No configuration.
 			case "wait":
@@ -223,6 +239,14 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 			}
 			if strings.TrimSpace(parentBlock.Kind) != "control" {
 				return "Block " + strconvQuote(label) + ": only a control block can hold a scope"
+			}
+			if strings.TrimSpace(parentBlock.Type) == "if" {
+				branch := strings.TrimSpace(b.Branch)
+				if branch != "" && branch != "then" && branch != "else" {
+					return "Block " + strconvQuote(label) + ": branch must be then or else"
+				}
+			} else if strings.TrimSpace(b.Branch) != "" {
+				return "Block " + strconvQuote(label) + ": only a child of an if has a branch"
 			}
 		}
 		_ = index

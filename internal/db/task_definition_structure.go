@@ -33,6 +33,8 @@ type StructureBlock struct {
 	Config    map[string]any `json:"config"`
 	DependsOn []string       `json:"depends_on"`
 	Mapping   map[string]any `json:"input_mapping"`
+	// Branch is "then" or "else" for a child of an `if`; empty elsewhere.
+	Branch string `json:"branch"`
 	// Per-block assignment overrides (Requirements AC-77). Empty means
 	// inherit the definition's default.
 	AssignmentGroupID  string `json:"assignment_group_id"`
@@ -102,6 +104,11 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 		if label := strings.TrimSpace(b.Label); label != "" {
 			config["label"] = label
 		}
+		// The document key is not a column, but an `if` condition names a
+		// sibling by it ($blocks.<key>), so it must survive the save.
+		if key := strings.TrimSpace(b.Key); key != "" {
+			config["key"] = key
+		}
 		configJSON, err := json.Marshal(config)
 		if err != nil {
 			return fmt.Errorf("block %q: config is not valid JSON: %w", b.Label, err)
@@ -119,13 +126,14 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 			INSERT INTO base_task_definition_child
 				(container_definition_id, child_definition_id, parent_block_id,
 				 position, sort_order, block_kind, block_type, config, input_mapping,
-				 assignment_group_id, assignment_strategy)
+				 assignment_group_id, assignment_strategy, branch)
 			VALUES ($1, $2, $3, $4, $4, $5, NULLIF($6, ''), $7::jsonb, $8::jsonb,
-				NULLIF($9, '')::uuid, NULLIF($10, ''))
+				NULLIF($9, '')::uuid, NULLIF($10, ''), NULLIF($11, ''))
 			RETURNING _id::text`,
 			containerDefinitionID, childID, parentID, position, b.Kind,
 			strings.TrimSpace(b.Type), string(configJSON), string(mappingJSON),
-			strings.TrimSpace(b.AssignmentGroupID), strings.TrimSpace(b.AssignmentStrategy)).Scan(&blockID); err != nil {
+			strings.TrimSpace(b.AssignmentGroupID), strings.TrimSpace(b.AssignmentStrategy),
+			strings.TrimSpace(b.Branch)).Scan(&blockID); err != nil {
 			return fmt.Errorf("block %q: %w", b.Label, err)
 		}
 		if key := strings.TrimSpace(b.Key); key != "" {
@@ -185,6 +193,7 @@ type DocumentBlock struct {
 	AssignmentGroupID  string
 	AssignmentStrategy string
 	AssignedUserID     string
+	Branch             string
 }
 
 // ensureTriggerBlock gives a definition the trigger it must have (Design
@@ -263,7 +272,7 @@ func ReadStoredDefinitionDocument(ctx context.Context, containerDefinitionID str
 			COALESCE(c.depends_on_block_id, '{}'),
 			COALESCE(c.assignment_group_id::text, ''),
 			COALESCE(c.assignment_strategy, ''),
-			COALESCE(c.assigned_user_id::text, '')
+			COALESCE(c.assigned_user_id::text, ''), COALESCE(c.branch, '')
 		FROM base_task_definition_child c
 		LEFT JOIN base_task_definition d ON d._id = c.child_definition_id
 		WHERE c.container_definition_id = $1
@@ -280,7 +289,7 @@ func ReadStoredDefinitionDocument(ctx context.Context, containerDefinitionID str
 			&b.Slug, &b.DisplayName, &b.IsContainer, &b.ChildStepCount,
 			&b.InputSchemaYAML, &b.VariablesYAML, &b.Kind, &b.Type, &b.Label,
 			&b.Position, &cfg, &b.InputMapping, &b.DependsOnBlockIDs,
-			&b.AssignmentGroupID, &b.AssignmentStrategy, &b.AssignedUserID); err != nil {
+			&b.AssignmentGroupID, &b.AssignmentStrategy, &b.AssignedUserID, &b.Branch); err != nil {
 			return nil, err
 		}
 		b.Config = map[string]any{}
@@ -314,7 +323,7 @@ func StoredStructureDocument(ctx context.Context, containerDefinitionID string) 
 		document = append(document, StructureBlock{
 			Key: b.ID, Parent: parent, Kind: b.Kind, Type: b.Type,
 			Slug: b.Slug, Label: label, Position: b.Position,
-			Config: b.Config, Mapping: b.InputMapping,
+			Config: b.Config, Mapping: b.InputMapping, Branch: b.Branch,
 			DependsOn:         b.DependsOnBlockIDs,
 			AssignmentGroupID: b.AssignmentGroupID, AssignmentStrategy: b.AssignmentStrategy,
 		})

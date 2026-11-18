@@ -231,7 +231,7 @@ func buildEditorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefi
 	default:
 		editorView = "canvas"
 	}
-	canvas, err := buildCanvasView(r.Context(), row, blocks, strings.TrimSpace(r.URL.Query().Get("block")))
+	canvas, err := buildCanvasView(r.Context(), row, blocks, strings.TrimSpace(r.URL.Query().Get("block")), isAdminRequest(r))
 	if err != nil {
 		log.Printf("task definition %q canvas load failed: %v", row.Slug, err)
 		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
