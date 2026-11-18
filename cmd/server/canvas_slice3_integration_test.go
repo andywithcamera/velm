@@ -315,7 +315,14 @@ func disabledButton(fragment, accessibleName string) bool {
 	if start < 0 {
 		return false
 	}
-	return strings.Contains(fragment[start:at], "disabled")
+	// The disabled attribute is rendered after aria-label (the template puts
+	// it at the end of the opening tag), so the check must run to the tag's
+	// closing > rather than stopping at the label.
+	close := strings.Index(fragment[at:], ">")
+	if close < 0 {
+		return false
+	}
+	return strings.Contains(fragment[start:at+close], "disabled")
 }
 
 // AC-45: Indent is offered only where the immediately preceding sibling is a
