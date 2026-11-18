@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -324,7 +325,7 @@ func dropUnrunAttemptChildren(ctx context.Context, q scriptQuerier, retryTaskID 
 			WHERE c._deleted_at IS NULL
 		)
 		SELECT id, depth FROM doomed ORDER BY depth DESC`,
-		retryTaskID, attemptNo)
+		retryTaskID, strconv.Itoa(attemptNo))
 	if err != nil {
 		return err
 	}
