@@ -124,11 +124,26 @@ func rollUpAncestors(ctx context.Context, tx scriptQuerier, taskID, actorUserID 
 		if !complete {
 			return nil
 		}
+		// A retry block is not rolled up from its children: it either starts
+		// another attempt or closes itself (and, on exhaustion, fails its
+		// parent). Closing it here would consume the failure as final after
+		// the first attempt (AC-88).
+		if _, _, isRetry, err := loadRetryBlock(ctx, tx, parentID); err != nil {
+			return err
+		} else if isRetry {
+			return nil
+		}
 		if !allowedTaskTransition(state, taskStateDone) {
 			return fmt.Errorf("container %s cannot close from state %s", parentID, state)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE base_task SET state = $2, closure_reason = $3 WHERE _id = $1`,
 			parentID, taskStateDone, reason); err != nil {
+			return err
+		}
+		// A run_task block publishes its outcome before its parent's siblings
+		// are promoted, so a following `if` on its success takes the right
+		// branch in this same pass (AC-107).
+		if err := publishRunTaskResult(ctx, tx, parentID, reason); err != nil {
 			return err
 		}
 		if err := onTaskClosed(ctx, tx, parentID, reason, actorUserID); err != nil {

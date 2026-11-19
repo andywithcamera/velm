@@ -247,9 +247,17 @@ func renderStepper(w http.ResponseWriter, r *http.Request, row db.TaskDefinition
 	}
 }
 
-// refuseStep renders a refusal where HTMX will put it. Every refusal is 400,
-// names no database internals (AC-57) and leaves the rows untouched.
+// refuseStep renders a refusal where the author will see it. With an HTMX
+// request that is the #step-errors region; without one it is the full editor
+// page, because the canvas form posts normally and a bare fragment would
+// replace the page and lose the editor (Design Vision D7, Requirements AC-16,
+// AC-17). Every refusal is 400, names no database internals (AC-57) and leaves
+// the rows untouched.
 func refuseStep(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, message string) {
+	if !isHTMXRequest(r) {
+		renderEditorRefusal(w, r, row, message)
+		return
+	}
 	view, err := buildStepsView(r.Context(), row)
 	if err != nil {
 		log.Printf("task definition %q stepper reload failed: %v", row.Slug, err)
@@ -268,6 +276,30 @@ func refuseStep(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow
 	if err := templates.ExecuteTemplate(w, "task-definition-step-errors", viewData); err != nil {
 		log.Printf("task definition %q step error render failed: %v", row.Slug, err)
 	}
+}
+
+// isHTMXRequest reports whether HTMX made the request. Only an explicit
+// HX-Request header counts; a browser form post has none.
+func isHTMXRequest(r *http.Request) bool {
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("HX-Request")), "true")
+}
+
+// renderEditorRefusal re-renders the whole editor with the message inside the
+// canvas card, so a plain form post keeps its page.
+func renderEditorRefusal(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, message string) {
+	// A refusal must not write: the trigger backfill is skipped so AC-12's
+	// "row count is unchanged" holds on the very request that was refused.
+	viewData, ok := buildEditorViewData(w, r, row, false)
+	if !ok {
+		return
+	}
+	// The refusal belongs in the canvas card even when the request carried a
+	// support view in the query string.
+	viewData["EditorView"] = "canvas"
+	canvas, _ := viewData["Canvas"].(canvasView)
+	canvas.Error = message
+	viewData["Canvas"] = canvas
+	writeTaskDefinitionPage(w, "layout.html", viewData, http.StatusBadRequest)
 }
 
 // succeedStep re-renders the stepper after a committed write, with an optional

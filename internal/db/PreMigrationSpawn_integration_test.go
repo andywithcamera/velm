@@ -368,28 +368,39 @@ func TestPreMigrationDefinitionSpawnsIdentically(t *testing.T) {
 		t.Fatal("depends_on_block_id was not backfilled to the stage's block row")
 	}
 
-	// --- The same definition, now on 098. -----------------------------------
+	// --- The same definition, now on the current schema. -------------------
+	// The runtime reads `branch` (102), so the comparison must run at the
+	// schema the engine actually ships with. The fixture is still authored
+	// with pre-098 raw SQL, which is the compatibility claim under test.
+	for _, migration := range []string{
+		"099_block_tree_non_task_blocks.sql",
+		"100_assignment_cursor.sql",
+		"101_block_tree_structural_kinds.sql",
+		"102_run_script_and_branches.sql",
+	} {
+		migTestApplyOne(t, ctx, migration)
+	}
 	afterLeafID, err := SpawnTaskInstanceBySlug(ctx, Pool, "pre098_leaf", "", "", map[string]any{"server_name": "leaf-only"})
 	if err != nil {
-		t.Fatalf("spawn leaf at 098: %v", err)
+		t.Fatalf("spawn leaf on current schema: %v", err)
 	}
 	if err := Pool.QueryRow(ctx, `SELECT COUNT(*) FROM base_task WHERE parent_task_id = $1`, afterLeafID).Scan(&leafChildren); err != nil {
-		t.Fatalf("count leaf children after 098: %v", err)
+		t.Fatalf("count leaf children on current schema: %v", err)
 	}
 	if leafChildren != 0 {
-		t.Fatalf("leaf spawned %d children after 098, want 0", leafChildren)
+		t.Fatalf("leaf spawned %d children on current schema, want 0", leafChildren)
 	}
 
 	afterRootID, err := SpawnTaskInstanceBySlug(ctx, Pool, "pre098_root", "", "", map[string]any{"server_name": "web-01"})
 	if err != nil {
-		t.Fatalf("spawn nested container at 098: %v", err)
+		t.Fatalf("spawn nested container on current schema: %v", err)
 	}
 	after := takeSpawnSnapshot(t, ctx, afterRootID)
 
 	if !reflect.DeepEqual(before, after) {
 		beforeJSON, _ := json.MarshalIndent(before, "", "  ")
 		afterJSON, _ := json.MarshalIndent(after, "", "  ")
-		t.Fatalf("a pre-098 definition does not spawn identically after 098\n--- 097 ---\n%s\n--- 098 ---\n%s", beforeJSON, afterJSON)
+		t.Fatalf("a pre-098 definition does not spawn identically after the block-tree migrations\n--- 097 ---\n%s\n--- 098 ---\n%s", beforeJSON, afterJSON)
 	}
 
 	// AC-17 names variables.inputs explicitly, and a whole-row comparison can

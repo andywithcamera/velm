@@ -15,8 +15,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strings"
 
+	"velm/internal/auth"
 	"velm/internal/db"
 )
 
@@ -27,21 +29,27 @@ type pillOptionView struct {
 
 type canvasMappingView struct {
 	Name    string
+	Label   string
+	Type    string
 	Value   string
+	Mode    string
 	Options []pillOptionView
 }
 
 type canvasBlockView struct {
-	ID           string
-	Label        string
-	Slug         string
-	Kind         string
-	Type         string
-	KindLabel    string
-	Position     int
-	Depth        int
-	IndentClass  string
-	ParentID     string
+	ID          string
+	Label       string
+	Slug        string
+	Kind        string
+	Type        string
+	KindLabel   string
+	Position    int
+	Depth       int
+	IndentClass string
+	ParentID    string
+	// Branch is "then"/"else" under an if; empty elsewhere. It is carried in
+	// the canvas document so a save through the canvas does not erase it.
+	Branch       string
 	IsChain      bool
 	StepCount    int
 	Selected     bool
@@ -52,6 +60,51 @@ type canvasBlockView struct {
 	Pills        []pillOptionView
 	BlockJSON    string
 	HasCondition bool
+	// Inline configuration (Design Vision D13): the selected block is the one
+	// expanded block, and its config renders inside its own card.
+	Expanded bool
+	// Keyboard move affordances (Requirements AC-43 to AC-45). Bounds are
+	// resolved on the server from the stored tree so a disabled control is
+	// never a lie about what the engine will accept.
+	CanMoveUp   bool
+	CanMoveDown bool
+	CanIndent   bool
+	CanOutdent  bool
+	// run_script (Design Vision D4/D5). HasScript marks the block type;
+	// ScriptRefused renders the refusal instead of the body for a non-admin.
+	HasScript       bool
+	ScriptRefused   bool
+	ScriptBody      string
+	ScriptTimeout   string
+	ScriptOutputVar string
+	// retry (Design Vision D17). HasRetry marks the block type; the rest are
+	// its policy fields, rendered in the block's own card.
+	HasRetry         bool
+	RetryAttempts    string
+	RetryDelay       string
+	RetryBackoff     string
+	RetryOnExhausted string
+	// run_task (Design Vision D4/D9). HasRunTask marks the block type; the
+	// target is the definition whose inputs the rows map.
+	HasRunTask    bool
+	RunTaskTarget string
+	// Nested is true for a block whose children render inside a container
+	// (an if branch or a for_each scope) rather than as a sibling in the flat
+	// tree. The tree template only prints the top-level list.
+	Nested bool
+	// The container children, populated for an if (Then/Else) and a for_each
+	// (Loop). AC-24: the containers must hold their children, not decorate them.
+	ThenChildren []canvasBlockView
+	ElseChildren []canvasBlockView
+	LoopChildren []canvasBlockView
+	// Page context copied onto every block so the recursive block template can
+	// render its own links and selects without the page root in scope.
+	DefinitionSlug   string
+	Targets          []db.TaskDefinitionRow
+	Groups           []db.AuthzGroup
+	Strategies       []string
+	SelectedGroupID  string
+	SelectedStrategy string
 }
 
 type paletteKindView struct {
@@ -75,12 +128,14 @@ type canvasView struct {
 	HasSelection bool
 	Palette      []paletteKindView
 	Candidates   []db.TaskDefinitionRow
+	Targets      []db.TaskDefinitionRow
 	Scopes       []canvasScopeView
 	Document     string
 	Error        string
 	Notice       string
 	Groups       []db.AuthzGroup
 	Strategies   []string
+	IsAdmin      bool
 }
 
 // canvasKindLabel is the word the canvas prints beside a block.
@@ -96,6 +151,10 @@ func canvasKindLabel(block db.DocumentBlock) string {
 			return "For each"
 		case "end":
 			return "End"
+		case "retry":
+			return "Retry"
+		case "run_task":
+			return "Run task"
 		default:
 			return "Control"
 		}
@@ -107,8 +166,12 @@ func canvasKindLabel(block db.DocumentBlock) string {
 }
 
 // canvasBlockLabel is what the author called the block, falling back to the
-// definition it calls so an unlabelled block is never "block 3".
+// definition it calls so an unlabelled block is never "block 3". The trigger
+// is structural, so it always reads Start (Design Vision D6).
 func canvasBlockLabel(block db.DocumentBlock) string {
+	if block.Kind == "trigger" {
+		return "Start"
+	}
 	if label := strings.TrimSpace(block.Label); label != "" {
 		return label
 	}
@@ -149,25 +212,47 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 	for _, block := range blocks {
 		d := depth(block.ID)
 		view = append(view, canvasBlockView{
-			ID:           block.ID,
-			Label:        canvasBlockLabel(block),
-			Slug:         block.Slug,
-			Kind:         block.Kind,
-			Type:         block.Type,
-			KindLabel:    canvasKindLabel(block),
-			Position:     block.Position,
-			Depth:        d,
-			IndentClass:  "ui-canvas-depth-" + itoa(d),
-			ParentID:     block.ParentID,
-			IsChain:      block.IsContainer,
-			StepCount:    block.ChildStepCount,
-			Condition:    configString(block.Config, "condition"),
-			GroupID:      block.AssignmentGroupID,
-			Strategy:     block.AssignmentStrategy,
-			HasCondition: block.Kind == "control" && block.Type == "if",
+			ID:               block.ID,
+			Label:            canvasBlockLabel(block),
+			Slug:             block.Slug,
+			Kind:             block.Kind,
+			Type:             block.Type,
+			KindLabel:        canvasKindLabel(block),
+			Position:         block.Position,
+			Depth:            d,
+			IndentClass:      canvasIndentClass(d),
+			ParentID:         block.ParentID,
+			Branch:           block.Branch,
+			IsChain:          block.IsContainer,
+			StepCount:        block.ChildStepCount,
+			Condition:        configString(block.Config, "condition"),
+			GroupID:          block.AssignmentGroupID,
+			Strategy:         block.AssignmentStrategy,
+			HasCondition:     block.Kind == "control" && block.Type == "if",
+			HasScript:        block.Kind == "control" && block.Type == "run_script",
+			ScriptBody:       configString(block.Config, "script"),
+			ScriptTimeout:    configString(block.Config, "timeout_ms"),
+			ScriptOutputVar:  configString(block.Config, "output_var"),
+			HasRunTask:       block.Kind == "control" && block.Type == "run_task",
+			RunTaskTarget:    block.Slug,
+			HasRetry:         block.Kind == "control" && block.Type == "retry",
+			RetryAttempts:    configString(block.Config, "attempts"),
+			RetryDelay:       configString(block.Config, "delay_seconds"),
+			RetryBackoff:     configString(block.Config, "backoff"),
+			RetryOnExhausted: configString(block.Config, "on_exhausted"),
 		})
 	}
 	return view
+}
+
+// canvasIndentClass caps the indent ladder at depth 4 (Requirements AC-49):
+// nesting is unconstrained at save, so a seven-level chain must render rather
+// than silently lose its indentation class.
+func canvasIndentClass(depth int) string {
+	if depth > 4 {
+		depth = 4
+	}
+	return "ui-canvas-depth-" + itoa(depth)
 }
 
 func itoa(n int) string {
@@ -190,22 +275,31 @@ func configString(config map[string]any, key string) string {
 	return strings.TrimSpace(value)
 }
 
-// canvasPalette is the six block kinds of Design Vision §3, plus the control
-// types. Kinds the engine cannot evaluate in this release are shown disabled
-// with "not in this release" (Requirements AC-74).
-func canvasPalette() []paletteKindView {
-	return []paletteKindView{
-		{Key: "trigger", Label: "Trigger", Kind: "trigger", Description: "What starts a run", Available: true},
+// canvasPalette is the block kinds an author can add. The trigger is absent
+// on purpose: it is rendered as a fixed Start node and never inserted from the
+// palette (Design Vision D6, Requirements AC-11). Kinds the engine cannot
+// evaluate in this release are shown disabled with "not in this release"
+// (Requirements AC-74).
+func canvasPalette(admin ...bool) []paletteKindView {
+	isAdmin := len(admin) > 0 && admin[0]
+	palette := []paletteKindView{
 		{Key: "task", Label: "Task", Kind: "task", Description: "Call a definition", Available: true},
 		{Key: "control-if", Label: "If", Kind: "control", Type: "if", Description: "Run a scope when a condition holds", Available: true},
 		{Key: "control-for-each", Label: "For each", Kind: "control", Type: "for_each", Description: "Run a scope once per item", Available: true},
 		{Key: "control-end", Label: "End", Kind: "control", Type: "end", Description: "Close a scope", Available: true},
+		{Key: "control-retry", Label: "Retry", Kind: "control", Type: "retry", Description: "Run a scope again when it fails", Available: true},
+		{Key: "control-run-task", Label: "Run task", Kind: "control", Type: "run_task", Description: "Call a definition with mapped inputs", Available: true},
 		{Key: "control-parallel", Label: "Parallel", Kind: "control", Type: "parallel", Description: "Run branches together", Available: false},
 		{Key: "control-wait", Label: "Wait", Kind: "control", Type: "wait", Description: "Pause until a time or task", Available: false},
 		{Key: "action", Label: "Action", Kind: "action", Description: "A non-human step", Available: false},
 		{Key: "gate", Label: "Gate", Kind: "gate", Description: "A human approve/reject", Available: false},
 		{Key: "stage", Label: "Stage", Kind: "stage", Description: "A human-facing lane", Available: false},
 	}
+	// AC-57: run_script is hidden, not disabled, for a non-admin.
+	if isAdmin {
+		palette = append(palette, paletteKindView{Key: "control-run-script", Label: "Run script", Kind: "control", Type: "run_script", Description: "Run a JavaScript body (admin only)", Available: true})
+	}
+	return palette
 }
 
 // documentToStructure turns the stored tree into the payload the structure
@@ -221,6 +315,7 @@ func documentToStructure(blocks []db.DocumentBlock) []db.StructureBlock {
 		out = append(out, db.StructureBlock{
 			Key:                block.ID,
 			Parent:             block.ParentID,
+			Branch:             block.Branch,
 			Kind:               block.Kind,
 			Type:               block.Type,
 			Slug:               block.Slug,
@@ -299,13 +394,16 @@ func scopePillsFor(ctx context.Context, containerInputs []db.TaskInputField, blo
 
 // buildCanvasView assembles the canvas, its palette, the candidate list and
 // the config rail. The rail's selection comes from ?block=<id>.
-func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.DocumentBlock, selectedID string) (canvasView, error) {
+func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.DocumentBlock, selectedID string, groups []db.AuthzGroup, admin ...bool) (canvasView, error) {
+	isAdmin := len(admin) > 0 && admin[0]
 	view := canvasView{
-		Palette:    canvasPalette(),
+		IsAdmin:    isAdmin,
+		Palette:    canvasPalette(isAdmin),
 		Document:   encodeStructure(documentToStructure(blocks)),
 		Strategies: db.AssignmentStrategies,
 	}
 	view.Blocks = buildCanvasDocument(blocks)
+	applyMoveCapabilities(blocks, view.Blocks)
 	if selectedID == "" {
 		for _, block := range blocks {
 			if block.Kind != "trigger" {
@@ -322,23 +420,38 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 		block := blocks[index]
 		if block.ID == selectedID {
 			view.Blocks[index].Selected = true
-			view.Selected = view.Blocks[index]
-			view.HasSelection = true
+			view.Blocks[index].Expanded = true
 			pills, err := scopePillsFor(ctx, inputFields, blocks, block)
 			if err != nil {
 				return view, err
 			}
-			view.Selected.Pills = pills
-			names, _ := declaredInputNames(block.InputSchemaYAML)
-			for _, name := range names {
-				view.Selected.Mapping = append(view.Selected.Mapping, canvasMappingView{
-					Name:    name,
-					Value:   mappingString(block.InputMapping[name]),
+			// The card template ranges over Blocks, so the pills and mapping
+			// rows belong on the block itself; Selected is a copy for the
+			// sections that read it directly.
+			view.Blocks[index].Pills = pills
+			// AC-97: one row per input of the block's target, labelled with
+			// the input's own label where it has one. For a run_task the
+			// block's InputSchemaYAML is the target's schema, joined on the
+			// definition the block stores.
+			fields, _ := db.ParseTaskInputSchema(block.InputSchemaYAML)
+			for _, field := range fields {
+				value, mode := mappingRow(block.InputMapping[field.Name])
+				view.Blocks[index].Mapping = append(view.Blocks[index].Mapping, canvasMappingView{
+					Name:    field.Name,
+					Label:   field.LabelOrName(),
+					Type:    mappingTypeLabel(field.DataType),
+					Value:   value,
+					Mode:    mode,
 					Options: pills,
 				})
 			}
+			view.Selected = view.Blocks[index]
+			view.HasSelection = true
 		}
-		if block.Kind == "control" && (block.Type == "if" || block.Type == "for_each") {
+		if block.Kind == "control" && block.Type == "run_script" && !isAdmin {
+			view.Blocks[index].ScriptRefused = true
+		}
+		if block.Kind == "control" && (block.Type == "if" || block.Type == "for_each" || block.Type == "retry") {
 			view.Scopes = append(view.Scopes, canvasScopeView{ID: block.ID, Label: canvasBlockLabel(block), Depth: view.Blocks[index].Depth})
 		}
 	}
@@ -362,7 +475,88 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 		}
 		view.Candidates = append(view.Candidates, candidate)
 	}
+	// A run_task's target list is every live definition except this one
+	// (AC-95). A target already used elsewhere in the tree is still a legal
+	// target, so it is not filtered out the way a palette candidate is.
+	for _, candidate := range candidates {
+		if candidate.Slug == row.Slug {
+			continue
+		}
+		view.Targets = append(view.Targets, candidate)
+	}
+	view.attachContainerChildren(row.Slug, groups)
 	return view, nil
+}
+
+// attachContainerChildren copies the page-level choices onto every block, then
+// moves an if's then/else children and a for_each's children into the block's
+// own containers (Requirements AC-24): the containers must hold their
+// children, not decorate a flat list of indented siblings.
+func (view *canvasView) attachContainerChildren(slug string, groups []db.AuthzGroup) {
+	for index := range view.Blocks {
+		block := &view.Blocks[index]
+		block.DefinitionSlug = slug
+		block.Targets = view.Targets
+		block.Groups = groups
+		block.Strategies = view.Strategies
+		if view.HasSelection {
+			block.SelectedGroupID = view.Selected.GroupID
+			block.SelectedStrategy = view.Selected.Strategy
+		}
+	}
+	// A block whose parent is an if or a for_each renders inside that parent's
+	// container; it is left out of the top-level list.
+	//
+	// A child of an if with no branch recorded is a THEN child: the engine
+	// treats anything that is not "else" as THEN (TaskDefinitionBlocks.go), so
+	// the canvas must agree. Without this the block fell out of both the
+	// top-level list and the THEN container and vanished from the view.
+	for index := range view.Blocks {
+		parentID := view.Blocks[index].ParentID
+		for _, parent := range view.Blocks {
+			if parent.ID != parentID {
+				continue
+			}
+			if parent.Kind == "control" && (parent.Type == "if" || parent.Type == "for_each") {
+				view.Blocks[index].Nested = true
+			}
+			if parent.Kind == "control" && parent.Type == "if" && view.Blocks[index].Branch != "else" {
+				view.Blocks[index].Branch = "then"
+			}
+			break
+		}
+	}
+	var childrenOf func(parentID, branch string) []canvasBlockView
+	childrenOf = func(parentID, branch string) []canvasBlockView {
+		var out []canvasBlockView
+		for _, child := range view.Blocks {
+			if child.ParentID != parentID || child.Branch != branch {
+				continue
+			}
+			if child.Kind == "control" && child.Type == "if" {
+				child.ThenChildren = childrenOf(child.ID, "then")
+				child.ElseChildren = childrenOf(child.ID, "else")
+			}
+			if child.Kind == "control" && child.Type == "for_each" {
+				child.LoopChildren = childrenOf(child.ID, "")
+			}
+			out = append(out, child)
+		}
+		return out
+	}
+	for index := range view.Blocks {
+		block := &view.Blocks[index]
+		if block.Kind != "control" {
+			continue
+		}
+		switch block.Type {
+		case "if":
+			block.ThenChildren = childrenOf(block.ID, "then")
+			block.ElseChildren = childrenOf(block.ID, "else")
+		case "for_each":
+			block.LoopChildren = childrenOf(block.ID, "")
+		}
+	}
 }
 
 func mappingString(value any) string {
@@ -377,4 +571,46 @@ func mappingString(value any) string {
 		return ""
 	}
 	return string(encoded)
+}
+
+// mappingRow splits a stored mapping value into the text the row shows and
+// its mode. A bare string is the pre-slice-6 form where a `$` prefix means an
+// expression; a run_task row stores {from, value} (AC-96, AC-99).
+func mappingRow(value any) (string, string) {
+	if row, ok := value.(map[string]any); ok {
+		from, _ := row["from"].(string)
+		text, _ := row["value"].(string)
+		if from == "literal" || from == "expr" {
+			return text, from
+		}
+		return text, ""
+	}
+	text := mappingString(value)
+	if strings.HasPrefix(strings.TrimSpace(text), "$") {
+		return text, "expr"
+	}
+	if text != "" {
+		return text, "literal"
+	}
+	return "", ""
+}
+
+// isAdminRequest is the existing role predicate (Design Vision D5): the same
+// context role the rest of the server reads, not a new role.
+func isAdminRequest(r *http.Request) bool {
+	return strings.EqualFold(strings.TrimSpace(auth.UserRoleFromRequest(r)), "admin")
+}
+
+// mappingTypeLabel is the word a run_task mapping row prints beside the input
+// name. A reference input is an object, not a string, so the author can see
+// that a literal cannot fill it; everything else prints its canonical type.
+func mappingTypeLabel(dataType string) string {
+	switch db.BaseDataType(dataType) {
+	case "reference", "entity":
+		return "object"
+	case "":
+		return "text"
+	default:
+		return db.BaseDataType(dataType)
+	}
 }

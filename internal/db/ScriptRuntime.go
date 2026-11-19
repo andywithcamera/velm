@@ -43,6 +43,12 @@ type ScriptExecutionOptions struct {
 	Timeout        time.Duration
 	DryRun         bool
 	Scope          ScriptScope
+	// Globals are extra globals for the run_script block (inputs, outputs,
+	// task). They go through installGlobals, the same path every script uses.
+	Globals map[string]any
+	// Capture names the globals to read back after the run. The run_script
+	// block uses it for its `result` (output_var) and for `outputs`.
+	Capture []string
 }
 
 type ScriptExecutionLog struct {
@@ -57,6 +63,7 @@ type ScriptExecutionResult struct {
 	Output        string               `json:"output"`
 	CurrentRecord map[string]any       `json:"current_record,omitempty"`
 	DurationMS    int64                `json:"duration_ms"`
+	Globals       map[string]any       `json:"globals,omitempty"`
 }
 
 type scriptRuntimeTimeout struct {
@@ -195,6 +202,7 @@ func executeJavaScriptWithQuerier(ctx context.Context, querier scriptQuerier, op
 
 	result := ScriptExecutionResult{
 		Result:        normalizeScriptExportValue(exportedResult),
+		Globals:       runtimeCtx.captureGlobals(opts.Capture),
 		Logs:          runtimeCtx.logs,
 		CurrentRecord: currentRecord,
 		DurationMS:    time.Since(startedAt).Milliseconds(),
@@ -286,7 +294,40 @@ func (runtimeCtx *scriptRuntimeContext) installGlobals(opts ScriptExecutionOptio
 	}
 	_ = runtimeCtx.vm.Set("console", consoleObject)
 
+	for name, value := range opts.Globals {
+		_ = runtimeCtx.vm.Set(name, runtimeCtx.toValue(value))
+	}
+
 	return runtimeCtx.installScopeModels(opts.Record, opts.PreviousRecord)
+}
+
+// captureGlobals reads named globals back out of the VM after the body ran.
+func (runtimeCtx *scriptRuntimeContext) captureGlobals(names []string) map[string]any {
+	if len(names) == 0 {
+		return nil
+	}
+	out := map[string]any{}
+	for _, name := range names {
+		value := runtimeCtx.vm.Get(name)
+		if value == nil || goja.IsUndefined(value) || goja.IsNull(value) {
+			continue
+		}
+		// Export the primitive first: wrapping a string in ToObject() yields
+		// an empty object, which would turn a non-JSON result into {}.
+		exported := normalizeScriptExportValue(value.Export())
+		if _, isText := exported.(string); isText {
+			out[name] = exported
+			continue
+		}
+		if object := value.ToObject(runtimeCtx.vm); object != nil {
+			if mapped, ok := normalizeScriptExportValue(object.Export()).(map[string]any); ok {
+				out[name] = mapped
+				continue
+			}
+		}
+		out[name] = exported
+	}
+	return out
 }
 
 func (runtimeCtx *scriptRuntimeContext) ctxJobsEnqueue(call goja.FunctionCall) goja.Value {

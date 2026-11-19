@@ -47,6 +47,9 @@ type TaskDefinitionRow struct {
 	// and the strategy that picks a person from it. Empty means unset.
 	DefaultGroupID     string
 	AssignmentStrategy string
+	// DefaultAssigneeID is the named user a named_user strategy assigns. It is
+	// NULL for every other strategy (090:18).
+	DefaultAssigneeID string
 }
 
 // InputCount is the number of declared requester inputs. A schema that fails to
@@ -81,7 +84,7 @@ type TaskDefinitionStep struct {
 const taskDefinitionColumns = `d._id::text, d.slug, d.display_name, d.description,
 	d.is_container, d.is_active, COALESCE(d.input_schema_yaml, ''),
 	COALESCE(d.variables_yaml, ''), COALESCE(d.default_group_id::text, ''),
-	COALESCE(d.assignment_strategy, '')`
+	COALESCE(d.assignment_strategy, ''), COALESCE(d.default_assignee_id::text, '')`
 
 // escapeLike makes a user's search text a literal needle rather than a pattern:
 // without this, typing "%" matches every definition and typing "_" matches any
@@ -119,7 +122,8 @@ func ListTaskDefinitionRows(ctx context.Context, query string) ([]TaskDefinition
 		var row TaskDefinitionRow
 		if err := rows.Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
 			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
-			&row.DefaultGroupID, &row.AssignmentStrategy, &row.ChildCount); err != nil {
+			&row.DefaultGroupID, &row.AssignmentStrategy, &row.DefaultAssigneeID,
+			&row.ChildCount); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -139,7 +143,8 @@ func GetTaskDefinitionBySlug(ctx context.Context, slug string) (TaskDefinitionRo
 		WHERE d.slug = $1 AND d._deleted_at IS NULL`, strings.TrimSpace(slug)).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
 			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
-			&row.DefaultGroupID, &row.AssignmentStrategy, &row.ChildCount)
+			&row.DefaultGroupID, &row.AssignmentStrategy, &row.DefaultAssigneeID,
+			&row.ChildCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return TaskDefinitionRow{}, ErrTaskDefinitionNotFound
 	}
@@ -227,7 +232,8 @@ func CreateTaskDefinition(ctx context.Context, slug, displayName, description st
 		strings.TrimSpace(slug), strings.TrimSpace(displayName), strings.TrimSpace(description), isContainer).
 		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
 			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
-			&row.DefaultGroupID, &row.AssignmentStrategy, &row.ChildCount)
+			&row.DefaultGroupID, &row.AssignmentStrategy, &row.DefaultAssigneeID,
+			&row.ChildCount)
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_base_task_definition_slug_live" {
@@ -236,6 +242,72 @@ func CreateTaskDefinition(ctx context.Context, slug, displayName, description st
 		return TaskDefinitionRow{}, err
 	}
 	return row, nil
+}
+
+// CreateTaskDefinitionSetup is everything the new-definition flow writes in one
+// statement: the four basics, the assignment pair (plus the named user that
+// only a named_user strategy stores) and the requester form authored before the
+// definition exists. CreateTaskDefinition stays as it is for callers that only
+// write the basics.
+type CreateTaskDefinitionSetup struct {
+	Slug               string
+	DisplayName        string
+	Description        string
+	IsContainer        bool
+	IsActive           bool
+	DefaultGroupID     string
+	AssignmentStrategy string
+	NamedUserID        string
+	InputSchemaYAML    string
+}
+
+// CreateTaskDefinitionWithSetup inserts a definition with every column the flow
+// collected. Empty group, strategy and named user become SQL NULL, exactly as
+// the editor's basics save writes them.
+func CreateTaskDefinitionWithSetup(ctx context.Context, setup CreateTaskDefinitionSetup) (TaskDefinitionRow, error) {
+	var row TaskDefinitionRow
+	err := Pool.QueryRow(ctx, `
+		INSERT INTO base_task_definition
+			(slug, display_name, description, is_container, is_active,
+			 default_group_id, assignment_strategy, default_assignee_id,
+			 input_schema_yaml)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		RETURNING `+strings.ReplaceAll(taskDefinitionColumns, "d.", "")+`, 0`,
+		strings.TrimSpace(setup.Slug), strings.TrimSpace(setup.DisplayName),
+		strings.TrimSpace(setup.Description), setup.IsContainer, setup.IsActive,
+		nullIfEmpty(setup.DefaultGroupID), nullIfEmpty(setup.AssignmentStrategy),
+		nullIfEmpty(setup.NamedUserID), setup.InputSchemaYAML).
+		Scan(&row.ID, &row.Slug, &row.DisplayName, &row.Description,
+			&row.IsContainer, &row.IsActive, &row.InputSchemaYAML, &row.VariablesYAML,
+			&row.DefaultGroupID, &row.AssignmentStrategy, &row.DefaultAssigneeID,
+			&row.ChildCount)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "uq_base_task_definition_slug_live" {
+			return TaskDefinitionRow{}, ErrDuplicateTaskDefinitionSlug
+		}
+		return TaskDefinitionRow{}, err
+	}
+	return row, nil
+}
+
+// UserIsGroupMember reports whether userID belongs to groupID. The new-definition
+// flow scopes a named user to the assignment group, so a user outside it is not
+// a choice the form may save.
+func UserIsGroupMember(ctx context.Context, userID, groupID string) (bool, error) {
+	if strings.TrimSpace(userID) == "" {
+		return false, nil
+	}
+	var member bool
+	err := Pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM _group_membership
+			WHERE user_id = $1 AND group_id = $2
+		)`, strings.TrimSpace(userID), strings.TrimSpace(groupID)).Scan(&member)
+	if err != nil {
+		return false, err
+	}
+	return member, nil
 }
 
 // UpdateTaskDefinitionInputSchema writes the requester form's YAML exactly as

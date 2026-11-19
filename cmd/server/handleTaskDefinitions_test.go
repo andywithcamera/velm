@@ -88,11 +88,10 @@ func TestNewDefinitionPageRendersForm(t *testing.T) {
 		w := httptest.NewRecorder()
 		data := newViewData(w, r, "/task-definitions/new", "New Task Definition", "Operations")
 		data["View"] = "task-definition-new"
-		data["NewSlug"] = ""
-		data["NewDisplayName"] = ""
-		data["NewDescription"] = ""
-		data["NewIsContainer"] = false
-		data["FormError"] = ""
+		data["NewDefinition"] = newDefinitionPage{
+			Form:             newDefinitionForm{IsActive: true},
+			DescriptionField: markdownFieldView{ID: "new-definition-description", Name: "description"},
+		}
 		return data
 	}()
 
@@ -142,6 +141,7 @@ func TestTaskDefinitionRoutesRequireTheirStatedPermission(t *testing.T) {
 		"GET /task-definitions":                                    accessView,
 		"POST /task-definitions":                                   accessWrite,
 		"GET /task-definitions/new":                                accessView,
+		"GET /task-definitions/new/inputs/rows/new":                accessView,
 		"GET /task-definitions/{slug}":                             accessView,
 		"POST /task-definitions/{slug}/basics":                     accessWrite,
 		"GET /task-definitions/{slug}/inputs/rows/new":             accessView,
