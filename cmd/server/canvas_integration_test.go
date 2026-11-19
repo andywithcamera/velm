@@ -75,14 +75,16 @@ func TestDefinitionEditorThreeViews(t *testing.T) {
 		if !strings.Contains(body, "Canvas Views") {
 			t.Errorf("view=%s does not render the definition name", view)
 		}
-		if !strings.Contains(body, `href="/task-definitions/`+slug+`?view=canvas"`) {
-			t.Errorf("view=%s has no tab to the canvas", view)
+		// Slice 1 (D1): the view tabs are gone from the header, so no view
+		// advertises the support surfaces.
+		if strings.Contains(body, `class="ui-def-view-tab`) {
+			t.Errorf("view=%s still renders the tab bar", view)
 		}
 	}
-	// The default for a tree definition is the canvas (AC-91).
+	// The default is the canvas for every definition (D1, AC-2).
 	rec := renderDefinitionView(t, slug, "")
 	if !strings.Contains(rec.Body.String(), `id="canvas"`) {
-		t.Error("a definition with a non-task block does not default to the canvas")
+		t.Error("the editor does not default to the canvas")
 	}
 	if storedBlockCount(t, ctx, containerID) != 2 {
 		t.Error("rendering a view wrote to the document")
@@ -163,7 +165,7 @@ func TestPaletteMarksUnavailableKinds(t *testing.T) {
 	slug := tdeSlug(t, "canvas-palette")
 	insertDefinition(t, ctx, slug, "Canvas Palette", "", tdeTwoInputs, true, true)
 	body := renderDefinitionView(t, slug, "?view=canvas").Body.String()
-	for _, kind := range []string{"trigger", "task", "action", "gate", "control", "stage"} {
+	for _, kind := range []string{"task", "action", "gate", "control", "stage"} {
 		if !strings.Contains(body, `data-kind="`+kind+`"`) {
 			t.Errorf("palette is missing kind %s", kind)
 		}
@@ -278,16 +280,22 @@ func TestConfigRailSections(t *testing.T) {
 			taskID = block.ID
 		}
 	}
-	rail := renderDefinitionView(t, slug, "?view=canvas&block="+ifID).Body.String()
-	for _, want := range []string{`id="canvas-rail"`, "Condition", "Assignment group", "Assignment strategy"} {
-		if !strings.Contains(rail, want) {
-			t.Errorf("config rail is missing %q", want)
+	// Design Vision D14 replaced the floating rail with config rendered inline
+	// on the selected block, so the control fields must appear inside that
+	// block's own card rather than in a separate panel.
+	expanded := renderDefinitionView(t, slug, "?view=canvas&block="+ifID).Body.String()
+	for _, want := range []string{`data-config="condition"`, "Assignment group", "Assignment strategy"} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("inline config is missing %q", want)
 		}
 	}
-	rail = renderDefinitionView(t, slug, "?view=canvas&block="+taskID).Body.String()
-	for _, want := range []string{`data-rail-mapping="server"`, "$inputs.server"} {
-		if !strings.Contains(rail, want) {
-			t.Errorf("task config rail is missing %q", want)
+	if strings.Contains(expanded, `id="canvas-rail"`) {
+		t.Errorf("the floating config rail is still rendered; config belongs inside the block card")
+	}
+	expanded = renderDefinitionView(t, slug, "?view=canvas&block="+taskID).Body.String()
+	for _, want := range []string{`data-config-mapping="server"`, "$inputs.server"} {
+		if !strings.Contains(expanded, want) {
+			t.Errorf("inline task config is missing %q", want)
 		}
 	}
 }

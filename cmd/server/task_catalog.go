@@ -195,7 +195,7 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthenticated", http.StatusUnauthorized)
 		return
 	}
-	if reason, perr := checkStoredPlumbing(r.Context(), slug); perr == nil && reason != "" {
+	if reason, perr := checkStoredPlumbing(r.Context(), slug, isAdminRequest(r)); perr == nil && reason != "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
 		_ = catalogOrderInvalidTmpl.Execute(w, map[string]string{"Slug": slug, "Reason": reason})

@@ -33,6 +33,8 @@ type StructureBlock struct {
 	Config    map[string]any `json:"config"`
 	DependsOn []string       `json:"depends_on"`
 	Mapping   map[string]any `json:"input_mapping"`
+	// Branch is "then" or "else" for a child of an `if`; empty elsewhere.
+	Branch string `json:"branch"`
 	// Per-block assignment overrides (Requirements AC-77). Empty means
 	// inherit the definition's default.
 	AssignmentGroupID  string `json:"assignment_group_id"`
@@ -52,7 +54,13 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 	definitionIDBySlug := map[string]string{}
 	for _, b := range blocks {
 		slug := strings.TrimSpace(b.Slug)
-		if b.Kind != "task" || slug == "" {
+		// A run_task block names its target the same way a task block does,
+		// and the target must resolve to an id so a later load can join its
+		// input schema and a transitive cycle can be seen from here.
+		if b.Kind != "task" && !(b.Kind == "control" && b.Type == "run_task") {
+			continue
+		}
+		if slug == "" {
 			continue
 		}
 		if _, seen := definitionIDBySlug[slug]; seen {
@@ -102,6 +110,11 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 		if label := strings.TrimSpace(b.Label); label != "" {
 			config["label"] = label
 		}
+		// The document key is not a column, but an `if` condition names a
+		// sibling by it ($blocks.<key>), so it must survive the save.
+		if key := strings.TrimSpace(b.Key); key != "" {
+			config["key"] = key
+		}
 		configJSON, err := json.Marshal(config)
 		if err != nil {
 			return fmt.Errorf("block %q: config is not valid JSON: %w", b.Label, err)
@@ -119,13 +132,14 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 			INSERT INTO base_task_definition_child
 				(container_definition_id, child_definition_id, parent_block_id,
 				 position, sort_order, block_kind, block_type, config, input_mapping,
-				 assignment_group_id, assignment_strategy)
+				 assignment_group_id, assignment_strategy, branch)
 			VALUES ($1, $2, $3, $4, $4, $5, NULLIF($6, ''), $7::jsonb, $8::jsonb,
-				NULLIF($9, '')::uuid, NULLIF($10, ''))
+				NULLIF($9, '')::uuid, NULLIF($10, ''), NULLIF($11, ''))
 			RETURNING _id::text`,
 			containerDefinitionID, childID, parentID, position, b.Kind,
 			strings.TrimSpace(b.Type), string(configJSON), string(mappingJSON),
-			strings.TrimSpace(b.AssignmentGroupID), strings.TrimSpace(b.AssignmentStrategy)).Scan(&blockID); err != nil {
+			strings.TrimSpace(b.AssignmentGroupID), strings.TrimSpace(b.AssignmentStrategy),
+			strings.TrimSpace(b.Branch)).Scan(&blockID); err != nil {
 			return fmt.Errorf("block %q: %w", b.Label, err)
 		}
 		if key := strings.TrimSpace(b.Key); key != "" {
@@ -185,12 +199,72 @@ type DocumentBlock struct {
 	AssignmentGroupID  string
 	AssignmentStrategy string
 	AssignedUserID     string
+	Branch             string
+}
+
+// ensureTriggerBlock gives a definition the trigger it must have (Design
+// Vision D6). A trigger is structural: the author should never have to add
+// one, and an existing tree that predates the canvas gains one the first time
+// it is opened, which removes the "exactly one trigger block" dead end that
+// made every palette click fail. The write is idempotent and serialised per
+// definition, so two opens cannot create two triggers.
+func ensureTriggerBlock(ctx context.Context, containerDefinitionID string) error {
+	tx, err := Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Lock the definition row so a concurrent open waits rather than racing.
+	if _, err := tx.Exec(ctx,
+		`SELECT _id FROM base_task_definition WHERE _id = $1 FOR UPDATE`,
+		containerDefinitionID); err != nil {
+		return err
+	}
+	var exists bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM base_task_definition_child
+			WHERE container_definition_id = $1 AND block_kind = 'trigger'
+		)`, containerDefinitionID).Scan(&exists); err != nil {
+		return err
+	}
+	if exists {
+		return tx.Commit(ctx)
+	}
+	// Make room at position 0 without changing the order of what is stored.
+	if _, err := tx.Exec(ctx,
+		`UPDATE base_task_definition_child SET position = position + 10
+		 WHERE container_definition_id = $1`, containerDefinitionID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO base_task_definition_child
+			(container_definition_id, child_definition_id, parent_block_id,
+			 position, sort_order, block_kind, block_type, config)
+		VALUES ($1, NULL, NULL, 0, 0, 'trigger', NULL, '{"label":"Start"}'::jsonb)`,
+		containerDefinitionID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // LoadDefinitionDocument reads a definition's block tree in document order,
 // joined to the child definitions. It is the one loader behind the canvas and
-// the raw view (Requirements AC-70).
+// the raw view (Requirements AC-70). A tree without a trigger gains one here
+// (AC-5 to AC-7) rather than at the point the author tries to save.
 func LoadDefinitionDocument(ctx context.Context, containerDefinitionID string) ([]DocumentBlock, error) {
+	if err := ensureTriggerBlock(ctx, containerDefinitionID); err != nil {
+		return nil, err
+	}
+	return ReadStoredDefinitionDocument(ctx, containerDefinitionID)
+}
+
+// ReadStoredDefinitionDocument reads the tree exactly as stored. It is the
+// loader for a path that must not write — a refusal re-render, where AC-12
+// requires the stored rows to be untouched. LoadDefinitionDocument adds the
+// trigger first; this one does not.
+func ReadStoredDefinitionDocument(ctx context.Context, containerDefinitionID string) ([]DocumentBlock, error) {
 	rows, err := Pool.Query(ctx, `
 		SELECT c._id::text, COALESCE(c.parent_block_id::text, ''),
 			COALESCE(c.child_definition_id::text, ''),
@@ -204,7 +278,7 @@ func LoadDefinitionDocument(ctx context.Context, containerDefinitionID string) (
 			COALESCE(c.depends_on_block_id, '{}'),
 			COALESCE(c.assignment_group_id::text, ''),
 			COALESCE(c.assignment_strategy, ''),
-			COALESCE(c.assigned_user_id::text, '')
+			COALESCE(c.assigned_user_id::text, ''), COALESCE(c.branch, '')
 		FROM base_task_definition_child c
 		LEFT JOIN base_task_definition d ON d._id = c.child_definition_id
 		WHERE c.container_definition_id = $1
@@ -221,7 +295,7 @@ func LoadDefinitionDocument(ctx context.Context, containerDefinitionID string) (
 			&b.Slug, &b.DisplayName, &b.IsContainer, &b.ChildStepCount,
 			&b.InputSchemaYAML, &b.VariablesYAML, &b.Kind, &b.Type, &b.Label,
 			&b.Position, &cfg, &b.InputMapping, &b.DependsOnBlockIDs,
-			&b.AssignmentGroupID, &b.AssignmentStrategy, &b.AssignedUserID); err != nil {
+			&b.AssignmentGroupID, &b.AssignmentStrategy, &b.AssignedUserID, &b.Branch); err != nil {
 			return nil, err
 		}
 		b.Config = map[string]any{}
@@ -255,7 +329,7 @@ func StoredStructureDocument(ctx context.Context, containerDefinitionID string) 
 		document = append(document, StructureBlock{
 			Key: b.ID, Parent: parent, Kind: b.Kind, Type: b.Type,
 			Slug: b.Slug, Label: label, Position: b.Position,
-			Config: b.Config, Mapping: b.InputMapping,
+			Config: b.Config, Mapping: b.InputMapping, Branch: b.Branch,
 			DependsOn:         b.DependsOnBlockIDs,
 			AssignmentGroupID: b.AssignmentGroupID, AssignmentStrategy: b.AssignmentStrategy,
 		})
