@@ -30,6 +30,7 @@ type pillOptionView struct {
 type canvasMappingView struct {
 	Name    string
 	Value   string
+	Mode    string
 	Options []pillOptionView
 }
 
@@ -78,6 +79,10 @@ type canvasBlockView struct {
 	RetryDelay      string
 	RetryBackoff    string
 	RetryOnExhausted string
+	// run_task (Design Vision D4/D9). HasRunTask marks the block type; the
+	// target is the definition whose inputs the rows map.
+	HasRunTask    bool
+	RunTaskTarget string
 }
 
 type paletteKindView struct {
@@ -125,6 +130,8 @@ func canvasKindLabel(block db.DocumentBlock) string {
 			return "End"
 		case "retry":
 			return "Retry"
+		case "run_task":
+			return "Run task"
 		default:
 			return "Control"
 		}
@@ -202,6 +209,8 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 			ScriptBody:      configString(block.Config, "script"),
 			ScriptTimeout:   configString(block.Config, "timeout_ms"),
 			ScriptOutputVar:  configString(block.Config, "output_var"),
+			HasRunTask:       block.Kind == "control" && block.Type == "run_task",
+			RunTaskTarget:    block.Slug,
 			HasRetry:         block.Kind == "control" && block.Type == "retry",
 			RetryAttempts:    configString(block.Config, "attempts"),
 			RetryDelay:       configString(block.Config, "delay_seconds"),
@@ -255,6 +264,7 @@ func canvasPalette(admin ...bool) []paletteKindView {
 		{Key: "control-for-each", Label: "For each", Kind: "control", Type: "for_each", Description: "Run a scope once per item", Available: true},
 		{Key: "control-end", Label: "End", Kind: "control", Type: "end", Description: "Close a scope", Available: true},
 		{Key: "control-retry", Label: "Retry", Kind: "control", Type: "retry", Description: "Run a scope again when it fails", Available: true},
+		{Key: "control-run-task", Label: "Run task", Kind: "control", Type: "run_task", Description: "Call a definition with mapped inputs", Available: true},
 		{Key: "control-parallel", Label: "Parallel", Kind: "control", Type: "parallel", Description: "Run branches together", Available: false},
 		{Key: "control-wait", Label: "Wait", Kind: "control", Type: "wait", Description: "Pause until a time or task", Available: false},
 		{Key: "action", Label: "Action", Kind: "action", Description: "A non-human step", Available: false},
@@ -396,9 +406,11 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 			view.Blocks[index].Pills = pills
 			names, _ := declaredInputNames(block.InputSchemaYAML)
 			for _, name := range names {
+				value, mode := mappingRow(block.InputMapping[name])
 				view.Blocks[index].Mapping = append(view.Blocks[index].Mapping, canvasMappingView{
 					Name:    name,
-					Value:   mappingString(block.InputMapping[name]),
+					Value:   value,
+					Mode:    mode,
 					Options: pills,
 				})
 			}
@@ -447,6 +459,28 @@ func mappingString(value any) string {
 		return ""
 	}
 	return string(encoded)
+}
+
+// mappingRow splits a stored mapping value into the text the row shows and
+// its mode. A bare string is the pre-slice-6 form where a `$` prefix means an
+// expression; a run_task row stores {from, value} (AC-96, AC-99).
+func mappingRow(value any) (string, string) {
+	if row, ok := value.(map[string]any); ok {
+		from, _ := row["from"].(string)
+		text, _ := row["value"].(string)
+		if from == "literal" || from == "expr" {
+			return text, from
+		}
+		return text, ""
+	}
+	text := mappingString(value)
+	if strings.HasPrefix(strings.TrimSpace(text), "$") {
+		return text, "expr"
+	}
+	if text != "" {
+		return text, "literal"
+	}
+	return "", ""
 }
 
 // isAdminRequest is the existing role predicate (Design Vision D5): the same

@@ -61,7 +61,13 @@ func checkPlumbing(ctx context.Context, containerSlug string, blocks []db.Struct
 	if message := checkScopes(blocks, keyIndex); message != "" {
 		return message
 	}
+	if message := checkRunTaskTargets(ctx, blocks); message != "" {
+		return message
+	}
 	if message := checkSelfCall(ctx, containerSlug, blocks); message != "" {
+		return message
+	}
+	if message := checkRunTaskMapping(ctx, containerInputs, blocks); message != "" {
 		return message
 	}
 	if message := checkPills(ctx, containerInputs, blocks, childKey); message != "" {
@@ -143,8 +149,7 @@ func checkTrigger(blocks []db.StructureBlock) string {
 // own children, so it needs a parent scope and cannot contain another retry
 // (Design Vision D17, AC-82/83).
 func checkScopes(blocks []db.StructureBlock, keyIndex map[string]int) string {
-	parentKeys := map[string]bool{}
-	for _, block := range blocks {
+	parentKeys := map[string]bool{}	for _, block := range blocks {
 		if parent := strings.TrimSpace(block.Parent); parent != "" {
 			parentKeys[parent] = true
 		}
@@ -180,6 +185,136 @@ func checkScopes(blocks []db.StructureBlock, keyIndex map[string]int) string {
 		}
 	}
 	return ""
+}
+
+// checkRunTaskTargets refuses a run_task that names a definition which is gone
+// (AC-102). A deleted definition is no longer a target: the save must not
+// store a call that can never resolve at run time.
+func checkRunTaskTargets(ctx context.Context, blocks []db.StructureBlock) string {
+	for _, block := range blocks {
+		if strings.TrimSpace(block.Kind) != "control" || strings.TrimSpace(block.Type) != "run_task" {
+			continue
+		}
+		slug := strings.TrimSpace(block.Slug)
+		if slug == "" {
+			continue
+		}
+		var id string
+		if err := db.Pool.QueryRow(ctx,
+			`SELECT _id::text FROM base_task_definition WHERE slug = $1 AND _deleted_at IS NULL`,
+			slug).Scan(&id); err != nil {
+			return fmt.Sprintf("run task %s: that definition does not exist: %s", plumbingLabel(block), slug)
+		}
+	}
+	return ""
+}
+
+// checkRunTaskMapping validates a run_task's input mapping against the target's
+// declared inputs (AC-96, AC-98, AC-101): a required input must be mapped, and
+// an `expr:` source must resolve against the enclosing scope.
+func checkRunTaskMapping(ctx context.Context, containerInputs []db.TaskInputField, blocks []db.StructureBlock) string {
+	cache := map[string]plumbingChild{}
+	inputNames := map[string]bool{}
+	for _, field := range containerInputs {
+		inputNames[field.Name] = true
+	}
+	for _, block := range blocks {
+		if strings.TrimSpace(block.Kind) != "control" || strings.TrimSpace(block.Type) != "run_task" {
+			continue
+		}
+		slug := strings.TrimSpace(block.Slug)
+		if slug == "" {
+			continue
+		}
+		facts := childFacts(ctx, cache, slug)
+		if len(facts.Inputs) == 0 {
+			continue
+		}
+		for _, field := range facts.Inputs {
+			raw, present := block.Mapping[field.Name]
+			if !present || raw == nil || mappingText(raw) == "" {
+				if !field.IsNullable && strings.TrimSpace(field.DefaultValue) == "" {
+					return fmt.Sprintf("run task %s: input %s is required", plumbingLabel(block), field.Name)
+				}
+				continue
+			}
+			if from, value := mappingParts(raw); from == "expr" {
+				text := strings.TrimSpace(value)
+				ref := strings.TrimSpace(strings.TrimPrefix(text, "expr:"))
+				if !expressionResolves(ref, inputNames) {
+					return fmt.Sprintf("run task %s: input %s cannot be resolved from %q", plumbingLabel(block), field.Name, text)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// normaliseRunTaskMappings keeps exactly the target's declared inputs (AC-96):
+// a row for an input the target does not declare is dropped, and a target with
+// no inputs stores an empty mapping.
+func normaliseRunTaskMappings(ctx context.Context, blocks []db.StructureBlock) {
+	cache := map[string]plumbingChild{}
+	for index := range blocks {
+		block := &blocks[index]
+		if strings.TrimSpace(block.Kind) != "control" || strings.TrimSpace(block.Type) != "run_task" {
+			continue
+		}
+		facts := childFacts(ctx, cache, strings.TrimSpace(block.Slug))
+		kept := map[string]any{}
+		for _, field := range facts.Inputs {
+			if raw, present := block.Mapping[field.Name]; present {
+				kept[field.Name] = raw
+			}
+		}
+		block.Mapping = kept
+	}
+}
+
+// mappingParts reads a mapping value's mode and text. A bare string keeps the
+// engine's pre-slice-6 convention: `$` means an expression, anything else a
+// literal. A `{from, value}` row states it explicitly.
+func mappingParts(raw any) (string, string) {
+	if row, ok := raw.(map[string]any); ok {
+		from, _ := row["from"].(string)
+		value, _ := row["value"].(string)
+		return strings.TrimSpace(from), value
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return "", ""
+	}
+	if strings.HasPrefix(strings.TrimSpace(text), "$") {
+		return "expr", text
+	}
+	return "literal", text
+}
+
+func mappingText(raw any) string {
+	_, value := mappingParts(raw)
+	return strings.TrimSpace(value)
+}
+
+// expressionResolves reports whether an expr: source names a value the
+// enclosing scope provides: one of the definition's own inputs, a block
+// result, a loop variable or a global. Anything else is refused at save.
+func expressionResolves(ref string, inputNames map[string]bool) bool {
+	ref = strings.TrimSpace(ref)
+	switch {
+	case ref == "":
+		return false
+	case strings.HasPrefix(ref, "$inputs."):
+		return inputNames[strings.TrimPrefix(ref, "$inputs.")]
+	case strings.HasPrefix(ref, "$blocks."), strings.HasPrefix(ref, "$outputs."):
+		return len(ref) > len("$blocks.")
+	case ref == "$item", ref == "$index", strings.HasPrefix(ref, "$item."), strings.HasPrefix(ref, "$index."):
+		return true
+	case ref == "$now", ref == "$requester", ref == "$run.id",
+		strings.HasPrefix(ref, "$now."), strings.HasPrefix(ref, "$run."), strings.HasPrefix(ref, "$requester."):
+		return true
+	default:
+		return false
+	}
 }
 
 // Invariant 3: a block may not be its own ancestor, and a definition may not
