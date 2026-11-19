@@ -119,6 +119,15 @@ func startRetryAttempt(ctx context.Context, q scriptQuerier, retryTaskID string,
 		VALUES ($1, $2, now())`, retryTaskID, attemptNo); err != nil {
 		return fmt.Errorf("block %q: record attempt %d: %w", b.Label, attemptNo, err)
 	}
+	// The run shows one attempt at a time: the rows of the attempt that just
+	// failed are replaced, so the board does not accumulate ghosts of work that
+	// will never continue. What each attempt did is kept in the attempt table,
+	// which is the record AC-86 asks for.
+	if attemptNo > 1 {
+		if err := deleteRetryScopeChildren(ctx, q, retryTaskID); err != nil {
+			return err
+		}
+	}
 	if err := spawnDefinitionBranchScope(ctx, q, containerDefID, retryTaskID, actorUserID, b, runInputs, scope, false, ""); err != nil {
 		return err
 	}
@@ -131,6 +140,45 @@ func startRetryAttempt(ctx context.Context, q scriptQuerier, retryTaskID string,
 		return err
 	}
 	return promoteChildrenDepth(ctx, q, retryTaskID, actorUserID, depth+1)
+}
+
+// deleteRetryScopeChildren removes every run row inside a retry block's
+// scope, deepest first. It runs only when a new attempt is about to start, so
+// the rows it deletes belong to an attempt that has already failed.
+func deleteRetryScopeChildren(ctx context.Context, q scriptQuerier, retryTaskID string) error {
+	rows, err := q.Query(ctx, `
+		WITH RECURSIVE doomed AS (
+			SELECT _id::text AS id, 0 AS depth
+			FROM base_task
+			WHERE parent_task_id = $1
+			UNION ALL
+			SELECT c._id::text, d.depth + 1
+			FROM base_task c
+			JOIN doomed d ON c.parent_task_id::text = d.id
+		)
+		SELECT id FROM doomed ORDER BY depth DESC`, retryTaskID)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, err := q.Exec(ctx, `DELETE FROM base_task WHERE _id = $1`, id); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // retryChildClosed is the close-path hook. When the task that just closed is

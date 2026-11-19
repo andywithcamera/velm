@@ -173,7 +173,7 @@ func TestRetryStopsAttemptAtFirstFailure(t *testing.T) {
 	if len(after) != 1 {
 		t.Fatalf("after the first child failed the attempt has %d children, want 1", len(after))
 	}
-	if !strings.Contains(after[0].Title, "A") {
+	if !strings.Contains(after[0].Title, "retry-first-failure-a") {
 		t.Fatalf("the surviving child is %q, want the failing child A", after[0].Title)
 	}
 }
@@ -198,7 +198,7 @@ func TestRetryRestartsFromFirstChild(t *testing.T) {
 			t.Errorf("child %q carries attempt %d, want 2", child.Title, child.Attempt)
 		}
 	}
-	if !strings.Contains(second[0].Title, "A") || !strings.Contains(second[1].Title, "B") {
+	if !strings.Contains(second[0].Title, "retry-restart-a") || !strings.Contains(second[1].Title, "retry-restart-b") {
 		t.Fatalf("attempt 2 order = [%s, %s], want [A, B]", second[0].Title, second[1].Title)
 	}
 }
@@ -326,7 +326,7 @@ func TestRetryExhaustedContinues(t *testing.T) {
 	var nextCount int
 	if err := Pool.QueryRow(ctx, `
 		SELECT count(*) FROM base_task
-		WHERE parent_task_id = $1 AND title LIKE '%Next%' AND _deleted_at IS NULL`,
+		WHERE parent_task_id = $1 AND lower(title) LIKE '%next%' AND _deleted_at IS NULL`,
 		rootID).Scan(&nextCount); err != nil {
 		t.Fatalf("count the following sibling: %v", err)
 	}
