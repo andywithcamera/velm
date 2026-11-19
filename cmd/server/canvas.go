@@ -29,6 +29,7 @@ type pillOptionView struct {
 
 type canvasMappingView struct {
 	Name    string
+	Label   string
 	Value   string
 	Mode    string
 	Options []pillOptionView
@@ -405,11 +406,16 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 			// rows belong on the block itself; Selected is a copy for the
 			// sections that read it directly.
 			view.Blocks[index].Pills = pills
-			names, _ := declaredInputNames(block.InputSchemaYAML)
-			for _, name := range names {
-				value, mode := mappingRow(block.InputMapping[name])
+			// AC-97: one row per input of the block's target, labelled with
+			// the input's own label where it has one. For a run_task the
+			// block's InputSchemaYAML is the target's schema, joined on the
+			// definition the block stores.
+			fields, _ := db.ParseTaskInputSchema(block.InputSchemaYAML)
+			for _, field := range fields {
+				value, mode := mappingRow(block.InputMapping[field.Name])
 				view.Blocks[index].Mapping = append(view.Blocks[index].Mapping, canvasMappingView{
-					Name:    name,
+					Name:    field.Name,
+					Label:   field.LabelOrName(),
 					Value:   value,
 					Mode:    mode,
 					Options: pills,
