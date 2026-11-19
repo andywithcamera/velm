@@ -140,6 +140,12 @@ func rollUpAncestors(ctx context.Context, tx scriptQuerier, taskID, actorUserID 
 			parentID, taskStateDone, reason); err != nil {
 			return err
 		}
+		// A run_task block publishes its outcome before its parent's siblings
+		// are promoted, so a following `if` on its success takes the right
+		// branch in this same pass (AC-107).
+		if err := publishRunTaskResult(ctx, tx, parentID, reason); err != nil {
+			return err
+		}
 		if err := onTaskClosed(ctx, tx, parentID, reason, actorUserID); err != nil {
 			return err
 		}

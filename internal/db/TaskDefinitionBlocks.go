@@ -69,6 +69,8 @@ func (b DefinitionBlock) controlKindLabel() string {
 		return "Run script"
 	case "retry":
 		return "Retry"
+	case "run_task":
+		return "Run task"
 	case "if":
 		return "If"
 	case "for_each":
@@ -260,6 +262,7 @@ func scopeNeedsBlockIdentity(blocks []DefinitionBlock, parentID string) bool {
 func blockMeta(containerDefID string, b DefinitionBlock) map[string]any {
 	return map[string]any{
 		"id":                      b.ID,
+		"key":                     b.blockConfigString("key"),
 		"kind":                    b.Kind,
 		"type":                    b.Type,
 		"label":                   b.Label,
@@ -694,6 +697,9 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 	switch b.Type {
 	case "run_script":
 		return runScriptBlock(ctx, q, inst, b, actorUserID)
+	case "run_task":
+		// Slice 6: spawn the target with the mapped inputs and wait for it.
+		return runRunTaskBlock(ctx, q, inst, b, containerDefID, actorUserID, scope, runInputs)
 	case "if":
 		condition, evalErr := evaluateControlCondition(b, scope)
 		if evalErr != nil {

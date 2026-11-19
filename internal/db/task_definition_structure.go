@@ -54,7 +54,13 @@ func SaveDefinitionStructure(ctx context.Context, containerDefinitionID string, 
 	definitionIDBySlug := map[string]string{}
 	for _, b := range blocks {
 		slug := strings.TrimSpace(b.Slug)
-		if b.Kind != "task" || slug == "" {
+		// A run_task block names its target the same way a task block does,
+		// and the target must resolve to an id so a later load can join its
+		// input schema and a transitive cycle can be seen from here.
+		if b.Kind != "task" && !(b.Kind == "control" && b.Type == "run_task") {
+			continue
+		}
+		if slug == "" {
 			continue
 		}
 		if _, seen := definitionIDBySlug[slug]; seen {
