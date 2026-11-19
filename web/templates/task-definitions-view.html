@@ -1,3 +1,233 @@
+{{define "task-definition-inputs-styles"}}
+<style>
+  .ui-def-inrows {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .ui-def-inrow {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.75rem;
+    background: var(--bg-base);
+  }
+
+  .ui-def-inrow-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .ui-def-inrow-pos {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+  }
+
+  .ui-def-inrow-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .ui-def-ingrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+  }
+
+  .ui-def-mini {
+    border: 1px solid var(--border-mid);
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--text-primary);
+    padding: 0.2rem 0.55rem;
+    font-family: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
+  .ui-def-mini:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .ui-def-row-error {
+    border: 1px solid rgba(220, 80, 80, 0.45);
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+  }
+
+  .ui-def-reserved {
+    font-size: 0.75rem;
+    color: rgb(180, 130, 30);
+  }
+
+  .ui-def-choices {
+    margin-top: 0.6rem;
+    display: grid;
+    gap: 0.4rem;
+    border-top: 1px dashed var(--border);
+    padding-top: 0.6rem;
+  }
+
+  .ui-def-choice {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) repeat(3, auto);
+    gap: 0.35rem;
+    align-items: center;
+  }
+</style>
+{{end}}
+
+{{define "task-definition-inputs-script"}}
+<script nonce="{{.CSPNonce}}">
+(function () {
+  var rows = document.getElementById("inputs-rows");
+  if (!rows) {
+    return;
+  }
+
+  function renumber() {
+    var items = rows.querySelectorAll("[data-input-row]");
+    for (var i = 0; i < items.length; i++) {
+      var position = items[i].querySelector("[data-row-pos]");
+      if (position) {
+        position.textContent = String(i + 1);
+      }
+    }
+  }
+
+  function typeControl(row) {
+    return row.querySelector("select[name^='data_type__']");
+  }
+
+  function syncChoices(row) {
+    var box = row.querySelector("[data-choices]");
+    if (!box) {
+      return;
+    }
+    var select = typeControl(row);
+    var on = !!select && select.value === "choice";
+    box.hidden = !on;
+    var controls = box.querySelectorAll("input, button");
+    for (var i = 0; i < controls.length; i++) {
+      controls[i].disabled = !on;
+    }
+  }
+
+  function syncDefaultNote(row) {
+    var control = row.querySelector("[name^='default_value__']");
+    var note = row.querySelector("[data-default-note]");
+    if (control && note) {
+      note.hidden = control.value.trim() === "";
+    }
+  }
+
+  function syncReserved(row) {
+    var input = row.querySelector("input[name^='name__']");
+    var name = input ? input.value.trim() : "";
+    var notes = row.querySelectorAll("[data-reserved-note]");
+    for (var i = 0; i < notes.length; i++) {
+      notes[i].hidden = notes[i].getAttribute("data-reserved-note") !== name;
+    }
+  }
+
+  function sync(row) {
+    syncChoices(row);
+    syncDefaultNote(row);
+    syncReserved(row);
+  }
+
+  function addChoice(row) {
+    var template = document.getElementById("task-input-choice-template");
+    var list = row.querySelector("[data-choices]");
+    var token = row.querySelector("input[name='row_order']");
+    if (!template || !list || !token) {
+      return;
+    }
+    var html = template.innerHTML.split("__TOKEN__").join(token.value);
+    list.insertAdjacentHTML("beforeend", html);
+    syncChoices(row);
+  }
+
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-row-action]");
+    if (!button || button.disabled) {
+      return;
+    }
+    event.preventDefault();
+    var action = button.getAttribute("data-row-action");
+    var row = button.closest("[data-input-row]");
+    if (action === "add-choice") {
+      if (row) {
+        addChoice(row);
+      }
+      return;
+    }
+    var choice = button.closest("[data-choice]");
+    if (choice) {
+      if (action === "choice-remove") {
+        choice.remove();
+      } else if (action === "choice-up" && choice.previousElementSibling) {
+        choice.parentNode.insertBefore(choice, choice.previousElementSibling);
+      } else if (action === "choice-down" && choice.nextElementSibling) {
+        choice.parentNode.insertBefore(choice.nextElementSibling, choice);
+      }
+      return;
+    }
+    if (!row) {
+      return;
+    }
+    if (action === "remove") {
+      row.remove();
+      renumber();
+    } else if (action === "up" && row.previousElementSibling) {
+      row.parentNode.insertBefore(row, row.previousElementSibling);
+      renumber();
+    } else if (action === "down" && row.nextElementSibling) {
+      row.parentNode.insertBefore(row.nextElementSibling, row);
+      renumber();
+    }
+  });
+
+  rows.addEventListener("input", function (event) {
+    var row = event.target.closest("[data-input-row]");
+    if (row) {
+      sync(row);
+    }
+  });
+  rows.addEventListener("change", function (event) {
+    var row = event.target.closest("[data-input-row]");
+    if (row) {
+      sync(row);
+    }
+  });
+  rows.addEventListener("htmx:afterSwap", function () {
+    var items = rows.querySelectorAll("[data-input-row]");
+    for (var i = 0; i < items.length; i++) {
+      sync(items[i]);
+    }
+    renumber();
+  });
+
+  var initial = rows.querySelectorAll("[data-input-row]");
+  for (var i = 0; i < initial.length; i++) {
+    sync(initial[i]);
+  }
+  renumber();
+})();
+</script>
+{{end}}
+
 {{define "task-definitions-view"}}
 <style>
   .ui-defs {
@@ -175,7 +405,7 @@
 <style>
   .ui-def {
     padding: 1.5rem;
-    max-width: 760px;
+    max-width: 900px;
     margin: 0 auto;
   }
 
@@ -194,6 +424,20 @@
   .ui-def-form {
     display: grid;
     gap: 0.9rem;
+  }
+
+  .ui-def-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1rem 1.25rem;
+    margin-top: 1.25rem;
+    background: var(--bg-surface);
+  }
+
+  .ui-def-card-title {
+    margin: 0 0 0.5rem;
+    font-size: 1rem;
+    color: var(--text-primary);
   }
 
   .ui-def-field {
@@ -261,34 +505,199 @@
     margin-top: 1rem;
     font-size: 0.85rem;
   }
+
+  .ui-def-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .ui-def-continue {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+
+  #named-user-field[hidden] {
+    display: none;
+  }
 </style>
+{{template "task-definition-inputs-styles" .}}
 <div class="ui-def" id="task-definition-new">
   <h1 class="ui-def-title">New task definition</h1>
-  <p class="ui-def-sub">The slug is the stable reference other definitions use. It is read-only once the definition exists.</p>
-  {{if .FormError}}<div class="ui-def-error" role="alert">{{.FormError}}</div>{{end}}
-  <form class="ui-def-form" method="post" action="/task-definitions">
+  <p class="ui-def-sub">Name it, decide who it lands with, declare its inputs, then author the chain on the canvas. The slug is the stable reference other definitions use; it is read-only once the definition exists.</p>
+  {{if .NewDefinition.Reason}}<div class="ui-def-error" role="alert">{{.NewDefinition.Reason}}</div>{{end}}
+  {{if .NewDefinition.Inputs.Error}}<div class="ui-def-error" role="alert">{{.NewDefinition.Inputs.Error}}</div>{{end}}
+  <form class="ui-def-form" method="post" action="/task-definitions" id="new-definition-form">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
-    <label class="ui-def-field">
-      <span class="ui-def-label">Slug</span>
-      <input class="ui-def-input" type="text" name="slug" value="{{.NewSlug}}" required maxlength="60" autocomplete="off" />
-      <span class="ui-def-help">Lowercase letters, digits and hyphens, starting with a letter or digit. 60 characters or fewer.</span>
-    </label>
-    <label class="ui-def-field">
-      <span class="ui-def-label">Display name</span>
-      <input class="ui-def-input" type="text" name="display_name" value="{{.NewDisplayName}}" required />
-    </label>
-    <label class="ui-def-field">
-      <span class="ui-def-label">Description</span>
-      <textarea class="ui-def-input" name="description" rows="4">{{.NewDescription}}</textarea>
-    </label>
-    <label class="ui-def-check">
-      <input type="checkbox" name="is_container" value="yes"{{if .NewIsContainer}} checked{{end}} />
-      <span>Container: this definition composes other definitions as steps</span>
-    </label>
-    <button class="ui-def-button" type="submit">Create definition</button>
+
+    <section class="ui-def-card" id="basics">
+      <h2 class="ui-def-card-title">Basics</h2>
+      <div class="ui-def-form">
+        <label class="ui-def-field">
+          <span class="ui-def-label">Slug</span>
+          <input class="ui-def-input" type="text" name="slug" id="new-definition-slug" value="{{.NewDefinition.Form.Slug}}" required maxlength="60" autocomplete="off" />
+          <span class="ui-def-help">Lowercase letters, digits and hyphens, starting with a letter or digit. 60 characters or fewer.</span>
+        </label>
+        <label class="ui-def-field">
+          <span class="ui-def-label">Display name</span>
+          <input class="ui-def-input" type="text" name="display_name" value="{{.NewDefinition.Form.DisplayName}}" required />
+        </label>
+        <div class="ui-def-field">
+          <span class="ui-def-label">Description</span>
+          {{template "markdown-field" .NewDefinition.DescriptionField}}
+        </div>
+        <label class="ui-def-check">
+          <input type="checkbox" name="is_active" value="yes"{{if .NewDefinition.Form.IsActive}} checked{{end}} />
+          <span>Active: this definition may be spawned from the catalogue</span>
+        </label>
+        <label class="ui-def-check">
+          <input type="checkbox" name="is_container" value="yes" />
+          <span>Container: this definition composes other definitions as steps</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="ui-def-card" id="assignment">
+      <h2 class="ui-def-card-title">Assignment</h2>
+      <p class="ui-def-help">Who a task spawned from this definition lands with. A block can override either setting.</p>
+      <div class="ui-def-form">
+        <label class="ui-def-field">
+          <span class="ui-def-label">Assignment group</span>
+          <select class="ui-def-input" name="default_group_id" id="new-assignment-group">
+            <option value="">No group</option>
+            {{range .NewDefinition.Groups}}<option value="{{.ID}}"{{if eq .ID $.NewDefinition.Form.GroupID}} selected{{end}}>{{.Name}}</option>{{end}}
+          </select>
+          <span class="ui-def-help">Spawned tasks land in this group's queue.</span>
+        </label>
+        <label class="ui-def-field">
+          <span class="ui-def-label">Assignment strategy</span>
+          <select class="ui-def-input" name="assignment_strategy" id="new-assignment-strategy">
+            <option value=""{{if eq .NewDefinition.Form.Strategy ""}} selected{{end}}>Inherit / default</option>
+            {{range .NewDefinition.Strategies}}<option value="{{.}}"{{if eq . $.NewDefinition.Form.Strategy}} selected{{end}}>{{.}}</option>{{end}}
+          </select>
+          <span class="ui-def-help">Resolved once, at spawn. A block may override it.</span>
+        </label>
+        {{/* Only a named_user strategy asks for a person; the field is present
+             in the DOM so choosing the strategy does not need a round trip, but
+             it is hidden and not required for every other strategy. */}}
+        <label class="ui-def-field" id="named-user-field" data-named-user-field data-strategy="named_user"{{if ne .NewDefinition.Form.Strategy "named_user"}} hidden{{end}}>
+          <span class="ui-def-label">Named user</span>
+          <select class="ui-def-input" name="default_assignee_id" id="new-named-user" data-named-user-select{{if eq .NewDefinition.Form.Strategy "named_user"}} required{{end}}>
+            <option value="">Choose a member…</option>
+            {{range .NewDefinition.Users}}<option value="{{.ID}}" data-groups="{{.GroupIDs}}"{{if eq .ID $.NewDefinition.Form.NamedUserID}} selected{{end}}>{{.Name}} ({{.Email}})</option>{{end}}
+          </select>
+          <span class="ui-def-help">Scoped to the assignment group: only its members can be chosen.</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="ui-def-card" id="inputs">
+      <h2 class="ui-def-card-title">Inputs</h2>
+      <p class="ui-def-help">The requester's form. Rows are in declaration order, which is the order the catalog asks for them. Inputs are optional; leave this empty to declare none.</p>
+      {{if .NewDefinition.Inputs.Notice}}<p class="ui-def-help" role="status">{{.NewDefinition.Inputs.Notice}}</p>{{end}}
+      {{if .NewDefinition.Inputs.Rows}}
+        <ol class="ui-def-inrows" id="inputs-rows">
+          {{range .NewDefinition.Inputs.Rows}}{{template "task-definition-input-row" .}}{{end}}
+        </ol>
+      {{else}}
+        <ol class="ui-def-inrows" id="inputs-rows"></ol>
+        <p class="ui-def-help" data-inputs-empty>This definition declares no inputs yet.</p>
+      {{end}}
+      <div class="ui-def-actions">
+        <button class="ui-def-mini" type="button" hx-get="/task-definitions/new/inputs/rows/new" hx-target="#inputs-rows" hx-swap="beforeend">Add row</button>
+      </div>
+      <template id="task-input-choice-template">
+        <div class="ui-def-choice" data-choice>
+          <input class="ui-def-input" type="text" name="choice_value____TOKEN__" value="" placeholder="value" aria-label="Choice value" />
+          <input class="ui-def-input" type="text" name="choice_label____TOKEN__" value="" placeholder="Label" aria-label="Choice label" />
+          <button class="ui-def-mini" type="button" data-row-action="choice-up">Move up</button>
+          <button class="ui-def-mini" type="button" data-row-action="choice-down">Move down</button>
+          <button class="ui-def-mini" type="button" data-row-action="choice-remove">Remove</button>
+        </div>
+      </template>
+    </section>
+
+    <div class="ui-def-actions">
+      <button class="ui-def-button" type="submit">Create definition and open the canvas</button>
+    </div>
   </form>
+
+  {{/* The canvas comes after creation, because the tree it edits belongs to a
+       definition row. The link is rendered here, below the inputs designer, so
+       the flow reads in the order the Brief asks for: basics, assignment,
+       inputs, then the canvas. */}}
+  <p class="ui-def-continue" id="continue-to-canvas">
+    <a href="/task-definitions/{{.NewDefinition.Form.Slug}}#canvas" data-canvas-link>Continue to the canvas</a>
+    — creating the definition opens it there with its Start trigger in place.
+  </p>
+
   <p class="ui-def-back"><a href="/task-definitions">Back to the list</a></p>
 </div>
+{{template "task-definition-inputs-script" .}}
+<script nonce="{{.CSPNonce}}">
+(function () {
+  // The named-user field appears only for the named_user strategy, is required
+  // there, and its options are scoped to the chosen assignment group. Changing
+  // the group clears a user who is not a member of the new one, so a stale
+  // selection can never be submitted.
+  var strategy = document.getElementById("new-assignment-strategy");
+  var group = document.getElementById("new-assignment-group");
+  var field = document.querySelector("[data-named-user-field]");
+  var user = document.querySelector("[data-named-user-select]");
+  if (!strategy || !group || !field || !user) {
+    return;
+  }
+
+  function memberOf(option, groupId) {
+    if (!groupId) {
+      return true;
+    }
+    var groups = (option.getAttribute("data-groups") || "").split(/\s+/);
+    for (var i = 0; i < groups.length; i++) {
+      if (groups[i] === groupId) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function scopeToGroup() {
+    var groupId = group.value;
+    var options = user.options;
+    for (var i = 0; i < options.length; i++) {
+      var option = options[i];
+      if (!option.value) {
+        continue;
+      }
+      var allowed = memberOf(option, groupId);
+      option.hidden = !allowed;
+      option.disabled = !allowed;
+    }
+    var chosen = user.options[user.selectedIndex];
+    if (chosen && chosen.value && chosen.disabled) {
+      user.value = "";
+    }
+  }
+
+  function syncStrategy() {
+    var named = strategy.value === "named_user";
+    field.hidden = !named;
+    user.required = named;
+    if (named) {
+      scopeToGroup();
+    }
+  }
+
+  strategy.addEventListener("change", syncStrategy);
+  group.addEventListener("change", function () {
+    scopeToGroup();
+  });
+  syncStrategy();
+})();
+</script>
 {{end}}
 
 {{define "task-definition-editor-view"}}
@@ -410,92 +819,6 @@
   .ui-def-back {
     margin-top: 1rem;
     font-size: 0.85rem;
-  }
-
-  .ui-def-inrows {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.75rem;
-  }
-
-  .ui-def-inrow {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 0.75rem;
-    background: var(--bg-base);
-  }
-
-  .ui-def-inrow-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .ui-def-inrow-pos {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.8rem;
-    color: var(--text-dim);
-  }
-
-  .ui-def-inrow-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-  }
-
-  .ui-def-ingrid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
-  .ui-def-mini {
-    border: 1px solid var(--border-mid);
-    border-radius: 8px;
-    background: var(--surface-soft);
-    color: var(--text-primary);
-    padding: 0.2rem 0.55rem;
-    font-family: inherit;
-    font-size: 0.78rem;
-    cursor: pointer;
-  }
-
-  .ui-def-mini:disabled {
-    opacity: 0.45;
-    cursor: default;
-  }
-
-  .ui-def-row-error {
-    border: 1px solid rgba(220, 80, 80, 0.45);
-    border-radius: 8px;
-    padding: 0.4rem 0.6rem;
-    margin-bottom: 0.5rem;
-    color: var(--text-primary);
-    font-size: 0.82rem;
-  }
-
-  .ui-def-reserved {
-    font-size: 0.75rem;
-    color: rgb(180, 130, 30);
-  }
-
-  .ui-def-choices {
-    margin-top: 0.6rem;
-    display: grid;
-    gap: 0.4rem;
-    border-top: 1px dashed var(--border);
-    padding-top: 0.6rem;
-  }
-
-  .ui-def-choice {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) repeat(3, auto);
-    gap: 0.35rem;
-    align-items: center;
   }
 
   .ui-def-raw {
@@ -635,6 +958,7 @@
     }
   }
 </style>
+  {{template "task-definition-inputs-styles" .}}
 <div class="ui-def-edit" id="task-definition-editor">
   <div class="ui-def-edit-head">
     <h1 class="ui-def-edit-title">{{.Definition.DisplayName}}</h1>
@@ -723,143 +1047,7 @@
 
   <p class="ui-def-back"><a href="/task-definitions">Back to the list</a></p>
 </div>
-<script nonce="{{.CSPNonce}}">
-(function () {
-  var rows = document.getElementById("inputs-rows");
-  if (!rows) {
-    return;
-  }
-
-  function renumber() {
-    var items = rows.querySelectorAll("[data-input-row]");
-    for (var i = 0; i < items.length; i++) {
-      var position = items[i].querySelector("[data-row-pos]");
-      if (position) {
-        position.textContent = String(i + 1);
-      }
-    }
-  }
-
-  function typeControl(row) {
-    return row.querySelector("select[name^='data_type__']");
-  }
-
-  function syncChoices(row) {
-    var box = row.querySelector("[data-choices]");
-    if (!box) {
-      return;
-    }
-    var select = typeControl(row);
-    var on = !!select && select.value === "choice";
-    box.hidden = !on;
-    var controls = box.querySelectorAll("input, button");
-    for (var i = 0; i < controls.length; i++) {
-      controls[i].disabled = !on;
-    }
-  }
-
-  function syncDefaultNote(row) {
-    var control = row.querySelector("[name^='default_value__']");
-    var note = row.querySelector("[data-default-note]");
-    if (control && note) {
-      note.hidden = control.value.trim() === "";
-    }
-  }
-
-  function syncReserved(row) {
-    var input = row.querySelector("input[name^='name__']");
-    var name = input ? input.value.trim() : "";
-    var notes = row.querySelectorAll("[data-reserved-note]");
-    for (var i = 0; i < notes.length; i++) {
-      notes[i].hidden = notes[i].getAttribute("data-reserved-note") !== name;
-    }
-  }
-
-  function sync(row) {
-    syncChoices(row);
-    syncDefaultNote(row);
-    syncReserved(row);
-  }
-
-  function addChoice(row) {
-    var template = document.getElementById("task-input-choice-template");
-    var list = row.querySelector("[data-choices]");
-    var token = row.querySelector("input[name='row_order']");
-    if (!template || !list || !token) {
-      return;
-    }
-    var html = template.innerHTML.split("__TOKEN__").join(token.value);
-    list.insertAdjacentHTML("beforeend", html);
-    syncChoices(row);
-  }
-
-  document.addEventListener("click", function (event) {
-    var button = event.target.closest("[data-row-action]");
-    if (!button || button.disabled) {
-      return;
-    }
-    event.preventDefault();
-    var action = button.getAttribute("data-row-action");
-    var row = button.closest("[data-input-row]");
-    if (action === "add-choice") {
-      if (row) {
-        addChoice(row);
-      }
-      return;
-    }
-    var choice = button.closest("[data-choice]");
-    if (choice) {
-      if (action === "choice-remove") {
-        choice.remove();
-      } else if (action === "choice-up" && choice.previousElementSibling) {
-        choice.parentNode.insertBefore(choice, choice.previousElementSibling);
-      } else if (action === "choice-down" && choice.nextElementSibling) {
-        choice.parentNode.insertBefore(choice.nextElementSibling, choice);
-      }
-      return;
-    }
-    if (!row) {
-      return;
-    }
-    if (action === "remove") {
-      row.remove();
-      renumber();
-    } else if (action === "up" && row.previousElementSibling) {
-      row.parentNode.insertBefore(row, row.previousElementSibling);
-      renumber();
-    } else if (action === "down" && row.nextElementSibling) {
-      row.parentNode.insertBefore(row.nextElementSibling, row);
-      renumber();
-    }
-  });
-
-  rows.addEventListener("input", function (event) {
-    var row = event.target.closest("[data-input-row]");
-    if (row) {
-      sync(row);
-    }
-  });
-  rows.addEventListener("change", function (event) {
-    var row = event.target.closest("[data-input-row]");
-    if (row) {
-      sync(row);
-    }
-  });
-  rows.addEventListener("htmx:afterSwap", function () {
-    var items = rows.querySelectorAll("[data-input-row]");
-    for (var i = 0; i < items.length; i++) {
-      sync(items[i]);
-    }
-    renumber();
-  });
-
-  var initial = rows.querySelectorAll("[data-input-row]");
-  for (var i = 0; i < initial.length; i++) {
-    sync(initial[i]);
-  }
-  renumber();
-})();
-</script>
+{{template "task-definition-inputs-script" .}}
 {{end}}
 
 {{define "task-definition-input-row"}}
