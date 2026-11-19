@@ -65,13 +65,17 @@
   // newParent, before the anchor's subtree or after it. Internal parent links
   // inside the subtree are untouched, which is what makes a subtree move move
   // the whole subtree.
-  function relocate(doc, key, newParent, anchorKey, before) {
+  function relocate(doc, key, newParent, anchorKey, before, branch) {
     var index = blockIndex(doc, key);
     if (index < 0) { return false; }
     var end = subtreeEnd(doc, index);
     var subtree = doc.blocks.slice(index, end);
     var rest = doc.blocks.slice(0, index).concat(doc.blocks.slice(end));
     subtree[0].parent = newParent;
+    // Branch is the `if` scope the block lands in: "then", "else", or absent
+    // everywhere else. Only the block that moves changes branch; its subtree
+    // keeps its own scopes.
+    if (branch) { subtree[0].branch = branch; } else { delete subtree[0].branch; }
     var insertAt = rest.length;
     if (anchorKey) {
       var anchorIndex = blockIndex({blocks: rest}, anchorKey);
@@ -86,8 +90,10 @@
 
   // resolveDrop turns a drag into either a rewritten document, a no-op (a
   // block dropped on itself) or a readable refusal (a block dropped into its
-  // own descendant). Callers must not post on error or noop.
-  function resolveDrop(doc, dragKey, targetKey, mode) {
+  // own descendant). Callers must not post on error or noop. `parent` and
+  // `branch` address a branch scope (the THEN or ELSE container of an if);
+  // every other mode derives them from the target block.
+  function resolveDrop(doc, dragKey, targetKey, mode, parent, branch) {
     if (!dragKey || blockIndex(doc, dragKey) < 0) {
       return {error: "That block is no longer in the document"};
     }
@@ -96,7 +102,16 @@
       return {error: "A block cannot be dropped inside itself"};
     }
     if (mode === "root") {
-      return {doc: doc, moved: relocate(doc, dragKey, "", "", false)};
+      return {doc: doc, moved: relocate(doc, dragKey, "", "", false, "")};
+    }
+    if (mode === "scope") {
+      if (!parent) {
+        return {error: "That drop target is no longer in the document"};
+      }
+      if (isDescendant(doc, parent, dragKey)) {
+        return {error: "A block cannot be dropped inside itself"};
+      }
+      return {doc: doc, moved: relocate(doc, dragKey, parent, "", false, branch || "")};
     }
     var targetIndex = blockIndex(doc, targetKey);
     if (targetIndex < 0) {
@@ -107,10 +122,12 @@
       if (target.kind !== "control") {
         return {error: "Only a control block can hold a scope"};
       }
-      return {doc: doc, moved: relocate(doc, dragKey, target.key, target.key, false)};
+      // An if has two scopes, so a drop on the block itself lands in THEN.
+      var intoBranch = target.type === "if" ? "then" : "";
+      return {doc: doc, moved: relocate(doc, dragKey, target.key, target.key, false, intoBranch)};
     }
-    var parent = target.parent || "";
-    return {doc: doc, moved: relocate(doc, dragKey, parent, target.key, mode === "before")};
+    var siblingParent = target.parent || "";
+    return {doc: doc, moved: relocate(doc, dragKey, siblingParent, target.key, mode === "before", target.branch || "")};
   }
 
   return {

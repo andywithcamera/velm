@@ -37,16 +37,19 @@ type canvasMappingView struct {
 }
 
 type canvasBlockView struct {
-	ID           string
-	Label        string
-	Slug         string
-	Kind         string
-	Type         string
-	KindLabel    string
-	Position     int
-	Depth        int
-	IndentClass  string
-	ParentID     string
+	ID          string
+	Label       string
+	Slug        string
+	Kind        string
+	Type        string
+	KindLabel   string
+	Position    int
+	Depth       int
+	IndentClass string
+	ParentID    string
+	// Branch is "then"/"else" under an if; empty elsewhere. It is carried in
+	// the canvas document so a save through the canvas does not erase it.
+	Branch       string
 	IsChain      bool
 	StepCount    int
 	Selected     bool
@@ -202,6 +205,7 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 			Depth:            d,
 			IndentClass:      canvasIndentClass(d),
 			ParentID:         block.ParentID,
+			Branch:           block.Branch,
 			IsChain:          block.IsContainer,
 			StepCount:        block.ChildStepCount,
 			Condition:        configString(block.Config, "condition"),
@@ -294,6 +298,7 @@ func documentToStructure(blocks []db.DocumentBlock) []db.StructureBlock {
 		out = append(out, db.StructureBlock{
 			Key:                block.ID,
 			Parent:             block.ParentID,
+			Branch:             block.Branch,
 			Kind:               block.Kind,
 			Type:               block.Type,
 			Slug:               block.Slug,
