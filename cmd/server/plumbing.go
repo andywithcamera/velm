@@ -149,7 +149,8 @@ func checkTrigger(blocks []db.StructureBlock) string {
 // own children, so it needs a parent scope and cannot contain another retry
 // (Design Vision D17, AC-82/83).
 func checkScopes(blocks []db.StructureBlock, keyIndex map[string]int) string {
-	parentKeys := map[string]bool{}	for _, block := range blocks {
+	parentKeys := map[string]bool{}
+	for _, block := range blocks {
 		if parent := strings.TrimSpace(block.Parent); parent != "" {
 			parentKeys[parent] = true
 		}
@@ -234,7 +235,7 @@ func checkRunTaskMapping(ctx context.Context, containerInputs []db.TaskInputFiel
 			raw, present := block.Mapping[field.Name]
 			if !present || raw == nil || mappingText(raw) == "" {
 				if !field.IsNullable && strings.TrimSpace(field.DefaultValue) == "" {
-					return fmt.Sprintf("run task %s: input %s is required", plumbingLabel(block), field.Name)
+					return fmt.Sprintf("run task %s: input %s is required", slug, field.Name)
 				}
 				continue
 			}
@@ -242,7 +243,7 @@ func checkRunTaskMapping(ctx context.Context, containerInputs []db.TaskInputFiel
 				text := strings.TrimSpace(value)
 				ref := strings.TrimSpace(strings.TrimPrefix(text, "expr:"))
 				if !expressionResolves(ref, inputNames) {
-					return fmt.Sprintf("run task %s: input %s cannot be resolved from %q", plumbingLabel(block), field.Name, text)
+					return fmt.Sprintf("run task %s: input %s cannot be resolved from %q", slug, field.Name, text)
 				}
 			}
 		}
@@ -329,7 +330,8 @@ func checkSelfCall(ctx context.Context, containerSlug string, blocks []db.Struct
 		return "The definition could not be read before saving"
 	}
 	for _, block := range blocks {
-		if strings.TrimSpace(block.Kind) != "task" {
+		if strings.TrimSpace(block.Kind) != "task" &&
+			!(strings.TrimSpace(block.Kind) == "control" && strings.TrimSpace(block.Type) == "run_task") {
 			continue
 		}
 		slug := strings.TrimSpace(block.Slug)

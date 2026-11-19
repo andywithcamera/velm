@@ -1487,6 +1487,17 @@
                         </div>
                       {{end}}
                     {{end}}
+                    {{if .HasRunTask}}
+                      {{$blk := .}}
+                      <div class="ui-canvas-field">
+                        <label for="config-target-{{.ID}}">Target definition</label>
+                        <select id="config-target-{{.ID}}" data-config="target">
+                          <option value="">— choose a definition —</option>
+                          {{range $.Canvas.Targets}}<option value="{{.Slug}}"{{if eq .Slug $blk.RunTaskTarget}} selected{{end}}>{{.DisplayName}} ({{.Slug}})</option>{{end}}
+                        </select>
+                        <span class="ui-def-help">The definition this block calls. It runs as a child and this block waits for it.</span>
+                      </div>
+                    {{end}}
                     {{range .Mapping}}
                       {{$mapping := .}}
                       <div class="ui-canvas-field">
@@ -1740,20 +1751,32 @@
           var retryField = card.querySelector("[data-config='" + retryFields[k] + "']");
           if (retryField) { block.config[retryFields[k]] = retryField.value; }
         }
+        var target = card.querySelector("[data-config='target']");
+        if (target) { block.slug = target.value; }
         var group = card.querySelector("[data-config='assignment_group_id']");
         if (group) { block.assignment_group_id = group.value; }
         var strategy = card.querySelector("[data-config='assignment_strategy']");
         if (strategy) { block.assignment_strategy = strategy.value; }
         block.input_mapping = block.input_mapping || {};
+        var cardItem = card.closest(".ui-canvas-block");
+        var isRunTask = cardItem && cardItem.getAttribute("data-type") === "run_task";
         var picks = card.querySelectorAll("[data-config-mapping]");
         for (var j = 0; j < picks.length; j++) {
           var name = picks[j].getAttribute("data-config-mapping");
           var value = picks[j].value;
+          var mode = "literal";
+          if (value === "__expr__" || (value !== "__literal__" && value.charAt(0) === "$")) {
+            mode = "expr";
+          }
           if (value === "__literal__" || value === "__expr__") {
             var literal = card.querySelector("[data-config-literal='" + name + "']");
             value = literal ? literal.value : "";
           }
-          block.input_mapping[name] = value;
+          if (isRunTask) {
+            block.input_mapping[name] = {from: mode, value: value};
+          } else {
+            block.input_mapping[name] = value;
+          }
         }
       }
     }

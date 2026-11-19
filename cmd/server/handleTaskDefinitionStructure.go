@@ -76,6 +76,9 @@ func handleTaskDefinitionStructureSave(w http.ResponseWriter, r *http.Request) {
 		refuseStep(w, r, row, message)
 		return
 	}
+	// AC-96: a run_task stores exactly its target's declared inputs. The
+	// plumbing pass has resolved every target, so this only reshapes rows.
+	normaliseRunTaskMappings(r.Context(), blocks)
 	if err := db.SaveDefinitionStructure(r.Context(), row.ID, blocks); err != nil {
 		log.Printf("task definition %q structure save failed: %v", row.Slug, err)
 		refuseStep(w, r, row, "The structure could not be saved: "+err.Error())
@@ -226,6 +229,13 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 						return "Block " + strconvQuote(label) + ": on_exhausted must be fail or continue"
 					}
 				}
+			case "run_task":
+				// D4/D9: a run task calls another definition by slug. The
+				// target is resolved and checked by the plumbing pass; the
+				// document must at least name one.
+				if strings.TrimSpace(b.Slug) == "" {
+					return "Block " + strconvQuote(label) + ": a run task block needs a target definition"
+				}
 			case "end":
 				// No configuration.
 			case "wait":
@@ -233,7 +243,7 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 			case "parallel":
 				return "Block " + strconvQuote(label) + ": parallel blocks are not available in this release"
 			default:
-				return "Block " + strconvQuote(label) + ": choose a control type — if, for_each or end"
+				return "Block " + strconvQuote(label) + ": choose a control type — if, for_each, run_script, run_task or end"
 			}
 		default:
 			return "Block " + strconvQuote(label) + ": that block kind is not available in this release"

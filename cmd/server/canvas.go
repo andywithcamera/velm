@@ -74,10 +74,10 @@ type canvasBlockView struct {
 	ScriptOutputVar string
 	// retry (Design Vision D17). HasRetry marks the block type; the rest are
 	// its policy fields, rendered in the block's own card.
-	HasRetry        bool
-	RetryAttempts   string
-	RetryDelay      string
-	RetryBackoff    string
+	HasRetry         bool
+	RetryAttempts    string
+	RetryDelay       string
+	RetryBackoff     string
 	RetryOnExhausted string
 	// run_task (Design Vision D4/D9). HasRunTask marks the block type; the
 	// target is the definition whose inputs the rows map.
@@ -106,6 +106,7 @@ type canvasView struct {
 	HasSelection bool
 	Palette      []paletteKindView
 	Candidates   []db.TaskDefinitionRow
+	Targets      []db.TaskDefinitionRow
 	Scopes       []canvasScopeView
 	Document     string
 	Error        string
@@ -189,25 +190,25 @@ func buildCanvasDocument(blocks []db.DocumentBlock) []canvasBlockView {
 	for _, block := range blocks {
 		d := depth(block.ID)
 		view = append(view, canvasBlockView{
-			ID:              block.ID,
-			Label:           canvasBlockLabel(block),
-			Slug:            block.Slug,
-			Kind:            block.Kind,
-			Type:            block.Type,
-			KindLabel:       canvasKindLabel(block),
-			Position:        block.Position,
-			Depth:           d,
-			IndentClass:     canvasIndentClass(d),
-			ParentID:        block.ParentID,
-			IsChain:         block.IsContainer,
-			StepCount:       block.ChildStepCount,
-			Condition:       configString(block.Config, "condition"),
-			GroupID:         block.AssignmentGroupID,
-			Strategy:        block.AssignmentStrategy,
-			HasCondition:    block.Kind == "control" && block.Type == "if",
-			HasScript:       block.Kind == "control" && block.Type == "run_script",
-			ScriptBody:      configString(block.Config, "script"),
-			ScriptTimeout:   configString(block.Config, "timeout_ms"),
+			ID:               block.ID,
+			Label:            canvasBlockLabel(block),
+			Slug:             block.Slug,
+			Kind:             block.Kind,
+			Type:             block.Type,
+			KindLabel:        canvasKindLabel(block),
+			Position:         block.Position,
+			Depth:            d,
+			IndentClass:      canvasIndentClass(d),
+			ParentID:         block.ParentID,
+			IsChain:          block.IsContainer,
+			StepCount:        block.ChildStepCount,
+			Condition:        configString(block.Config, "condition"),
+			GroupID:          block.AssignmentGroupID,
+			Strategy:         block.AssignmentStrategy,
+			HasCondition:     block.Kind == "control" && block.Type == "if",
+			HasScript:        block.Kind == "control" && block.Type == "run_script",
+			ScriptBody:       configString(block.Config, "script"),
+			ScriptTimeout:    configString(block.Config, "timeout_ms"),
 			ScriptOutputVar:  configString(block.Config, "output_var"),
 			HasRunTask:       block.Kind == "control" && block.Type == "run_task",
 			RunTaskTarget:    block.Slug,
@@ -443,6 +444,15 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 			continue
 		}
 		view.Candidates = append(view.Candidates, candidate)
+	}
+	// A run_task's target list is every live definition except this one
+	// (AC-95). A target already used elsewhere in the tree is still a legal
+	// target, so it is not filtered out the way a palette candidate is.
+	for _, candidate := range candidates {
+		if candidate.Slug == row.Slug {
+			continue
+		}
+		view.Targets = append(view.Targets, candidate)
 	}
 	return view, nil
 }
