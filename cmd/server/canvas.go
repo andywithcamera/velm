@@ -30,6 +30,7 @@ type pillOptionView struct {
 type canvasMappingView struct {
 	Name    string
 	Label   string
+	Type    string
 	Value   string
 	Mode    string
 	Options []pillOptionView
@@ -416,6 +417,7 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 				view.Blocks[index].Mapping = append(view.Blocks[index].Mapping, canvasMappingView{
 					Name:    field.Name,
 					Label:   field.LabelOrName(),
+					Type:    mappingTypeLabel(field.DataType),
 					Value:   value,
 					Mode:    mode,
 					Options: pills,
@@ -503,4 +505,18 @@ func mappingRow(value any) (string, string) {
 // context role the rest of the server reads, not a new role.
 func isAdminRequest(r *http.Request) bool {
 	return strings.EqualFold(strings.TrimSpace(auth.UserRoleFromRequest(r)), "admin")
+}
+
+// mappingTypeLabel is the word a run_task mapping row prints beside the input
+// name. A reference input is an object, not a string, so the author can see
+// that a literal cannot fill it; everything else prints its canonical type.
+func mappingTypeLabel(dataType string) string {
+	switch db.BaseDataType(dataType) {
+	case "reference", "entity":
+		return "object"
+	case "":
+		return "text"
+	default:
+		return db.BaseDataType(dataType)
+	}
 }

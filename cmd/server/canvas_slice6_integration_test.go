@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -44,7 +45,7 @@ func storedRunTaskMapping(t *testing.T, ctx context.Context, containerID, label 
 		t.Fatalf("read stored run_task mapping: %v", err)
 	}
 	mapping := map[string]any{}
-	if err := jsonUnmarshal(raw, &mapping); err != nil {
+	if err := json.Unmarshal(raw, &mapping); err != nil {
 		t.Fatalf("decode stored run_task mapping: %v", err)
 	}
 	return mapping
@@ -114,13 +115,23 @@ func TestRunTaskTargetExcludesSelfAndDeleted(t *testing.T) {
 		t.Fatalf("read run_task block id: %v", err)
 	}
 	body := renderDefinitionViewAs(t, slug, "?view=canvas&block="+blockID, false).Body.String()
-	if !strings.Contains(body, `value="`+live+`"`) {
+	// The page carries the container's own slug in its read-only header, so
+	// the assertion is against the target select alone.
+	start := strings.Index(body, `<select id="config-target-`)
+	if start < 0 {
+		t.Fatalf("expanded run_task card has no target select")
+	}
+	selectHTML := body[start:]
+	if end := strings.Index(selectHTML, `</select>`); end >= 0 {
+		selectHTML = selectHTML[:end]
+	}
+	if !strings.Contains(selectHTML, `value="`+live+`"`) {
 		t.Errorf("target select is missing the live definition %s", live)
 	}
-	if strings.Contains(body, `value="`+deleted+`"`) {
+	if strings.Contains(selectHTML, `value="`+deleted+`"`) {
 		t.Errorf("target select offers the deleted definition %s", deleted)
 	}
-	if strings.Contains(body, `value="`+slug+`"`) {
+	if strings.Contains(selectHTML, `value="`+slug+`"`) {
 		t.Errorf("target select offers the container itself %s", slug)
 	}
 }
@@ -178,9 +189,16 @@ func TestRunTaskZeroInputTarget(t *testing.T) {
 func TestRunTaskRendersRowPerInput(t *testing.T) {
 	ctx := taskDefinitionsTestDB(t)
 	slug := tdeSlug(t, "slice6-rows")
-	insertDefinition(t, ctx, slug, "Run task rows", "", tdeTwoInputs, true, true)
-	target := seedRunTaskTarget(t, ctx, "slice6-rows-child", tdeTwoInputs)
-	seedCanvasTree(t, ctx, slug, runTaskDocument(runTaskBlock("rt", "Call it", "", target, nil)))
+	schema := tdeTwoInputs + `- name: company
+  label: Company
+  data_type: "reference:base_entity"
+  is_nullable: true
+`
+	insertDefinition(t, ctx, slug, "Run task rows", "", schema, true, true)
+	target := seedRunTaskTarget(t, ctx, "slice6-rows-child", schema)
+	seedCanvasTree(t, ctx, slug, runTaskDocument(runTaskBlock("rt", "Call it", "", target, map[string]any{
+		"server": map[string]any{"from": "expr", "value": "$inputs.server"},
+	})))
 
 	var blockID string
 	if err := db.Pool.QueryRow(ctx, `
@@ -193,8 +211,15 @@ func TestRunTaskRendersRowPerInput(t *testing.T) {
 	for _, want := range []string{
 		`data-config-mapping="server"`,
 		`data-config-mapping="reason"`,
-		`>Server<`,
-		`>Reason<`,
+		`data-config-mapping="company"`,
+		`>Server `,
+		`>Reason `,
+		`>Company `,
+		// The entity input is visibly an object, not a string.
+		`data-config-input-type="object"`,
+		`(object)`,
+		`data-config-input-type="text"`,
+		`(text)`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("expanded run_task card is missing %q", want)
@@ -209,7 +234,9 @@ func TestRunTaskUnresolvableExpressionRefused(t *testing.T) {
 	slug := tdeSlug(t, "slice6-unresolvable")
 	containerID := insertDefinition(t, ctx, slug, "Run task unresolvable", "", tdeTwoInputs, true, true)
 	target := seedRunTaskTarget(t, ctx, "slice6-unresolvable-child", tdeTwoInputs)
-	seedCanvasTree(t, ctx, slug, runTaskDocument(runTaskBlock("rt", "Old call", "", target, nil)))
+	seedCanvasTree(t, ctx, slug, runTaskDocument(runTaskBlock("rt", "Old call", "", target, map[string]any{
+		"server": map[string]any{"from": "expr", "value": "$inputs.server"},
+	})))
 	before := storedBlockCount(t, ctx, containerID)
 
 	rec := postStructureAs(t, slug, runTaskDocument(
@@ -286,7 +313,6 @@ func TestRunTaskSelfCallRefused(t *testing.T) {
 
 // AC-104: an indirect cycle is refused at save at one hop and at two.
 func TestRunTaskIndirectCycleRefused(t *testing.T) {
-	ctx := taskDefinitionsTestDB(t)
 	for _, tc := range []struct {
 		name  string
 		middle []string

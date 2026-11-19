@@ -1500,8 +1500,8 @@
                     {{end}}
                     {{range .Mapping}}
                       {{$mapping := .}}
-                      <div class="ui-canvas-field">
-                        <label for="map-canvas-{{.Name}}">{{.Label}}</label>
+                      <div class="ui-canvas-field" data-config-input-type="{{.Type}}">
+                        <label for="map-canvas-{{.Name}}">{{.Label}} <span class="ui-canvas-mapping-type">({{.Type}})</span></label>
                         <select id="map-canvas-{{.Name}}" data-config-mapping="{{.Name}}">
                           <option value="">— nothing —</option>
                           <option value="__literal__">Literal…</option>
