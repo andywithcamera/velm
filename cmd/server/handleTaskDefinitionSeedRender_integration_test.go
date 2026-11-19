@@ -110,7 +110,7 @@ func deliveryFullSnapshot(t *testing.T, ctx context.Context, containerID string)
 		t.Fatalf("snapshot definition: %v", err)
 	}
 	rows, err := db.Pool.Query(ctx, `
-		SELECT child_definition_id::text || ':' || sort_order::text || ':' ||
+		SELECT COALESCE(child_definition_id::text, '') || ':' || sort_order::text || ':' ||
 		       COALESCE(array_to_string(depends_on, ','), '') || ':' ||
 		       COALESCE(depends_on_reason, '') || ':' || COALESCE(input_mapping::text, '')
 		FROM base_task_definition_child
@@ -139,6 +139,12 @@ func TestDeliveryFullSeedRendersInEngineOrder(t *testing.T) {
 	ctx := taskDefinitionsTestDB(t)
 	containerID := seedDeliveryFull(t, ctx)
 
+	// D6/AC-5 to AC-7: an existing tree gains its trigger block the first time
+	// it is opened, so the definition is opened once here. AC-16's "rendering
+	// wrote nothing" is then about a definition that has already been through
+	// that one deliberate backfill, which is the invariant that matters: an
+	// editor page must not rewrite stored data on every render.
+	_ = renderDefinitionView(t, "delivery_full", "?view=rows")
 	before := deliveryFullSnapshot(t, ctx, containerID)
 	// The stepper is the rows surface now that the canvas is the default.
 	rec := renderDefinitionView(t, "delivery_full", "?view=rows")

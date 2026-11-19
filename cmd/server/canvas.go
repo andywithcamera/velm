@@ -506,6 +506,11 @@ func (view *canvasView) attachContainerChildren(slug string, groups []db.AuthzGr
 	}
 	// A block whose parent is an if or a for_each renders inside that parent's
 	// container; it is left out of the top-level list.
+	//
+	// A child of an if with no branch recorded is a THEN child: the engine
+	// treats anything that is not "else" as THEN (TaskDefinitionBlocks.go), so
+	// the canvas must agree. Without this the block fell out of both the
+	// top-level list and the THEN container and vanished from the view.
 	for index := range view.Blocks {
 		parentID := view.Blocks[index].ParentID
 		for _, parent := range view.Blocks {
@@ -514,6 +519,9 @@ func (view *canvasView) attachContainerChildren(slug string, groups []db.AuthzGr
 			}
 			if parent.Kind == "control" && (parent.Type == "if" || parent.Type == "for_each") {
 				view.Blocks[index].Nested = true
+			}
+			if parent.Kind == "control" && parent.Type == "if" && view.Blocks[index].Branch != "else" {
+				view.Blocks[index].Branch = "then"
 			}
 			break
 		}

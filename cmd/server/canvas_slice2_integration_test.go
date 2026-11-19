@@ -222,10 +222,8 @@ func TestSparsePositionsRoundTrip(t *testing.T) {
 
 	rows := readStoredRows(t, containerID)
 	var positions []int
-	var labels []string
 	for _, row := range rows {
 		positions = append(positions, row.Position)
-		labels = append(labels, row.Label)
 	}
 	wantPositions := []int{0, 10, 20, 30}
 	if len(positions) != len(wantPositions) {

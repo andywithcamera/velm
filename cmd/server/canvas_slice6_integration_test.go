@@ -314,7 +314,7 @@ func TestRunTaskSelfCallRefused(t *testing.T) {
 // AC-104: an indirect cycle is refused at save at one hop and at two.
 func TestRunTaskIndirectCycleRefused(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
+		name   string
 		middle []string
 	}{
 		{"one hop", []string{"b"}},
