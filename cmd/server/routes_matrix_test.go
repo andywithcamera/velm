@@ -82,11 +82,12 @@ var routeAccess = map[string]accessClass{
 	// pages and the write actions share a path and must not share a gate: the
 	// list and the editor are readable with view, while creating a definition
 	// and saving its basics need write.
-	"GET /task-definitions":                accessView,
-	"POST /task-definitions":               accessWrite,
-	"GET /task-definitions/new":            accessView,
-	"GET /task-definitions/{slug}":         accessView,
-	"POST /task-definitions/{slug}/basics": accessWrite,
+	"GET /task-definitions":                     accessView,
+	"POST /task-definitions":                    accessWrite,
+	"GET /task-definitions/new":                 accessView,
+	"GET /task-definitions/new/inputs/rows/new": accessView,
+	"GET /task-definitions/{slug}":              accessView,
+	"POST /task-definitions/{slug}/basics":      accessWrite,
 
 	"GET /task-definitions/{slug}/inputs/rows/new":             accessView,
 	"POST /task-definitions/{slug}/inputs":                     accessWrite,

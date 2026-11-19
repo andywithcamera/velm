@@ -164,11 +164,27 @@ func handleTaskDefinitionInputRowFragment(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
+	writeTaskInputRowFragment(w, row.Slug)
+}
+
+// writeTaskInputRowFragment is the one place "Add row" is rendered, shared by
+// the definition editor and the new-definition flow (which has no slug yet).
+func writeTaskInputRowFragment(w http.ResponseWriter, label string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := templates.ExecuteTemplate(w, "task-definition-input-row", newTaskInputRowView()); err != nil {
-		log.Printf("task definition input row fragment failed for %q: %v", row.Slug, err)
+		log.Printf("task definition input row fragment failed for %q: %v", label, err)
 		http.Error(w, "Failed to render input row", http.StatusInternalServerError)
 	}
+}
+
+// handleNewDefinitionInputRowFragment answers "Add row" on the new-definition
+// page, before a definition exists to address.
+func handleNewDefinitionInputRowFragment(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeTaskInputRowFragment(w, "new definition")
 }
 
 // submittedInputRow is one row as the form sent it, already trimmed.

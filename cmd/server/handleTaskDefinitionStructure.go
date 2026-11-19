@@ -19,9 +19,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"velm/internal/db"
@@ -48,20 +50,88 @@ func handleTaskDefinitionStructureSave(w http.ResponseWriter, r *http.Request) {
 		refuseStep(w, r, row, message)
 		return
 	}
+	// A keyboard move posts the whole document plus the one move it means
+	// (Requirements AC-46). Apply it here, before validation, so the rules
+	// for a move and for a stored document cannot drift apart.
+	selectedKey := strings.TrimSpace(r.PostFormValue("selected"))
+	if direction := strings.TrimSpace(r.PostFormValue("move")); direction != "" {
+		moveKey := strings.TrimSpace(r.PostFormValue("move_key"))
+		moved, refusal := applyStructureMove(blocks, moveKey, direction)
+		if refusal != "" {
+			refuseStep(w, r, row, refusal)
+			return
+		}
+		blocks = moved
+		selectedKey = moveKey
+	}
 	if message := validateStructureBlocks(blocks); message != "" {
 		refuseStep(w, r, row, message)
 		return
 	}
-	if message := checkPlumbing(r.Context(), row.Slug, blocks); message != "" {
+	if message := checkScriptAdmin(blocks, isAdminRequest(r)); message != "" {
 		refuseStep(w, r, row, message)
 		return
 	}
+	if message := checkPlumbing(r.Context(), row.Slug, blocks, isAdminRequest(r)); message != "" {
+		refuseStep(w, r, row, message)
+		return
+	}
+	// AC-96: a run_task stores exactly its target's declared inputs. The
+	// plumbing pass has resolved every target, so this only reshapes rows.
+	normaliseRunTaskMappings(r.Context(), blocks)
 	if err := db.SaveDefinitionStructure(r.Context(), row.ID, blocks); err != nil {
 		log.Printf("task definition %q structure save failed: %v", row.Slug, err)
 		refuseStep(w, r, row, "The structure could not be saved: "+err.Error())
 		return
 	}
-	succeedStep(w, r, row, "Structure saved.", "")
+	selectedIndex := structureBlockIndex(blocks, selectedKey)
+	if isHTMXRequest(r) {
+		if id := storedBlockIDAt(r, row.ID, selectedIndex); id != "" {
+			w.Header().Set("HX-Redirect", "/task-definitions/"+row.Slug+"?view=canvas&block="+id)
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	renderEditorNotice(w, r, row, "Structure saved.", selectedIndex)
+}
+
+// renderEditorNotice re-renders the whole editor after a plain (non-HTMX)
+// canvas save, for the same reason a refusal does: the canvas form must work
+// without JavaScript and never replace the page with a fragment. selectedIndex
+// is the position, in document order, of the block the author just moved, so
+// the response comes back with that block still expanded (-1 for none).
+func renderEditorNotice(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, notice string, selectedIndex int) {
+	viewData, ok := editorViewData(w, r, row)
+	if !ok {
+		return
+	}
+	viewData["EditorView"] = "canvas"
+	canvas, _ := viewData["Canvas"].(canvasView)
+	canvas.Notice = notice
+	viewData["Canvas"] = canvas
+	if selectedIndex >= 0 {
+		if blocks, err := db.ReadStoredDefinitionDocument(r.Context(), row.ID); err == nil && selectedIndex < len(blocks) {
+			groups, _ := viewData["Groups"].([]db.AuthzGroup)
+			if selected, buildErr := buildCanvasView(r.Context(), row, blocks, blocks[selectedIndex].ID, groups, isAdminRequest(r)); buildErr == nil {
+				selected.Notice = notice
+				viewData["Canvas"] = selected
+			}
+		}
+	}
+	writeTaskDefinitionPage(w, "layout.html", viewData, http.StatusOK)
+}
+
+// storedBlockIDAt returns the id of the block at a document position after a
+// save; ids change on every structural write, so selection travels by index.
+func storedBlockIDAt(r *http.Request, definitionID string, index int) string {
+	if index < 0 {
+		return ""
+	}
+	blocks, err := db.ReadStoredDefinitionDocument(r.Context(), definitionID)
+	if err != nil || index >= len(blocks) {
+		return ""
+	}
+	return blocks[index].ID
 }
 
 // readStructureDocument accepts the JSON body the canvas sends or the
@@ -125,6 +195,48 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 				if !blockConfigPresent(b, "collection") {
 					return "Block " + strconvQuote(label) + ": a for_each block needs a collection"
 				}
+			case "run_script":
+				if blockConfigText(b, "script") == "" {
+					return "Block " + strconvQuote(label) + ": a run script block needs a script body"
+				}
+				if raw, present := b.Config["timeout_ms"]; present && raw != nil && fmt.Sprint(raw) != "" {
+					ms, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(raw)))
+					if err != nil || ms < 100 || ms > 60000 {
+						return "Block " + strconvQuote(label) + ": timeout_ms must be between 100 and 60000"
+					}
+				}
+			case "retry":
+				if raw, present := b.Config["attempts"]; present && raw != nil && fmt.Sprint(raw) != "" {
+					n, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(raw)))
+					if err != nil || n < 1 || n > 10 {
+						return "Block " + strconvQuote(label) + ": attempts must be between 1 and 10"
+					}
+				}
+				if raw, present := b.Config["delay_seconds"]; present && raw != nil && fmt.Sprint(raw) != "" {
+					n, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(raw)))
+					if err != nil || n < 0 || n > 3600 {
+						return "Block " + strconvQuote(label) + ": delay_seconds must be between 0 and 3600"
+					}
+				}
+				if backoff := blockConfigText(b, "backoff"); backoff != "" {
+					switch backoff {
+					case "none", "linear", "exponential":
+					default:
+						return "Block " + strconvQuote(label) + ": backoff must be none, linear or exponential"
+					}
+				}
+				if onExhausted := blockConfigText(b, "on_exhausted"); onExhausted != "" {
+					if onExhausted != "fail" && onExhausted != "continue" {
+						return "Block " + strconvQuote(label) + ": on_exhausted must be fail or continue"
+					}
+				}
+			case "run_task":
+				// D4/D9: a run task calls another definition by slug. The
+				// target is resolved and checked by the plumbing pass; the
+				// document must at least name one.
+				if strings.TrimSpace(b.Slug) == "" {
+					return "Block " + strconvQuote(label) + ": a run task block needs a target definition"
+				}
 			case "end":
 				// No configuration.
 			case "wait":
@@ -132,7 +244,7 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 			case "parallel":
 				return "Block " + strconvQuote(label) + ": parallel blocks are not available in this release"
 			default:
-				return "Block " + strconvQuote(label) + ": choose a control type — if, for_each or end"
+				return "Block " + strconvQuote(label) + ": choose a control type — if, for_each, run_script, run_task or end"
 			}
 		default:
 			return "Block " + strconvQuote(label) + ": that block kind is not available in this release"
@@ -163,6 +275,14 @@ func validateStructureBlocks(blocks []db.StructureBlock) string {
 			}
 			if strings.TrimSpace(parentBlock.Kind) != "control" {
 				return "Block " + strconvQuote(label) + ": only a control block can hold a scope"
+			}
+			if strings.TrimSpace(parentBlock.Type) == "if" {
+				branch := strings.TrimSpace(b.Branch)
+				if branch != "" && branch != "then" && branch != "else" {
+					return "Block " + strconvQuote(label) + ": branch must be then or else"
+				}
+			} else if strings.TrimSpace(b.Branch) != "" {
+				return "Block " + strconvQuote(label) + ": only a child of an if has a branch"
 			}
 		}
 		_ = index

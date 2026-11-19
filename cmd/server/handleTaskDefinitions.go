@@ -78,11 +78,117 @@ func handleTaskDefinitionNewPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	renderNewDefinitionPage(w, r, http.StatusOK, map[string]string{}, "")
+	renderNewDefinitionPage(w, r, http.StatusOK, newDefinitionForm{IsActive: true}, taskInputsView{}, "")
 }
 
-// handleTaskDefinitionCreate inserts a definition and sends the author to its
-// editor. A duplicate live slug is a 400 naming the slug, never a 500, and a
+// newDefinitionForm is everything the one-page flow collects before the
+// definition exists. It is held so a refusal re-renders what the author typed
+// rather than an empty form.
+type newDefinitionForm struct {
+	Slug        string
+	DisplayName string
+	Description string
+	IsActive    bool
+	GroupID     string
+	Strategy    string
+	NamedUserID string
+}
+
+// namedUserOption is one member offered by the named-user field. GroupIDs is a
+// space-separated list so the client can scope the options to the chosen
+// assignment group without a round trip.
+type namedUserOption struct {
+	ID       string
+	Name     string
+	Email    string
+	GroupIDs string
+}
+
+// newDefinitionPage is the view behind the one-page flow: basics, then
+// assignment, then the named user when the strategy asks for one, then the
+// inputs designer, then the link to the canvas.
+type newDefinitionPage struct {
+	Form             newDefinitionForm
+	Reason           string
+	Groups           []db.AuthzGroup
+	Strategies       []string
+	Users            []namedUserOption
+	Inputs           taskInputsView
+	DescriptionField markdownFieldView
+}
+
+// buildNewDefinitionPage loads the choices the flow offers. Every read is a
+// page-level query, not a per-row one.
+func buildNewDefinitionPage(r *http.Request, form newDefinitionForm, inputs taskInputsView, reason string) (newDefinitionPage, error) {
+	page := newDefinitionPage{
+		Form:       form,
+		Reason:     reason,
+		Groups:     []db.AuthzGroup{},
+		Strategies: db.AssignmentStrategies,
+		Users:      []namedUserOption{},
+		Inputs:     inputs,
+		DescriptionField: markdownFieldView{
+			ID:          "new-definition-description",
+			Name:        "description",
+			Value:       form.Description,
+			Placeholder: "What this definition is for. Markdown; [[ links work.",
+			AutoExpand:  true,
+		},
+	}
+	groups, err := db.ListAuthzGroups(r.Context())
+	if err != nil {
+		return page, err
+	}
+	page.Groups = groups
+	users, err := db.ListAuthzUsers(r.Context())
+	if err != nil {
+		return page, err
+	}
+	memberships, err := db.ListAuthzGroupMemberships(r.Context())
+	if err != nil {
+		return page, err
+	}
+	byUser := make(map[string][]string, len(users))
+	for _, membership := range memberships {
+		byUser[membership.UserID] = append(byUser[membership.UserID], membership.GroupID)
+	}
+	for _, user := range users {
+		page.Users = append(page.Users, namedUserOption{
+			ID:       user.ID,
+			Name:     user.Name,
+			Email:    user.Email,
+			GroupIDs: strings.Join(byUser[user.ID], " "),
+		})
+	}
+	if page.Inputs.Reserved == nil {
+		page.Inputs.Reserved = taskInputReservedNames
+	}
+	page.Inputs.Offered = true
+	return page, nil
+}
+
+func renderNewDefinitionPage(w http.ResponseWriter, r *http.Request, status int, form newDefinitionForm, inputs taskInputsView, reason string) {
+	page, err := buildNewDefinitionPage(r, form, inputs, reason)
+	if err != nil {
+		log.Printf("new task definition page load failed: %v", err)
+		http.Error(w, "Failed to load the new definition form", http.StatusInternalServerError)
+		return
+	}
+	displayName := form.DisplayName
+	if displayName == "" {
+		displayName = "New Task Definition"
+	}
+	viewData := newViewData(w, r, "/task-definitions/new", displayName, "Operations")
+	viewData["View"] = "task-definition-new"
+	viewData["NewDefinition"] = page
+	writeTaskDefinitionPage(w, "layout.html", viewData, status)
+}
+
+// handleTaskDefinitionCreate inserts a definition from the one-page flow: the
+// four basics, the assignment choice (including a named user), and the requester
+// form authored before the definition existed. It then sends the author to the
+// canvas, where the Start trigger is already present (Design Vision D6).
+// A duplicate live slug is a 400 naming the slug, never a 500, and a
 // soft-deleted definition's slug is free (094).
 func handleTaskDefinitionCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -98,49 +204,138 @@ func handleTaskDefinitionCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	submitted := map[string]string{
-		"slug":         strings.TrimSpace(r.PostFormValue("slug")),
-		"display_name": strings.TrimSpace(r.PostFormValue("display_name")),
-		"description":  strings.TrimSpace(r.PostFormValue("description")),
+	form := newDefinitionForm{
+		Slug:        strings.TrimSpace(r.PostFormValue("slug")),
+		DisplayName: strings.TrimSpace(r.PostFormValue("display_name")),
+		Description: strings.TrimSpace(r.PostFormValue("description")),
+		IsActive:    r.PostFormValue("is_active") != "",
+		GroupID:     strings.TrimSpace(r.PostFormValue("default_group_id")),
+		Strategy:    strings.TrimSpace(r.PostFormValue("assignment_strategy")),
+		NamedUserID: strings.TrimSpace(r.PostFormValue("default_assignee_id")),
 	}
 	isContainer := r.PostFormValue("is_container") != ""
 
-	if reason := validateTaskDefinitionSlug(submitted["slug"]); reason != "" {
-		renderNewDefinitionPage(w, r, http.StatusBadRequest, submitted, reason)
+	if reason := validateTaskDefinitionSlug(form.Slug); reason != "" {
+		renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{}, reason)
 		return
 	}
-	if submitted["display_name"] == "" {
-		renderNewDefinitionPage(w, r, http.StatusBadRequest, submitted, displayNameRequired)
+	if form.DisplayName == "" {
+		renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{}, displayNameRequired)
+		return
+	}
+	if form.Strategy != "" && !db.IsAssignmentStrategy(form.Strategy) {
+		renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{},
+			"Assignment strategy must be one of unassigned, named_user, requester, from_input, random_member or round_robin")
+		return
+	}
+	if form.GroupID != "" {
+		exists, err := db.GroupExists(r.Context(), form.GroupID)
+		if err != nil {
+			log.Printf("task definition create %q group check failed: %v", form.Slug, err)
+			http.Error(w, "Failed to create task definition", http.StatusInternalServerError)
+			return
+		}
+		if !exists {
+			renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{}, "Assignment group does not exist")
+			return
+		}
+	}
+
+	// The named user is scoped to the assignment group: without a group there
+	// is nothing to scope to, so the strategy cannot be answered.
+	if form.Strategy == db.AssignmentNamedUser {
+		if form.GroupID == "" {
+			form.NamedUserID = ""
+			renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{},
+				"Choose an assignment group before naming a user")
+			return
+		}
+		if form.NamedUserID == "" {
+			renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{},
+				"A named user strategy needs a user")
+			return
+		}
+		member, err := db.UserIsGroupMember(r.Context(), form.NamedUserID, form.GroupID)
+		if err != nil {
+			log.Printf("task definition create %q membership check failed: %v", form.Slug, err)
+			http.Error(w, "Failed to create task definition", http.StatusInternalServerError)
+			return
+		}
+		if !member {
+			// The group moved away from the user; the form offers no stale
+			// selection to submit again (AC-8s-3).
+			form.NamedUserID = ""
+			renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{},
+				"That user is not a member of the chosen assignment group")
+			return
+		}
+	} else {
+		// Only a named_user strategy stores a person.
+		form.NamedUserID = ""
+	}
+
+	schema, inputsView, reason := taskInputSchemaFromSubmittedRows(r)
+	if reason != "" {
+		renderNewDefinitionPage(w, r, http.StatusBadRequest, form, inputsView, reason)
 		return
 	}
 
-	created, err := db.CreateTaskDefinition(r.Context(), submitted["slug"], submitted["display_name"], submitted["description"], isContainer)
+	created, err := db.CreateTaskDefinitionWithSetup(r.Context(), db.CreateTaskDefinitionSetup{
+		Slug:               form.Slug,
+		DisplayName:        form.DisplayName,
+		Description:        form.Description,
+		IsContainer:        isContainer,
+		IsActive:           form.IsActive,
+		DefaultGroupID:     form.GroupID,
+		AssignmentStrategy: form.Strategy,
+		NamedUserID:        form.NamedUserID,
+		InputSchemaYAML:    schema,
+	})
 	if errors.Is(err, db.ErrDuplicateTaskDefinitionSlug) {
-		renderNewDefinitionPage(w, r, http.StatusBadRequest, submitted,
-			"A definition with slug "+submitted["slug"]+" already exists")
+		renderNewDefinitionPage(w, r, http.StatusBadRequest, form, taskInputsView{},
+			"A definition with slug "+form.Slug+" already exists")
 		return
 	}
 	if err != nil {
-		log.Printf("task definition create %q failed: %v", submitted["slug"], err)
+		log.Printf("task definition create %q failed: %v", form.Slug, err)
 		http.Error(w, "Failed to create task definition", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/task-definitions/"+created.Slug, http.StatusSeeOther)
 }
 
-func renderNewDefinitionPage(w http.ResponseWriter, r *http.Request, status int, values map[string]string, reason string) {
-	displayName := values["display_name"]
-	if displayName == "" {
-		displayName = "New Task Definition"
+// taskInputSchemaFromSubmittedRows turns the flow's input rows into the column
+// the editor reads. No rows is an empty schema, not a refusal: inputs are
+// optional. Everything else goes through the editor's own row parser,
+// assembler and validators, so there is one set of rules.
+func taskInputSchemaFromSubmittedRows(r *http.Request) (string, taskInputsView, string) {
+	view := taskInputsView{Offered: true, Reserved: taskInputReservedNames}
+	if len(r.PostForm["row_order"]) == 0 {
+		return "", view, ""
 	}
-	viewData := newViewData(w, r, "/task-definitions/new", displayName, "Operations")
-	viewData["View"] = "task-definition-new"
-	viewData["NewSlug"] = values["slug"]
-	viewData["NewDisplayName"] = values["display_name"]
-	viewData["NewDescription"] = values["description"]
-	viewData["NewIsContainer"] = false
-	viewData["FormError"] = reason
-	writeTaskDefinitionPage(w, "layout.html", viewData, status)
+	submitted, refusal := parseSubmittedInputRows(r)
+	if refusal != "" {
+		view.Error = refusal
+		return "", view, refusal
+	}
+	fields, errorIndex, valueRefusal := buildTaskInputFields(submitted, nil)
+	if valueRefusal != "" {
+		view.Rows = rowsToViews(submitted, valueRefusal, errorIndex)
+		view.Notice = "Nothing was saved."
+		return "", view, valueRefusal
+	}
+	assembled, err := db.MarshalTaskInputSchema(fields)
+	if err != nil {
+		return "", view, "The inputs could not be assembled"
+	}
+	if _, err := db.ParseTaskInputSchema(assembled); err != nil {
+		message := strings.TrimPrefix(err.Error(), "parse input schema: ")
+		view.Rows = rowsToViews(submitted, message, attributeInputSchemaError(message, submitted))
+		view.Error = message
+		view.Notice = "Nothing was saved."
+		return "", view, message
+	}
+	return assembled, view, ""
 }
 
 // loadDefinitionForRequest resolves the {slug} path value, writing the 404
@@ -181,10 +376,18 @@ func renderEditorPage(w http.ResponseWriter, r *http.Request, row db.TaskDefinit
 	writeTaskDefinitionPage(w, "layout.html", viewData, status)
 }
 
-// editorViewData builds the sections every editor render needs: basics, inputs,
-// outputs and the stepper. The stepper is a database read, so it can fail; the
-// 500 is written here rather than halfway through a template.
+// editorViewData builds the sections every editor render needs. It may write:
+// the document loader adds a missing trigger (Design Vision D6).
 func editorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow) (map[string]any, bool) {
+	return buildEditorViewData(w, r, row, true)
+}
+
+// buildEditorViewData builds the sections every editor render needs: basics,
+// inputs, outputs, the stepper and the canvas. The stepper is a database read,
+// so it can fail; the 500 is written here rather than halfway through a
+// template. backfill selects whether a missing trigger is written, which a
+// refusal must not do (Requirements AC-12).
+func buildEditorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitionRow, backfill bool) (map[string]any, bool) {
 	steps, err := buildStepsView(r.Context(), row)
 	if err != nil {
 		log.Printf("task definition %q steps load failed: %v", row.Slug, err)
@@ -202,25 +405,34 @@ func editorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitio
 
 	// One document behind all three views (Requirements AC-69, AC-70). The
 	// rows view keeps its v1 stepper; canvas and raw read this tree.
-	blocks, err := db.LoadDefinitionDocument(r.Context(), row.ID)
-	if err != nil {
-		log.Printf("task definition %q document load failed: %v", row.Slug, err)
+	var blocks []db.DocumentBlock
+	var blockErr error
+	if backfill {
+		blocks, blockErr = db.LoadDefinitionDocument(r.Context(), row.ID)
+	} else {
+		blocks, blockErr = db.ReadStoredDefinitionDocument(r.Context(), row.ID)
+	}
+	if blockErr != nil {
+		log.Printf("task definition %q document load failed: %v", row.Slug, blockErr)
 		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
 		return nil, false
 	}
+	// The canvas is the only authoring view (Design Vision D1). Rows and raw
+	// stay reachable by URL as support surfaces for a human rescuing a
+	// definition the canvas cannot render; they are unlinked from the header.
 	editorView := strings.TrimSpace(r.URL.Query().Get("view"))
 	switch editorView {
-	case "canvas", "rows", "raw":
+	case "rows", "raw":
 	default:
-		editorView = "rows"
-		for _, block := range blocks {
-			if block.Kind != "task" {
-				editorView = "canvas"
-				break
-			}
-		}
+		editorView = "canvas"
 	}
-	canvas, err := buildCanvasView(r.Context(), row, blocks, strings.TrimSpace(r.URL.Query().Get("block")))
+	groups, err := db.ListAuthzGroups(r.Context())
+	if err != nil {
+		log.Printf("task definition %q group list failed: %v", row.Slug, err)
+		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
+		return nil, false
+	}
+	canvas, err := buildCanvasView(r.Context(), row, blocks, strings.TrimSpace(r.URL.Query().Get("block")), groups, isAdminRequest(r))
 	if err != nil {
 		log.Printf("task definition %q canvas load failed: %v", row.Slug, err)
 		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
@@ -229,12 +441,6 @@ func editorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefinitio
 	viewData["EditorView"] = editorView
 	viewData["Canvas"] = canvas
 	viewData["RawDocument"] = canvas.Document
-	groups, err := db.ListAuthzGroups(r.Context())
-	if err != nil {
-		log.Printf("task definition %q group list failed: %v", row.Slug, err)
-		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
-		return nil, false
-	}
 	viewData["Groups"] = groups
 	viewData["AssignmentStrategies"] = db.AssignmentStrategies
 	return viewData, true

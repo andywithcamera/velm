@@ -138,6 +138,7 @@ func registerRoutes() {
 	http.Handle("GET /task-definitions", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskDefinitionsPage)))
 	http.Handle("POST /task-definitions", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionCreate), store)))
 	http.Handle("GET /task-definitions/new", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskDefinitionNewPage)))
+	http.Handle("GET /task-definitions/new/inputs/rows/new", withAuth(authz.PermissionView, http.HandlerFunc(handleNewDefinitionInputRowFragment)))
 	http.Handle("GET /task-definitions/{slug}", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskDefinitionEditor)))
 	http.Handle("POST /task-definitions/{slug}/basics", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionBasicsSave), store)))
 	http.Handle("GET /task-definitions/{slug}/inputs/rows/new", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskDefinitionInputRowFragment)))

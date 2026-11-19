@@ -60,6 +60,9 @@ func postStepAction(t *testing.T, slug, childSlug, action string, values url.Val
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(values.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// These tests exercise the HTMX path: the stepper is swapped into
+	// #step-errors. The non-HTMX path has its own test (AC-16).
+	req.Header.Set("HX-Request", "true")
 	req.SetPathValue("slug", slug)
 	if childSlug != "" {
 		req.SetPathValue("child_slug", childSlug)
@@ -245,7 +248,7 @@ func TestStepAddAppendsAndRenders(t *testing.T) {
 		t.Errorf("second step sort_order = %d, want 20", steps[1].SortOrder)
 	}
 
-	page := getEditor(t, fixture.ContainerSlug)
+	page := getRowsEditor(t, fixture.ContainerSlug)
 	if !strings.Contains(page.Body.String(), fixture.ChildSlugs[1]) {
 		t.Error("editor reload does not show the committed step")
 	}
@@ -321,7 +324,7 @@ func TestStepRemoveAndDependedOnRefusal(t *testing.T) {
 	if steps := loadSteps(t, ctx, fixture.ContainerID); len(steps) != 2 {
 		t.Fatalf("after removal %d steps, want 2", len(steps))
 	}
-	reloaded := getEditor(t, fixture.ContainerSlug).Body.String()
+	reloaded := getRowsEditor(t, fixture.ContainerSlug).Body.String()
 	if list := stepListHTML(t, reloaded); strings.Contains(list, fixture.ChildSlugs[2]) {
 		t.Error("reload still shows the removed step")
 	}
@@ -486,7 +489,7 @@ func TestStepMappingExactAndEmptyRemoves(t *testing.T) {
 	if got := steps[0].InputMapping["reason"]; got != "two  spaces $5.00" {
 		t.Errorf("reason mapping = %q, want spacing preserved", got)
 	}
-	page := getEditor(t, fixture.ContainerSlug).Body.String()
+	page := getRowsEditor(t, fixture.ContainerSlug).Body.String()
 	if !strings.Contains(page, "two  spaces $5.00") {
 		t.Error("reload does not show the stored mapping")
 	}
@@ -548,7 +551,7 @@ func TestStepperRendersInEngineOrder(t *testing.T) {
 		t.Fatalf("seed step metadata: %v", err)
 	}
 
-	body := getEditor(t, fixture.ContainerSlug).Body.String()
+	body := getRowsEditor(t, fixture.ContainerSlug).Body.String()
 	list := stepListHTML(t, body)
 	if list == "" {
 		t.Fatalf("no step list rendered")
@@ -589,7 +592,7 @@ func TestLeafRendersNoStepper(t *testing.T) {
 	slug := tdeSlug(t, "stepleaf")
 	insertDefinition(t, ctx, slug, "Leaf Definition", "", tdeTwoInputs, false, true)
 
-	body := getEditor(t, slug).Body.String()
+	body := getRowsEditor(t, slug).Body.String()
 	if !strings.Contains(body, "This definition has no steps; it does no work itself.") {
 		t.Error("leaf does not carry the no-steps message")
 	}
@@ -604,7 +607,7 @@ func TestStepControlsAreFormsNotLinks(t *testing.T) {
 	ctx := taskDefinitionsTestDB(t)
 	fixture := seedStepFixture(t, ctx, "stepforms", 1)
 	seedStep(t, ctx, fixture.ContainerID, fixture.ChildIDs[0], 10)
-	body := getEditor(t, fixture.ContainerSlug).Body.String()
+	body := getRowsEditor(t, fixture.ContainerSlug).Body.String()
 
 	for _, action := range []string{"/steps", "/move", "/remove", "/depends", "/mapping"} {
 		if strings.Contains(body, `<a href="/task-definitions/`+fixture.ContainerSlug+action) {
@@ -666,7 +669,7 @@ locals:
 		t.Fatalf("seed variables: %v", err)
 	}
 
-	body := getEditor(t, slug).Body.String()
+	body := getRowsEditor(t, slug).Body.String()
 	for _, want := range []string{"server_uptime", "reboot_time", "not_an_output", "scratch", "read by nothing today"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("outputs card does not show %q", want)
@@ -691,4 +694,18 @@ func TestBasicsRefusesLeafWhileStepsExist(t *testing.T) {
 	if steps := loadSteps(t, ctx, fixture.ContainerID); len(steps) != 1 {
 		t.Fatalf("refusal removed the step: %d steps", len(steps))
 	}
+}
+
+// getRowsEditor renders the retained rows (stepper) surface by URL. Design
+// Vision D1 made the canvas the only documented authoring view, so these ACs
+// about the stepper are asserted at ?view=rows, which stays reachable and
+// supported even though nothing links to it.
+func getRowsEditor(t *testing.T, slug string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/task-definitions/"+slug+"?view=rows", nil)
+	req.URL.RawQuery = "view=rows"
+	req.SetPathValue("slug", slug)
+	handleTaskDefinitionEditor(rec, req)
+	return rec
 }
