@@ -575,13 +575,18 @@ func bindChildInputs(ctx context.Context, tx scriptQuerier, parentTaskID, actorU
 				scope[key] = value
 			}
 		}
-		for childInput, source := range b.InputMapping {
-			val, ok := resolveScopeRef(scope, source)
-			if !ok {
-				log.Printf("task engine: input_mapping %q -> %v unresolvable against parent scope, omitted (task %s)", childInput, source, taskID)
-				continue
+		// A control block binds no inputs of its own: a run_task's
+		// {from, value} rows are resolved when the block executes (AC-105),
+		// not as plain values here.
+		if !b.IsControl() {
+			for childInput, source := range b.InputMapping {
+				val, ok := resolveScopeRef(scope, source)
+				if !ok {
+					log.Printf("task engine: input_mapping %q -> %v unresolvable against parent scope, omitted (task %s)", childInput, source, taskID)
+					continue
+				}
+				inputs[childInput] = val
 			}
-			inputs[childInput] = val
 		}
 		childVars[taskID]["inputs"] = inputs
 		// $parent.* walks up one level from any spawned task (AC-31).
@@ -691,6 +696,15 @@ func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, ac
 	changed := false
 	scope := parentScopeBlocks(blocks, parentVars)
 	for index, b := range scope {
+		// AC-106: a run_task block is synchronous composition — the parent
+		// does not advance past it until the spawned child is terminal. A
+		// later sibling's row is created with the scope as a pending
+		// placeholder, but it is not opened while an earlier run_task is
+		// still open. When that block closes, its roll-up re-runs this pass
+		// and the sibling is promoted then.
+		if runTaskBarrier(scope[:index], siblingsByBlock) {
+			continue
+		}
 		instances := siblingsByBlock[b.ID]
 		if b.IsControl() && b.Type == "end" {
 			// AC-37: `end` is a control task that closes when the siblings it
@@ -794,6 +808,23 @@ func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, ac
 	return changed, nil
 }
 
+// runTaskBarrier reports whether an earlier run_task block in this scope is
+// still open. It is closed by its spawned child reaching a terminal state and
+// the roll-up that follows (AC-105, AC-106).
+func runTaskBarrier(earlier []DefinitionBlock, instances map[string][]childInstanceState) bool {
+	for _, b := range earlier {
+		if !b.IsControl() || b.Type != "run_task" {
+			continue
+		}
+		for _, inst := range instances[b.ID] {
+			if inst.state != taskStateDone && inst.state != taskStateSkipped {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // earlierSiblingsTerminal reports whether every instance of every block
 // before this one has reached a terminal state. An `end` waits for those.
 func earlierSiblingsTerminal(earlier []DefinitionBlock, instances map[string][]childInstanceState) bool {
@@ -872,14 +903,20 @@ func promoteBlockInstance(ctx context.Context, tx scriptQuerier, parentTaskID st
 			mappingScope[key] = value
 		}
 	}
-	for childInput, source := range b.InputMapping {
-		val, ok := resolveScopeRef(mappingScope, source)
-		if !ok {
-			log.Printf("task engine: input_mapping %q -> %v unresolvable promoting block %q of task %s, omitted",
-				childInput, source, b.Label, parentTaskID)
-			continue
+	// A control block has no input mapping of its own: its scope is the
+	// enclosing task's scope (promoteControlInstance binds that). A run_task
+	// block's rows are {from, value} pairs resolved by runRunTaskBlock at
+	// execution time (AC-99, AC-105), not plain values to bind here.
+	if !b.IsControl() {
+		for childInput, source := range b.InputMapping {
+			val, ok := resolveScopeRef(mappingScope, source)
+			if !ok {
+				log.Printf("task engine: input_mapping %q -> %v unresolvable promoting block %q of task %s, omitted",
+					childInput, source, b.Label, parentTaskID)
+				continue
+			}
+			inputs[childInput] = val
 		}
-		inputs[childInput] = val
 	}
 	inst.vars["inputs"] = inputs
 

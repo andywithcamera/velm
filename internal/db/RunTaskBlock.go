@@ -99,8 +99,25 @@ func runRunTaskBlock(ctx context.Context, q scriptQuerier, inst childInstanceSta
 		}
 	}
 	route := &taskRoute{Ready: true, Scope: scope, AssignInputs: runInputs}
-	if _, err := spawnTaskWithRouteByID(ctx, q, targetID, inst.taskID, actorUserID, inputs, route); err != nil {
+	childID, err := spawnTaskWithRouteByID(ctx, q, targetID, inst.taskID, actorUserID, inputs, route)
+	if err != nil {
 		return closeRunTaskBlock(ctx, q, inst.taskID, actorUserID, false, err)
+	}
+	// Record which run the block spawned. The block's own row says what it
+	// called and waits on, so a run can be read without querying the child
+	// definition (slice 7: "the child task number on the parent block's
+	// record").
+	var childNumber string
+	if err := q.QueryRow(ctx, `SELECT number FROM base_task WHERE _id = $1`, childID).Scan(&childNumber); err != nil {
+		return err
+	}
+	block["child_task_id"] = childID
+	block["child_task_number"] = childNumber
+	vars["block"] = block
+	if raw, err := json.Marshal(vars); err == nil {
+		if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, inst.taskID, string(raw)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
