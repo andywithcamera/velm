@@ -1188,7 +1188,7 @@
   }
   .ui-canvas-layout {
     display: grid;
-    grid-template-columns: minmax(0, 15rem) minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1fr);
     gap: 1rem;
     align-items: start;
   }
@@ -1219,6 +1219,13 @@
     font-size: 0.82rem;
     color: var(--text-primary);
     background: var(--surface-soft);
+  }
+  .ui-canvas-palette-item[draggable="true"],
+  .ui-canvas-candidate[draggable="true"] {
+    cursor: grab;
+  }
+  .ui-canvas-palette-toggle {
+    display: none;
   }
   .ui-canvas-palette-item.is-disabled {
     opacity: 0.55;
@@ -1383,8 +1390,27 @@
     font-size: 0.82rem;
     padding: 0.3rem 0.45rem;
   }
+  /* The insertion indicator: a real 2px element moved by dragover, so a drop
+     resolves to the same (parent, position) the author sees (AC-25). */
+  .ui-canvas-insert {
+    display: block;
+    height: 2px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 1px;
+    list-style: none;
+    background: var(--text-secondary);
+    pointer-events: none;
+  }
+  .ui-canvas-insert.is-hidden {
+    display: none;
+  }
   @media (max-width: 900px) {
     .ui-canvas-layout { grid-template-columns: minmax(0, 1fr); }
+    .ui-canvas-palette-toggle { display: inline-flex; }
+    #palette-body { display: none; }
+    #palette-body.is-open { display: block; }
   }
 </style>
 <section class="ui-def-card" id="canvas">
@@ -1400,31 +1426,36 @@
     <input type="hidden" name="move_key" value="{{.Canvas.Selected.ID}}" />
     <div class="ui-canvas-layout">
       <aside class="ui-canvas-panel" id="canvas-palette">
-        <h3 class="ui-canvas-title">Palette</h3>
-        <ul class="ui-canvas-palette">
-          {{range .Canvas.Palette}}
-            <li class="ui-canvas-palette-item{{if not .Available}} is-disabled{{end}}" data-palette="{{.Key}}" data-kind="{{.Kind}}" data-type="{{.Type}}" data-block-type="{{.Type}}">
-              {{if .Available}}<button class="ui-def-mini" type="button" data-add-kind="{{.Kind}}" data-add-type="{{.Type}}" data-add-key="{{.Key}}">{{.Label}}</button>{{else}}{{.Label}}<span class="ui-canvas-unavailable">not in this release</span>{{end}}
-            </li>
-          {{end}}
-        </ul>
-        <h3 class="ui-canvas-title">Definitions</h3>
-        <input class="ui-canvas-search" type="search" id="palette-search" placeholder="Search definitions…" autocomplete="off" aria-label="Search definitions on the palette" />
-        <ul class="ui-canvas-candidates" id="palette-candidates">
-          {{range .Canvas.Candidates}}
-            <li class="ui-canvas-candidate" data-candidate="{{.Slug}}" data-name="{{.DisplayName}}">
-              <button class="ui-def-mini" type="button" data-add-task="{{.Slug}}">{{.DisplayName}}</button>
-              <code>{{.Slug}}</code>
-            </li>
-          {{end}}
-        </ul>
+        <button class="ui-def-mini ui-canvas-palette-toggle" type="button" data-palette-toggle aria-expanded="false" aria-controls="palette-body">Blocks</button>
+        <div id="palette-body">
+          <h3 class="ui-canvas-title">Palette</h3>
+          <ul class="ui-canvas-palette">
+            {{range .Canvas.Palette}}
+              <li class="ui-canvas-palette-item{{if not .Available}} is-disabled{{end}}" data-palette="{{.Key}}" data-kind="{{.Kind}}" data-type="{{.Type}}" data-block-kind="{{.Kind}}" data-block-type="{{.Type}}" data-block-label="{{.Label}}"{{if .Available}} draggable="true"{{end}}>
+                {{if .Available}}<button class="ui-def-mini" type="button" data-add-kind="{{.Kind}}" data-add-type="{{.Type}}" data-add-key="{{.Key}}">{{.Label}}</button>{{else}}{{.Label}}<span class="ui-canvas-unavailable">not in this release</span>{{end}}
+              </li>
+            {{end}}
+          </ul>
+          <h3 class="ui-canvas-title">Definitions</h3>
+          <input class="ui-canvas-search" type="search" id="palette-search" placeholder="Search definitions…" autocomplete="off" aria-label="Search definitions on the palette" />
+          <ul class="ui-canvas-candidates" id="palette-candidates">
+            {{range .Canvas.Candidates}}
+              <li class="ui-canvas-candidate" data-candidate="{{.Slug}}" data-name="{{.DisplayName}}" data-block-kind="task" data-block-slug="{{.Slug}}" draggable="true">
+                <button class="ui-def-mini" type="button" data-add-task="{{.Slug}}">{{.DisplayName}}</button>
+                <code>{{.Slug}}</code>
+              </li>
+            {{end}}
+          </ul>
+        </div>
       </aside>
       <div class="ui-canvas-panel">
         <h3 class="ui-canvas-title">Tree</h3>
         <p class="ui-def-help" id="canvas-drag-error" role="alert"></p>
-        {{if .Canvas.Blocks}}
-          <ol class="ui-canvas-tree" id="canvas-tree" data-drop-root="true">
-            {{range .Canvas.Blocks}}
+        <ol class="ui-canvas-tree" id="canvas-tree" data-drop-parent="">
+          {{if not .Canvas.Blocks}}
+            <li class="ui-canvas-empty" data-drop-parent="">No blocks yet. Add a task or a control block from the palette.</li>
+          {{end}}
+          {{range .Canvas.Blocks}}
               <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected is-expanded{{end}}{{if eq .Kind "trigger"}} is-trigger{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-block-key="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}"{{if eq .Kind "trigger"}} data-trigger="true"{{else}} draggable="true"{{end}}>
                 <span class="ui-canvas-kind">{{.KindLabel}}</span>
                 <a class="ui-canvas-label" href="/task-definitions/{{$.Definition.Slug}}?view=canvas&block={{.ID}}">{{.Label}}</a>
@@ -1536,11 +1567,9 @@
                   </div>
                 {{end}}
               </li>
-            {{end}}
-          </ol>
-        {{else}}
-          <p class="ui-def-help">No blocks yet. Add a task or a control block from the palette.</p>
-        {{end}}
+          {{end}}
+          <li class="ui-canvas-insert is-hidden" id="canvas-insert" aria-hidden="true"></li>
+        </ol>
       </div>
     </div>
     <div class="ui-def-actions"><button class="ui-def-button" type="submit">Save canvas</button></div>
@@ -1663,14 +1692,123 @@
 
   // ---- Drag and drop (Design Vision D3) -------------------------------
   // A drag posts the same whole document as every other path: resolveDrop
-  // rewrites the block list, then the form submits once.
+  // rewrites the block list, then the form submits once. A drag from the
+  // palette builds the block at the drop point and then uses the same
+  // relocate/renumber transforms, so there is one insert path.
   var dragging = "";
+  var draggingPalette = null;
+  var dropKinds = {task: true, control: true, trigger: true};
 
   function clearIndicators() {
     var all = document.querySelectorAll(".is-drop-before, .is-drop-after, .is-drop-into");
     for (var i = 0; i < all.length; i++) {
       all[i].classList.remove("is-drop-before", "is-drop-after", "is-drop-into");
     }
+    var insert = document.getElementById("canvas-insert");
+    if (insert) { insert.classList.add("is-hidden"); }
+  }
+
+  // dropModeFor is the single place a pointer position becomes a mode. Both
+  // dragover (which positions the 2px indicator) and drop (which mutates the
+  // document) read it, so the line the author sees is the line that acts.
+  function dropModeFor(li, clientY) {
+    if (!li || li.getAttribute("data-trigger") === "true") {
+      return {key: "", mode: "root"};
+    }
+    var rect = li.getBoundingClientRect();
+    var ratio = rect.height > 0 ? (clientY - rect.top) / rect.height : 0.5;
+    var key = li.getAttribute("data-block-key");
+    if (li.getAttribute("data-kind") === "control" && ratio > 0.3 && ratio < 0.7) {
+      return {key: key, mode: "into"};
+    }
+    return {key: key, mode: ratio < 0.5 ? "before" : "after"};
+  }
+
+  function placeInsertIndicator(doc, li, mode) {
+    var insert = document.getElementById("canvas-insert");
+    if (!insert) { return; }
+    if (!li || mode === "root") {
+      tree.appendChild(insert);
+    } else if (mode === "into") {
+      // Append inside the scope: after the control block's last descendant.
+      var key = li.getAttribute("data-block-key");
+      var index = blockIndex(doc, key);
+      var last = key;
+      if (index >= 0) {
+        var end = VC.subtreeEnd(doc, index);
+        if (end > index + 1) { last = doc.blocks[end - 1].key; }
+      }
+      var lastEl = document.getElementById("block-" + last) || li;
+      tree.insertBefore(insert, lastEl.nextSibling);
+    } else if (mode === "before") {
+      tree.insertBefore(insert, li);
+    } else {
+      tree.insertBefore(insert, li.nextSibling);
+    }
+    insert.classList.remove("is-hidden");
+  }
+
+  function paletteBlock(spec) {
+    var block = {
+      key: "b" + Date.now(),
+      parent: "",
+      kind: spec.kind,
+      type: spec.type || "",
+      position: 0
+    };
+    if (spec.slug) { block.slug = spec.slug; }
+    block.label = spec.label || "Task";
+    if (spec.kind === "control") {
+      if (spec.type === "if") {
+        block.label = "If";
+        block.config = {label: "If", condition: "expr: true"};
+      } else if (spec.type === "for_each") {
+        block.label = "For each";
+        block.config = {label: "For each", collection: "$inputs.items"};
+      } else if (spec.type === "end") {
+        block.label = "End";
+      }
+    }
+    return block;
+  }
+
+  function dropPaletteBlock(event, li, placement) {
+    var spec = draggingPalette;
+    if (!spec) {
+      try {
+        spec = JSON.parse(event.dataTransfer.getData("application/x-velm-palette") || "null");
+      } catch (err) { spec = null; }
+    }
+    draggingPalette = null;
+    if (!spec || !dropKinds[spec.kind]) {
+      if (dragError) { dragError.textContent = "That block kind is not available in this release"; }
+      return;
+    }
+    var doc = readDocument();
+    var parent = "";
+    var anchor = "";
+    var before = false;
+    if (li && placement.mode === "into") {
+      parent = placement.key;
+      anchor = placement.key;
+    } else if (li && (placement.mode === "before" || placement.mode === "after")) {
+      var index = blockIndex(doc, placement.key);
+      if (index < 0) { return; }
+      parent = doc.blocks[index].parent || "";
+      anchor = placement.key;
+      before = placement.mode === "before";
+    }
+    var block = paletteBlock(spec);
+    block.parent = parent;
+    doc.blocks.push(block);
+    if (anchor) {
+      VC.relocate(doc, block.key, parent, anchor, before);
+    } else {
+      VC.renumber(doc);
+    }
+    writeDocument(doc);
+    if (selectedField) { selectedField.value = block.key; }
+    form.submit();
   }
 
   if (tree) {
@@ -1681,49 +1819,30 @@
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", dragging);
     });
-    tree.addEventListener("dragend", function () {
-      dragging = "";
-      clearIndicators();
-    });
     tree.addEventListener("dragover", function (event) {
       event.preventDefault();
       clearIndicators();
       var li = event.target.closest("[data-block-key]");
-      if (!li || li.getAttribute("data-trigger") === "true") {
-        tree.classList.add("is-drop-into");
-        return;
-      }
-      var rect = li.getBoundingClientRect();
-      var ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
-      var isControl = li.getAttribute("data-kind") === "control";
-      if (isControl && ratio > 0.3 && ratio < 0.7) {
-        li.classList.add("is-drop-into");
-      } else if (ratio < 0.5) {
-        li.classList.add("is-drop-before");
-      } else {
-        li.classList.add("is-drop-after");
-      }
+      var placement = dropModeFor(li, event.clientY);
+      if (li && placement.mode !== "root") { li.classList.add("is-drop-" + placement.mode); }
+      else { tree.classList.add("is-drop-into"); }
+      placeInsertIndicator(readDocument(), li, placement.mode);
     });
     tree.addEventListener("drop", function (event) {
       event.preventDefault();
-      clearIndicators();
       var li = event.target.closest("[data-block-key]");
+      var placement = dropModeFor(li, event.clientY);
       var dragKey = dragging || event.dataTransfer.getData("text/plain");
+      clearIndicators();
       dragging = "";
       if (dragError) { dragError.textContent = ""; }
+      if (draggingPalette || event.dataTransfer.getData("application/x-velm-palette")) {
+        dropPaletteBlock(event, li, placement);
+        return;
+      }
       if (!dragKey) { return; }
       var doc = readDocument();
-      var mode = "root";
-      if (li && li.getAttribute("data-trigger") !== "true") {
-        var rect = li.getBoundingClientRect();
-        var ratio = rect.height > 0 ? (event.clientY - rect.top) / rect.height : 0.5;
-        if (li.getAttribute("data-kind") === "control" && ratio > 0.3 && ratio < 0.7) {
-          mode = "into";
-        } else {
-          mode = ratio < 0.5 ? "before" : "after";
-        }
-      }
-      var result = VC.resolveDrop(doc, dragKey, li ? li.getAttribute("data-block-key") : "", mode);
+      var result = VC.resolveDrop(doc, dragKey, placement.key, placement.mode);
       if (result.error) {
         if (dragError) { dragError.textContent = result.error; }
         return;
@@ -1732,6 +1851,38 @@
       writeDocument(result.doc);
       if (selectedField) { selectedField.value = dragKey; }
       form.submit();
+    });
+  }
+
+  // A palette item carries its payload on the drag, so the drop handler can
+  // build the block even if the pointer leaves the item before release.
+  document.addEventListener("dragstart", function (event) {
+    var item = event.target.closest("#canvas-palette [data-block-kind][draggable='true']");
+    if (!item) { return; }
+    dragging = "";
+    draggingPalette = {
+      kind: item.getAttribute("data-block-kind"),
+      type: item.getAttribute("data-block-type") || "",
+      slug: item.getAttribute("data-block-slug") || "",
+      label: item.getAttribute("data-block-label") || item.getAttribute("data-name") || ""
+    };
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("application/x-velm-palette", JSON.stringify(draggingPalette));
+    event.dataTransfer.setData("text/plain", draggingPalette.label || draggingPalette.kind);
+  });
+  document.addEventListener("dragend", function () {
+    dragging = "";
+    draggingPalette = null;
+    clearIndicators();
+  });
+
+  // Under 900px the palette collapses behind this button (AC-32).
+  var paletteToggle = document.querySelector("[data-palette-toggle]");
+  var paletteBody = document.getElementById("palette-body");
+  if (paletteToggle && paletteBody) {
+    paletteToggle.addEventListener("click", function () {
+      var open = paletteBody.classList.toggle("is-open");
+      paletteToggle.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
 
