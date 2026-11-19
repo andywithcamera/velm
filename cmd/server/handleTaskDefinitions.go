@@ -426,7 +426,13 @@ func buildEditorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefi
 	default:
 		editorView = "canvas"
 	}
-	canvas, err := buildCanvasView(r.Context(), row, blocks, strings.TrimSpace(r.URL.Query().Get("block")), isAdminRequest(r))
+	groups, err := db.ListAuthzGroups(r.Context())
+	if err != nil {
+		log.Printf("task definition %q group list failed: %v", row.Slug, err)
+		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
+		return nil, false
+	}
+	canvas, err := buildCanvasView(r.Context(), row, blocks, strings.TrimSpace(r.URL.Query().Get("block")), groups, isAdminRequest(r))
 	if err != nil {
 		log.Printf("task definition %q canvas load failed: %v", row.Slug, err)
 		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
@@ -435,12 +441,6 @@ func buildEditorViewData(w http.ResponseWriter, r *http.Request, row db.TaskDefi
 	viewData["EditorView"] = editorView
 	viewData["Canvas"] = canvas
 	viewData["RawDocument"] = canvas.Document
-	groups, err := db.ListAuthzGroups(r.Context())
-	if err != nil {
-		log.Printf("task definition %q group list failed: %v", row.Slug, err)
-		http.Error(w, "Failed to load task definition", http.StatusInternalServerError)
-		return nil, false
-	}
 	viewData["Groups"] = groups
 	viewData["AssignmentStrategies"] = db.AssignmentStrategies
 	return viewData, true

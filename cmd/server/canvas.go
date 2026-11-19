@@ -88,6 +88,23 @@ type canvasBlockView struct {
 	// target is the definition whose inputs the rows map.
 	HasRunTask    bool
 	RunTaskTarget string
+	// Nested is true for a block whose children render inside a container
+	// (an if branch or a for_each scope) rather than as a sibling in the flat
+	// tree. The tree template only prints the top-level list.
+	Nested bool
+	// The container children, populated for an if (Then/Else) and a for_each
+	// (Loop). AC-24: the containers must hold their children, not decorate them.
+	ThenChildren []canvasBlockView
+	ElseChildren []canvasBlockView
+	LoopChildren []canvasBlockView
+	// Page context copied onto every block so the recursive block template can
+	// render its own links and selects without the page root in scope.
+	DefinitionSlug   string
+	Targets          []db.TaskDefinitionRow
+	Groups           []db.AuthzGroup
+	Strategies       []string
+	SelectedGroupID  string
+	SelectedStrategy string
 }
 
 type paletteKindView struct {
@@ -377,7 +394,7 @@ func scopePillsFor(ctx context.Context, containerInputs []db.TaskInputField, blo
 
 // buildCanvasView assembles the canvas, its palette, the candidate list and
 // the config rail. The rail's selection comes from ?block=<id>.
-func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.DocumentBlock, selectedID string, admin ...bool) (canvasView, error) {
+func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.DocumentBlock, selectedID string, groups []db.AuthzGroup, admin ...bool) (canvasView, error) {
 	isAdmin := len(admin) > 0 && admin[0]
 	view := canvasView{
 		IsAdmin:    isAdmin,
@@ -467,7 +484,71 @@ func buildCanvasView(ctx context.Context, row db.TaskDefinitionRow, blocks []db.
 		}
 		view.Targets = append(view.Targets, candidate)
 	}
+	view.attachContainerChildren(row.Slug, groups)
 	return view, nil
+}
+
+// attachContainerChildren copies the page-level choices onto every block, then
+// moves an if's then/else children and a for_each's children into the block's
+// own containers (Requirements AC-24): the containers must hold their
+// children, not decorate a flat list of indented siblings.
+func (view *canvasView) attachContainerChildren(slug string, groups []db.AuthzGroup) {
+	for index := range view.Blocks {
+		block := &view.Blocks[index]
+		block.DefinitionSlug = slug
+		block.Targets = view.Targets
+		block.Groups = groups
+		block.Strategies = view.Strategies
+		if view.HasSelection {
+			block.SelectedGroupID = view.Selected.GroupID
+			block.SelectedStrategy = view.Selected.Strategy
+		}
+	}
+	// A block whose parent is an if or a for_each renders inside that parent's
+	// container; it is left out of the top-level list.
+	for index := range view.Blocks {
+		parentID := view.Blocks[index].ParentID
+		for _, parent := range view.Blocks {
+			if parent.ID != parentID {
+				continue
+			}
+			if parent.Kind == "control" && (parent.Type == "if" || parent.Type == "for_each") {
+				view.Blocks[index].Nested = true
+			}
+			break
+		}
+	}
+	var childrenOf func(parentID, branch string) []canvasBlockView
+	childrenOf = func(parentID, branch string) []canvasBlockView {
+		var out []canvasBlockView
+		for _, child := range view.Blocks {
+			if child.ParentID != parentID || child.Branch != branch {
+				continue
+			}
+			if child.Kind == "control" && child.Type == "if" {
+				child.ThenChildren = childrenOf(child.ID, "then")
+				child.ElseChildren = childrenOf(child.ID, "else")
+			}
+			if child.Kind == "control" && child.Type == "for_each" {
+				child.LoopChildren = childrenOf(child.ID, "")
+			}
+			out = append(out, child)
+		}
+		return out
+	}
+	for index := range view.Blocks {
+		block := &view.Blocks[index]
+		if block.Kind != "control" {
+			continue
+		}
+		switch block.Type {
+		case "if":
+			block.ThenChildren = childrenOf(block.ID, "then")
+			block.ElseChildren = childrenOf(block.ID, "else")
+		case "for_each":
+			block.LoopChildren = childrenOf(block.ID, "")
+		}
+	}
 }
 
 func mappingString(value any) string {

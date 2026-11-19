@@ -1549,6 +1549,16 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  .ui-canvas-branch-list {
+    list-style: none;
+    margin: 0.2rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.3rem;
+  }
+  .ui-canvas-branch-list .ui-canvas-block {
+    margin-left: 0;
+  }
   .ui-canvas-kind {
     font-size: 0.72rem;
     text-transform: uppercase;
@@ -1661,129 +1671,7 @@
           {{if not .Canvas.Blocks}}
             <li class="ui-canvas-empty" data-drop-parent="">No blocks yet. Add a task or a control block from the palette.</li>
           {{end}}
-          {{range .Canvas.Blocks}}
-              <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected is-expanded{{end}}{{if eq .Kind "trigger"}} is-trigger{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-block-key="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}"{{if eq .Kind "trigger"}} data-trigger="true"{{else}} draggable="true"{{end}}>
-                <span class="ui-canvas-kind">{{.KindLabel}}</span>
-                <a class="ui-canvas-label" href="/task-definitions/{{$.Definition.Slug}}?view=canvas&block={{.ID}}">{{.Label}}</a>
-                {{if .IsChain}}<span class="ui-canvas-chain">Chain · {{.StepCount}} {{if eq .StepCount 1}}step{{else}}steps{{end}}</span>{{end}}
-                {{if .Slug}}<code>{{.Slug}}</code>{{end}}
-                <span class="ui-canvas-position">#{{.Position}}</span>
-                {{if and .Expanded (ne .Kind "trigger")}}
-                  <div class="ui-canvas-config">
-                    {{if .HasCondition}}
-                      <div class="ui-canvas-field">
-                        <label for="config-condition-{{.ID}}">Condition</label>
-                        <textarea id="config-condition-{{.ID}}" rows="3" data-config="condition">{{.Condition}}</textarea>
-                        <span class="ui-def-help">CEL behind the <code>expr:</code> prefix.</span>
-                      </div>
-                    {{end}}
-                    {{if .HasRetry}}
-                      <div class="ui-canvas-field">
-                        <label for="config-attempts-{{.ID}}">Attempts</label>
-                        <input id="config-attempts-{{.ID}}" type="number" min="1" max="10" data-config="attempts" value="{{.RetryAttempts}}" placeholder="1" />
-                        <span class="ui-def-help">1 to 10. Every attempt runs the scope from its first block.</span>
-                      </div>
-                      <div class="ui-canvas-field">
-                        <label for="config-delay-{{.ID}}">Delay (seconds)</label>
-                        <input id="config-delay-{{.ID}}" type="number" min="0" max="3600" data-config="delay_seconds" value="{{.RetryDelay}}" placeholder="0" />
-                      </div>
-                      <div class="ui-canvas-field">
-                        <label for="config-backoff-{{.ID}}">Backoff</label>
-                        <select id="config-backoff-{{.ID}}" data-config="backoff">
-                          <option value=""{{if eq .RetryBackoff ""}} selected{{end}}>none</option>
-                          <option value="none"{{if eq .RetryBackoff "none"}} selected{{end}}>none</option>
-                          <option value="linear"{{if eq .RetryBackoff "linear"}} selected{{end}}>linear</option>
-                          <option value="exponential"{{if eq .RetryBackoff "exponential"}} selected{{end}}>exponential</option>
-                        </select>
-                      </div>
-                      <div class="ui-canvas-field">
-                        <label for="config-on-exhausted-{{.ID}}">When attempts run out</label>
-                        <select id="config-on-exhausted-{{.ID}}" data-config="on_exhausted">
-                          <option value=""{{if eq .RetryOnExhausted ""}} selected{{end}}>fail</option>
-                          <option value="fail"{{if eq .RetryOnExhausted "fail"}} selected{{end}}>fail</option>
-                          <option value="continue"{{if eq .RetryOnExhausted "continue"}} selected{{end}}>continue</option>
-                        </select>
-                      </div>
-                    {{end}}
-                    {{if .HasScript}}
-                      {{if .ScriptRefused}}
-                        <p class="ui-canvas-refusal" role="alert">run script blocks require the admin role</p>
-                      {{else}}
-                        <div class="ui-canvas-field">
-                          <label for="config-script-{{.ID}}">Script</label>
-                          <textarea id="config-script-{{.ID}}" rows="8" data-config="script" spellcheck="false">{{.ScriptBody}}</textarea>
-                          <span class="ui-def-help">JavaScript. It runs in the engine sandbox and has no network access.</span>
-                        </div>
-                        <div class="ui-canvas-field">
-                          <label for="config-timeout-{{.ID}}">Timeout (ms)</label>
-                          <input id="config-timeout-{{.ID}}" type="number" min="100" max="60000" data-config="timeout_ms" value="{{.ScriptTimeout}}" />
-                        </div>
-                        <div class="ui-canvas-field">
-                          <label for="config-output-var-{{.ID}}">Result variable</label>
-                          <input id="config-output-var-{{.ID}}" type="text" data-config="output_var" value="{{.ScriptOutputVar}}" placeholder="result" />
-                        </div>
-                      {{end}}
-                    {{end}}
-                    {{if .HasRunTask}}
-                      {{$blk := .}}
-                      <div class="ui-canvas-field">
-                        <label for="config-target-{{.ID}}">Target definition</label>
-                        <select id="config-target-{{.ID}}" data-config="target">
-                          <option value="">— choose a definition —</option>
-                          {{range $.Canvas.Targets}}<option value="{{.Slug}}"{{if eq .Slug $blk.RunTaskTarget}} selected{{end}}>{{.DisplayName}} ({{.Slug}})</option>{{end}}
-                        </select>
-                        <span class="ui-def-help">The definition this block calls. It runs as a child and this block waits for it.</span>
-                      </div>
-                    {{end}}
-                    {{range .Mapping}}
-                      {{$mapping := .}}
-                      <div class="ui-canvas-field" data-config-input-type="{{.Type}}">
-                        <label for="map-canvas-{{.Name}}">{{.Label}} <span class="ui-canvas-mapping-type">({{.Type}})</span></label>
-                        <select id="map-canvas-{{.Name}}" data-config-mapping="{{.Name}}">
-                          <option value="">— nothing —</option>
-                          <option value="__literal__">Literal…</option>
-                          <option value="__expr__">Expression… (expr:)</option>
-                          {{range .Options}}<option value="{{.Value}}"{{if eq .Value $mapping.Value}} selected{{end}}>{{.Label}}</option>{{end}}
-                        </select>
-                        <input type="text" data-config-literal="{{.Name}}" value="{{.Value}}" placeholder="Literal or expr: value" />
-                      </div>
-                    {{end}}
-                    <div class="ui-canvas-field">
-                      <label for="config-group-{{.ID}}">Assignment group</label>
-                      <select id="config-group-{{.ID}}" data-config="assignment_group_id">
-                        <option value="">Inherit</option>
-                        {{range $.Groups}}<option value="{{.ID}}"{{if eq .ID $.Canvas.Selected.GroupID}} selected{{end}}>{{.Name}}</option>{{end}}
-                      </select>
-                    </div>
-                    <div class="ui-canvas-field">
-                      <label for="config-strategy-{{.ID}}">Assignment strategy</label>
-                      <select id="config-strategy-{{.ID}}" data-config="assignment_strategy">
-                        <option value="">Inherit</option>
-                        {{range $.Canvas.Strategies}}<option value="{{.}}"{{if eq . $.Canvas.Selected.Strategy}} selected{{end}}>{{.}}</option>{{end}}
-                      </select>
-                    </div>
-                    <p class="ui-def-help">Pills in scope:</p>
-                    <p>{{range .Pills}}<span class="ui-canvas-pill">{{.Label}}</span> {{end}}</p>
-                    <div class="ui-canvas-moves">
-                      <button class="ui-def-mini" type="submit" name="move" value="up" aria-label="Move up"{{if not .CanMoveUp}} disabled{{end}}>Move up</button>
-                      <button class="ui-def-mini" type="submit" name="move" value="down" aria-label="Move down"{{if not .CanMoveDown}} disabled{{end}}>Move down</button>
-                      <button class="ui-def-mini" type="submit" name="move" value="indent" aria-label="Indent"{{if not .CanIndent}} disabled{{end}}>Indent</button>
-                      <button class="ui-def-mini" type="submit" name="move" value="outdent" aria-label="Outdent"{{if not .CanOutdent}} disabled{{end}}>Outdent</button>
-                    </div>
-                  </div>
-                {{end}}
-                {{if and (eq .Kind "control") (eq .Type "if")}}
-                  <div class="ui-canvas-branches">
-                    <div class="ui-canvas-branch" data-drop-parent="{{.ID}}" data-drop-branch="then">
-                      <span class="ui-canvas-branch-label">Then</span>
-                    </div>
-                    <div class="ui-canvas-branch" data-drop-parent="{{.ID}}" data-drop-branch="else">
-                      <span class="ui-canvas-branch-label">Else</span>
-                    </div>
-                  </div>
-                {{end}}
-              </li>
-          {{end}}
+{{range .Canvas.Blocks}}{{if not .Nested}}{{template "canvasBlock" .}}{{end}}{{end}}
           <li class="ui-canvas-insert is-hidden" id="canvas-insert" aria-hidden="true"></li>
         </ol>
       </div>
@@ -2056,7 +1944,12 @@
       event.preventDefault();
       clearIndicators();
       var scopeEl = event.target.closest("[data-drop-branch]");
-      var li = scopeEl ? null : event.target.closest("[data-block-key]");
+      var li = event.target.closest("[data-block-key]");
+      // Children now render inside their branch, so a pointer over a child
+      // must address that child, not the branch that contains it. The branch
+      // only wins when its nearest block is the branch's own parent block.
+      if (scopeEl && scopeEl.closest("[data-block-key]") !== li) { scopeEl = null; }
+      if (scopeEl) { li = null; }
       var placement = dropModeFor(li, event.clientY, scopeEl);
       if (scopeEl) { scopeEl.classList.add("is-drop-into"); }
       else if (li && placement.mode !== "root") { li.classList.add("is-drop-" + placement.mode); }
@@ -2066,7 +1959,12 @@
     tree.addEventListener("drop", function (event) {
       event.preventDefault();
       var scopeEl = event.target.closest("[data-drop-branch]");
-      var li = scopeEl ? null : event.target.closest("[data-block-key]");
+      var li = event.target.closest("[data-block-key]");
+      // Children now render inside their branch, so a pointer over a child
+      // must address that child, not the branch that contains it. The branch
+      // only wins when its nearest block is the branch's own parent block.
+      if (scopeEl && scopeEl.closest("[data-block-key]") !== li) { scopeEl = null; }
+      if (scopeEl) { li = null; }
       var placement = dropModeFor(li, event.clientY, scopeEl);
       var dragKey = dragging || event.dataTransfer.getData("text/plain");
       clearIndicators();
@@ -2195,4 +2093,137 @@
     <div class="ui-def-actions"><button class="ui-def-button" type="submit">Save raw structure</button></div>
   </form>
 </section>
+{{end}}
+{{define "canvasBlock"}}
+              <li class="ui-canvas-block {{.IndentClass}}{{if .Selected}} is-selected is-expanded{{end}}{{if eq .Kind "trigger"}} is-trigger{{end}}" id="block-{{.ID}}" data-block="{{.ID}}" data-block-key="{{.ID}}" data-kind="{{.Kind}}" data-type="{{.Type}}"{{if eq .Kind "trigger"}} data-trigger="true"{{else}} draggable="true"{{end}}>
+                <span class="ui-canvas-kind">{{.KindLabel}}</span>
+                <a class="ui-canvas-label" href="/task-definitions/{{.DefinitionSlug}}?view=canvas&block={{.ID}}">{{.Label}}</a>
+                {{if .IsChain}}<span class="ui-canvas-chain">Chain · {{.StepCount}} {{if eq .StepCount 1}}step{{else}}steps{{end}}</span>{{end}}
+                {{if .Slug}}<code>{{.Slug}}</code>{{end}}
+                <span class="ui-canvas-position">#{{.Position}}</span>
+                {{if and .Expanded (ne .Kind "trigger")}}
+                  <div class="ui-canvas-config">
+                    {{if .HasCondition}}
+                      <div class="ui-canvas-field">
+                        <label for="config-condition-{{.ID}}">Condition</label>
+                        <textarea id="config-condition-{{.ID}}" rows="3" data-config="condition">{{.Condition}}</textarea>
+                        <span class="ui-def-help">CEL behind the <code>expr:</code> prefix.</span>
+                      </div>
+                    {{end}}
+                    {{if .HasRetry}}
+                      <div class="ui-canvas-field">
+                        <label for="config-attempts-{{.ID}}">Attempts</label>
+                        <input id="config-attempts-{{.ID}}" type="number" min="1" max="10" data-config="attempts" value="{{.RetryAttempts}}" placeholder="1" />
+                        <span class="ui-def-help">1 to 10. Every attempt runs the scope from its first block.</span>
+                      </div>
+                      <div class="ui-canvas-field">
+                        <label for="config-delay-{{.ID}}">Delay (seconds)</label>
+                        <input id="config-delay-{{.ID}}" type="number" min="0" max="3600" data-config="delay_seconds" value="{{.RetryDelay}}" placeholder="0" />
+                      </div>
+                      <div class="ui-canvas-field">
+                        <label for="config-backoff-{{.ID}}">Backoff</label>
+                        <select id="config-backoff-{{.ID}}" data-config="backoff">
+                          <option value=""{{if eq .RetryBackoff ""}} selected{{end}}>none</option>
+                          <option value="none"{{if eq .RetryBackoff "none"}} selected{{end}}>none</option>
+                          <option value="linear"{{if eq .RetryBackoff "linear"}} selected{{end}}>linear</option>
+                          <option value="exponential"{{if eq .RetryBackoff "exponential"}} selected{{end}}>exponential</option>
+                        </select>
+                      </div>
+                      <div class="ui-canvas-field">
+                        <label for="config-on-exhausted-{{.ID}}">When attempts run out</label>
+                        <select id="config-on-exhausted-{{.ID}}" data-config="on_exhausted">
+                          <option value=""{{if eq .RetryOnExhausted ""}} selected{{end}}>fail</option>
+                          <option value="fail"{{if eq .RetryOnExhausted "fail"}} selected{{end}}>fail</option>
+                          <option value="continue"{{if eq .RetryOnExhausted "continue"}} selected{{end}}>continue</option>
+                        </select>
+                      </div>
+                    {{end}}
+                    {{if .HasScript}}
+                      {{if .ScriptRefused}}
+                        <p class="ui-canvas-refusal" role="alert">run script blocks require the admin role</p>
+                      {{else}}
+                        <div class="ui-canvas-field">
+                          <label for="config-script-{{.ID}}">Script</label>
+                          <textarea id="config-script-{{.ID}}" rows="8" data-config="script" spellcheck="false">{{.ScriptBody}}</textarea>
+                          <span class="ui-def-help">JavaScript. It runs in the engine sandbox and has no network access.</span>
+                        </div>
+                        <div class="ui-canvas-field">
+                          <label for="config-timeout-{{.ID}}">Timeout (ms)</label>
+                          <input id="config-timeout-{{.ID}}" type="number" min="100" max="60000" data-config="timeout_ms" value="{{.ScriptTimeout}}" />
+                        </div>
+                        <div class="ui-canvas-field">
+                          <label for="config-output-var-{{.ID}}">Result variable</label>
+                          <input id="config-output-var-{{.ID}}" type="text" data-config="output_var" value="{{.ScriptOutputVar}}" placeholder="result" />
+                        </div>
+                      {{end}}
+                    {{end}}
+                    {{if .HasRunTask}}
+                      {{$blk := .}}
+                      <div class="ui-canvas-field">
+                        <label for="config-target-{{.ID}}">Target definition</label>
+                        <select id="config-target-{{.ID}}" data-config="target">
+                          <option value="">— choose a definition —</option>
+                          {{range .Targets}}<option value="{{.Slug}}"{{if eq .Slug $blk.RunTaskTarget}} selected{{end}}>{{.DisplayName}} ({{.Slug}})</option>{{end}}
+                        </select>
+                        <span class="ui-def-help">The definition this block calls. It runs as a child and this block waits for it.</span>
+                      </div>
+                    {{end}}
+                    {{range .Mapping}}
+                      {{$mapping := .}}
+                      <div class="ui-canvas-field" data-config-input-type="{{.Type}}">
+                        <label for="map-canvas-{{.Name}}">{{.Label}} <span class="ui-canvas-mapping-type">({{.Type}})</span></label>
+                        <select id="map-canvas-{{.Name}}" data-config-mapping="{{.Name}}">
+                          <option value="">— nothing —</option>
+                          <option value="__literal__">Literal…</option>
+                          <option value="__expr__">Expression… (expr:)</option>
+                          {{range .Options}}<option value="{{.Value}}"{{if eq .Value $mapping.Value}} selected{{end}}>{{.Label}}</option>{{end}}
+                        </select>
+                        <input type="text" data-config-literal="{{.Name}}" value="{{.Value}}" placeholder="Literal or expr: value" />
+                      </div>
+                    {{end}}
+                    <div class="ui-canvas-field">
+                      <label for="config-group-{{.ID}}">Assignment group</label>
+                      <select id="config-group-{{.ID}}" data-config="assignment_group_id">
+                        <option value="">Inherit</option>
+                        {{range .Groups}}<option value="{{.ID}}"{{if eq .ID $.SelectedGroupID}} selected{{end}}>{{.Name}}</option>{{end}}
+                      </select>
+                    </div>
+                    <div class="ui-canvas-field">
+                      <label for="config-strategy-{{.ID}}">Assignment strategy</label>
+                      <select id="config-strategy-{{.ID}}" data-config="assignment_strategy">
+                        <option value="">Inherit</option>
+                        {{range .Strategies}}<option value="{{.}}"{{if eq . $.SelectedStrategy}} selected{{end}}>{{.}}</option>{{end}}
+                      </select>
+                    </div>
+                    <p class="ui-def-help">Pills in scope:</p>
+                    <p>{{range .Pills}}<span class="ui-canvas-pill">{{.Label}}</span> {{end}}</p>
+                    <div class="ui-canvas-moves">
+                      <button class="ui-def-mini" type="submit" name="move" value="up" aria-label="Move up"{{if not .CanMoveUp}} disabled{{end}}>Move up</button>
+                      <button class="ui-def-mini" type="submit" name="move" value="down" aria-label="Move down"{{if not .CanMoveDown}} disabled{{end}}>Move down</button>
+                      <button class="ui-def-mini" type="submit" name="move" value="indent" aria-label="Indent"{{if not .CanIndent}} disabled{{end}}>Indent</button>
+                      <button class="ui-def-mini" type="submit" name="move" value="outdent" aria-label="Outdent"{{if not .CanOutdent}} disabled{{end}}>Outdent</button>
+                    </div>
+                  </div>
+                {{end}}
+                {{if and (eq .Kind "control") (eq .Type "if")}}
+                  <div class="ui-canvas-branches">
+                    <div class="ui-canvas-branch" data-drop-parent="{{.ID}}" data-drop-branch="then">
+                      <span class="ui-canvas-branch-label">Then</span>
+                      <ol class="ui-canvas-branch-list">{{range .ThenChildren}}{{template "canvasBlock" .}}{{end}}</ol>
+                    </div>
+                    <div class="ui-canvas-branch" data-drop-parent="{{.ID}}" data-drop-branch="else">
+                      <span class="ui-canvas-branch-label">Else</span>
+                      <ol class="ui-canvas-branch-list">{{range .ElseChildren}}{{template "canvasBlock" .}}{{end}}</ol>
+                    </div>
+                  </div>
+                {{end}}
+                {{if and (eq .Kind "control") (eq .Type "for_each")}}
+                  <div class="ui-canvas-branches">
+                    <div class="ui-canvas-branch" data-drop-parent="{{.ID}}">
+                      <span class="ui-canvas-branch-label">Each item</span>
+                      <ol class="ui-canvas-branch-list">{{range .LoopChildren}}{{template "canvasBlock" .}}{{end}}</ol>
+                    </div>
+                  </div>
+                {{end}}
+              </li>
 {{end}}

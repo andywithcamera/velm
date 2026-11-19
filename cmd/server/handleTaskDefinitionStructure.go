@@ -111,7 +111,8 @@ func renderEditorNotice(w http.ResponseWriter, r *http.Request, row db.TaskDefin
 	viewData["Canvas"] = canvas
 	if selectedIndex >= 0 {
 		if blocks, err := db.ReadStoredDefinitionDocument(r.Context(), row.ID); err == nil && selectedIndex < len(blocks) {
-			if selected, buildErr := buildCanvasView(r.Context(), row, blocks, blocks[selectedIndex].ID, isAdminRequest(r)); buildErr == nil {
+			groups, _ := viewData["Groups"].([]db.AuthzGroup)
+			if selected, buildErr := buildCanvasView(r.Context(), row, blocks, blocks[selectedIndex].ID, groups, isAdminRequest(r)); buildErr == nil {
 				selected.Notice = notice
 				viewData["Canvas"] = selected
 			}
