@@ -7,7 +7,7 @@ require (
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/gorilla/sessions v1.4.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/joho/godotenv v1.5.1
 	github.com/microcosm-cc/bluemonday v1.0.27
 	golang.org/x/crypto v0.59.0
