@@ -47,7 +47,7 @@ func RunEngineHooksAfterClose(ctx context.Context, taskID, actorUserID, closureR
 // form close that omits the field behaves like the engine's own close.
 func normalizeClosureReason(reason string) string {
 	switch reason {
-	case "completed", "cancelled", "rejected", "failed":
+	case "completed", "cancelled", "rejected", "failed", "skipped":
 		return reason
 	default:
 		return "completed"
@@ -67,7 +67,7 @@ func containerRollUpReason(children []childInstanceState) (string, bool) {
 		if !isTerminalTaskState(child.state) {
 			return "", false
 		}
-		if child.state != taskStateSkipped {
+		if child.reason == nil || *child.reason != taskClosureSkipped {
 			allSkipped = false
 		}
 		if child.state == taskStateDone && child.reason != nil {
@@ -91,9 +91,10 @@ func containerRollUpReason(children []childInstanceState) (string, bool) {
 	}
 }
 
-// isTerminalTaskState reports whether a state ends a task's life.
+// isTerminalTaskState reports whether a state ends a task's life. Since 104
+// there is one: a skipped block is closed, not a state of its own.
 func isTerminalTaskState(state string) bool {
-	return state == taskStateDone || state == taskStateSkipped
+	return state == taskStateDone
 }
 
 // rollUpAncestors walks from a task to its root, closing every ancestor

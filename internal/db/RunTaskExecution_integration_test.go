@@ -58,11 +58,20 @@ func rtChild(t *testing.T, ctx context.Context, parent, defID string) (string, m
 
 func rtState(t *testing.T, ctx context.Context, taskID string) string {
 	t.Helper()
-	var state string
-	if err := Pool.QueryRow(ctx, `SELECT state FROM base_task WHERE _id = $1`, taskID).Scan(&state); err != nil {
+	state, _ := rtStateReason(t, ctx, taskID)
+	return state
+}
+
+// rtStateReason reads state and closure_reason together: since 104 a skipped
+// block is closed, and only the reason says it did not run.
+func rtStateReason(t *testing.T, ctx context.Context, taskID string) (string, string) {
+	t.Helper()
+	var state, reason string
+	if err := Pool.QueryRow(ctx,
+		`SELECT state, COALESCE(closure_reason, '') FROM base_task WHERE _id = $1`, taskID).Scan(&state, &reason); err != nil {
 		t.Fatalf("read task state: %v", err)
 	}
-	return state
+	return state, reason
 }
 
 // AC-105: ordering spawns the target as a real child of the block's row with
@@ -231,11 +240,11 @@ func TestRunTaskChildFailurePropagates(t *testing.T) {
 	ifID, _ := rtControl(t, ctx, root, "if")
 	thenChild, _ := rtChild(t, ctx, ifID, thenDef)
 	elseChild, _ := rtChild(t, ctx, ifID, elseDef)
-	if state := rtState(t, ctx, thenChild); state != taskStateSkipped {
-		t.Errorf("THEN branch state = %q after child failure, want %q", state, taskStateSkipped)
+	if state, reason := rtStateReason(t, ctx, thenChild); state != taskStateDone || reason != taskClosureSkipped {
+		t.Errorf("THEN branch = %q/%q after child failure, want closed/skipped", state, reason)
 	}
-	if state := rtState(t, ctx, elseChild); state == taskStateSkipped {
-		t.Errorf("ELSE branch state = %q after child failure, want it to run", state)
+	if _, reason := rtStateReason(t, ctx, elseChild); reason == taskClosureSkipped {
+		t.Errorf("ELSE branch closure_reason = %q after child failure, want it to run", reason)
 	}
 
 	// Closing the ELSE work lets the run roll up: the failure has propagated

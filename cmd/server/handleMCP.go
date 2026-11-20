@@ -48,7 +48,7 @@ var mcpTools = []mcpTool{
 		Name: "list_tasks",
 		Description: "List recent tasks, newest first. Filter by state: pass \"states\" as an array " +
 			"(e.g. {\"states\":[\"ready\"]}) or \"state\" as a single string. Allowed values: pending, " +
-			"ready, in_progress, closed, skipped. Omitting the filter returns every state.",
+			"ready, in_progress, closed. Omitting the filter returns every state. A block that did not run is closed with closure_reason skipped.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{

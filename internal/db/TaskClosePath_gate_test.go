@@ -6,6 +6,9 @@ import "testing"
 // hold in both directions: firing on a re-close double-runs spawn rules, and
 // firing on any other board move runs the whole close engine on a card drag.
 // No database needed (#274).
+//
+// There is no `skipped` case: since 104 a skipped block is closed with
+// closure_reason 'skipped', so it arrives here as an already-closed row.
 func TestTaskStateWriteCloses(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -15,7 +18,6 @@ func TestTaskStateWriteCloses(t *testing.T) {
 	}{
 		{"pending to closed", taskStatePending, taskStateDone, true},
 		{"ready to closed", taskStateReady, taskStateDone, true},
-		{"skipped to closed", taskStateSkipped, taskStateDone, true},
 		{"already closed", taskStateDone, taskStateDone, false},
 		{"closed reopening", taskStateDone, taskStatePending, false},
 		{"pending to ready", taskStatePending, taskStateReady, false},

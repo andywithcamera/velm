@@ -138,12 +138,13 @@ func TestSaveRecordClearsAssigneeOnGroupChange(t *testing.T) {
 }
 
 // AC-95: the group is writable while pending and read-only afterwards, on the
-// server, one case per state in chk_base_task_state (085).
+// server, one case per state in chk_base_task_state (104: skipped is a
+// closure reason, not a state, so it is covered by the closed case).
 func TestAssignmentGroupLockedPastPending(t *testing.T) {
 	ctx := taskEngineTestDB(t)
 	f := seedAssignmentFixture(ctx, t)
 
-	for _, state := range []string{"ready", "in_progress", "closed", "skipped"} {
+	for _, state := range []string{"ready", "in_progress", "closed"} {
 		t.Run(state, func(t *testing.T) {
 			taskID := seedTaskWithAssignment(ctx, t, state, f.groupA, f.memberA)
 			rec := postBaseTaskForm(t, f.actor, taskID, "Assignment guard probe", f.groupB, f.memberB)
