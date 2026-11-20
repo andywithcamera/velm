@@ -20,9 +20,22 @@ ALTER TABLE base_task
 ALTER TABLE base_task
 	DROP CONSTRAINT IF EXISTS chk_base_task_closure_reason;
 
+-- The conversion runs with the user triggers off. base_task_before_write()
+-- carries the assignment guard (assigned_user_id must belong to
+-- assignment_group_id) and fires on any UPDATE of the row, so a single legacy
+-- or demo row whose assignment no longer matches its group would abort the
+-- whole migration — a data-shape problem that has nothing to do with the
+-- state rename, on a migration that must run everywhere. Nothing else about
+-- the rows changes: closed_at was already stamped when the task was skipped,
+-- and with the trigger off it is preserved as the historical close time
+-- instead of being rewritten to NOW().
+ALTER TABLE base_task DISABLE TRIGGER USER;
+
 UPDATE base_task
 	SET state = 'closed', closure_reason = 'skipped'
 	WHERE state = 'skipped';
+
+ALTER TABLE base_task ENABLE TRIGGER USER;
 
 ALTER TABLE base_task
 	ADD CONSTRAINT chk_base_task_state CHECK (

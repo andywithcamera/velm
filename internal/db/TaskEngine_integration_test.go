@@ -408,8 +408,8 @@ func TestDependencyEdgesFanIn(t *testing.T) {
 	if got := countState(ctx, t, parentID, "ready"); got != 3 {
 		t.Fatalf("after spawn: %d ready, want 3", got)
 	}
-	if got := countState(ctx, t, parentID, "skipped"); got != 1 {
-		t.Fatalf("after spawn: risk should be skipped, got %d", got)
+	if got := countSkipped(ctx, t, parentID); got != 1 {
+		t.Fatalf("after spawn: risk should be closed/skipped, got %d", got)
 	}
 	if got := countState(ctx, t, parentID, "pending"); got != 1 {
 		t.Fatalf("after spawn: %d pending, want 1 (review)", got)
@@ -443,8 +443,8 @@ func TestDependencyEdgesFanIn(t *testing.T) {
 	if got := countState(ctx, t, parentID, "ready"); got != 2 {
 		t.Fatalf("want 2 ready (comms + review), got %d", got)
 	}
-	if got := countState(ctx, t, parentID, "skipped"); got != 1 {
-		t.Fatalf("risk should be skipped, got %d", got)
+	if got := countSkipped(ctx, t, parentID); got != 1 {
+		t.Fatalf("risk should be closed/skipped, got %d", got)
 	}
 }
 
@@ -574,6 +574,21 @@ func assignAll(ctx context.Context, t *testing.T, parentID, groupID, actorID str
 		WHERE parent_task_id = $1 OR _id = $1`, parentID, groupID, actorID); err != nil {
 		t.Fatalf("assign: %v", err)
 	}
+}
+
+// countSkipped counts children that did not run. Since 104 that is a closed
+// row with closure_reason 'skipped', not a state.
+func countSkipped(ctx context.Context, t *testing.T, parentID string) int {
+	t.Helper()
+	var n int
+	if err := Pool.QueryRow(ctx, `
+		SELECT count(*) FROM base_task
+		WHERE parent_task_id = $1 AND state = 'closed'
+		  AND closure_reason = 'skipped' AND _deleted_at IS NULL`,
+		parentID).Scan(&n); err != nil {
+		t.Fatalf("count skipped: %v", err)
+	}
+	return n
 }
 
 func countState(ctx context.Context, t *testing.T, parentID, state string) int {

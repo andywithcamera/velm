@@ -148,7 +148,7 @@ func TestApplyBaseTaskAssignmentRulesLeavesUnchangedGroupAlone(t *testing.T) {
 }
 
 func TestApplyBaseTaskAssignmentRulesLocksGroupPastPending(t *testing.T) {
-	for _, state := range []string{"ready", "in_progress", "closed", "skipped"} {
+	for _, state := range []string{"ready", "in_progress", "closed"} {
 		t.Run(state, func(t *testing.T) {
 			formData := map[string]string{
 				"assignment_group_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
