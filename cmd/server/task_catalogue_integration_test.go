@@ -23,8 +23,8 @@ func TestMenuCarriesTaskCatalogueAboveTaskDefinitions(t *testing.T) {
 		switch item.Href {
 		case "/task-catalogue":
 			catalogueAt = i
-			if item.Title != "Task Catalogue" {
-				t.Errorf("catalogue menu entry title = %q, want \"Task Catalogue\"", item.Title)
+			if item.Title != "Catalogue" {
+				t.Errorf("catalogue menu entry title = %q, want \"Catalogue\"", item.Title)
 			}
 		case "/task-definitions":
 			definitionsAt = i
@@ -98,5 +98,36 @@ func TestLoadTaskCatalogLabelsChainsAndCountsSteps(t *testing.T) {
 	}
 	if got, want := leaf.KindLabel(), "Single task"; got != want {
 		t.Errorf("leaf KindLabel = %q, want %q", got, want)
+	}
+}
+
+// AC: the menu is a fixed set of doors, not one entry per entity table.
+// Entities is the base_entity table view (not the schema builder) and Docs
+// survives the tidy-up. Both are hrefs, so the menu cannot drift to the
+// builder or to a page that does not exist.
+func TestMenuDoorsAreEntitiesTableAndDocs(t *testing.T) {
+	taskDefinitionsTestDB(t)
+
+	if err := loadMenuFromDB(); err != nil {
+		t.Fatalf("loadMenuFromDB: %v", err)
+	}
+
+	hrefs := make(map[string]string, len(menuItems))
+	for _, item := range menuItems {
+		hrefs[item.Href] = item.Title
+	}
+
+	if title, ok := hrefs["/t/base_entity"]; !ok {
+		t.Errorf("menu has no /t/base_entity entry; entities door missing (menu: %v)", hrefs)
+	} else if title != "Entities" {
+		t.Errorf("entities menu title = %q, want \"Entities\"", title)
+	}
+	if _, ok := hrefs["/builder/schema"]; ok {
+		t.Errorf("menu points at /builder/schema; the entities door is the base_entity table view")
+	}
+	if title, ok := hrefs["/docs"]; !ok {
+		t.Errorf("menu has no /docs entry; docs door missing (menu: %v)", hrefs)
+	} else if title != "Docs" {
+		t.Errorf("docs menu title = %q, want \"Docs\"", title)
 	}
 }

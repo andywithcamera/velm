@@ -640,7 +640,7 @@
             </div>
             <span class="ui-badge ui-badge-neutral" data-lane-count>{{.Count}}</span>
           </div>
-          <div class="ui-task-board-lane-body" data-lane-body>
+          <div class="ui-task-board-lane-body" data-lane-body{{if eq $lane.Value "closed"}} id="taskBoardLaneBody-closed" data-closed-lane-body{{end}}>
             {{range $lane.Cards}}
             {{$members := index $.TaskBoardGroupMembers .GroupID}}
             <article
@@ -710,6 +710,21 @@
               </div>
               {{end}}
             </article>
+            {{end}}
+            {{if and (eq $lane.Value "closed") $.TaskBoardClosedHasMore}}
+            <div
+              class="ui-task-board-lane-more"
+              data-closed-lane-sentinel
+              hx-get="{{$.TaskBoardClosedNextURL}}"
+              hx-trigger="revealed"
+              hx-target="#taskBoardLaneBody-closed"
+              hx-select="#taskBoardLaneBody-closed"
+              hx-swap="outerHTML"
+              hx-push-url="false"
+              hx-indicator="#taskBoardClosedSpinner"
+            >
+              <span id="taskBoardClosedSpinner" class="ui-task-board-lane-more-text">Loading more closed tasks…</span>
+            </div>
             {{end}}
           </div>
         </section>

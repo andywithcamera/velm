@@ -1158,3 +1158,21 @@
 .ui-markdown-table tbody tr:last-child td {
   border-bottom: 0;
 }
+
+/* Closed lane: the list is no longer cut off at a fixed number, it grows by a
+   page (100) each time this sentinel scrolls into view. Kept visually quiet —
+   it is a loading affordance, not a control. */
+.ui-task-board-lane-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 0.5rem;
+  border: 1px dashed var(--border-subtle, rgba(0, 0, 0, 0.15));
+  border-radius: 0.5rem;
+  color: var(--text-muted, rgba(0, 0, 0, 0.55));
+  font-size: 0.8125rem;
+}
+
+.ui-task-board-lane-more.htmx-request {
+  opacity: 0.6;
+}
