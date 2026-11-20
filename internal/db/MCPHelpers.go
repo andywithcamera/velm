@@ -15,7 +15,7 @@ import (
 // that validate input (the MCP tool layer) use it so the accepted set cannot
 // drift from the engine's own constants.
 func TaskStates() []string {
-	return []string{taskStatePending, taskStateReady, taskStateInProgress, taskStateDone, taskStateSkipped}
+	return []string{taskStatePending, taskStateReady, taskStateInProgress, taskStateDone}
 }
 
 // ResolveTaskRef maps a task reference (uuid or TASK-n number) to its uuid.

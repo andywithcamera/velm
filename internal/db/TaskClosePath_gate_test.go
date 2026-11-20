@@ -15,7 +15,7 @@ func TestTaskStateWriteCloses(t *testing.T) {
 	}{
 		{"pending to closed", taskStatePending, taskStateDone, true},
 		{"ready to closed", taskStateReady, taskStateDone, true},
-		{"skipped to closed", taskStateSkipped, taskStateDone, true},
+		{"closed to closed", taskStateDone, taskStateDone, true},
 		{"already closed", taskStateDone, taskStateDone, false},
 		{"closed reopening", taskStateDone, taskStatePending, false},
 		{"pending to ready", taskStatePending, taskStateReady, false},

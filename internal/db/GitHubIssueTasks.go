@@ -149,7 +149,7 @@ func openFlatGitHubIssueTwins(ctx context.Context, issueNumber int) ([]string, e
 		WHERE definition_id IS NULL
 			AND parent_task_id IS NULL
 			AND _deleted_at IS NULL
-			AND state NOT IN ('closed', 'skipped')
+			AND state <> 'closed'
 			AND title LIKE $1
 		ORDER BY number`, fmt.Sprintf("GH-%d %%", issueNumber))
 	if err != nil {

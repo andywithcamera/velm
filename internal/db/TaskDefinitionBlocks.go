@@ -324,8 +324,8 @@ func scopeDefinitionID(ctx context.Context, q scriptQuerier, taskID string) (str
 // rows pending) and when a control block opens (its scoped rows), so there
 // is one code path for both.
 //
-// skip marks a scope whose `if` was false: every task in it is created in
-// the engine's terminal skipped state, so the run tree still matches the
+// skip marks a scope whose `if` was false: every task in it is created
+// closed with closure_reason 'skipped', so the run tree still matches the
 // definition tree (AC-27) and nothing publishes outputs (AC-28).
 func spawnDefinitionScope(ctx context.Context, q scriptQuerier, defID, containerTaskID, requestedBy string, runInputs, scope map[string]any, skip bool) error {
 	blocks, err := getDefinitionBlocks(ctx, q, defID)
@@ -389,7 +389,8 @@ func spawnBlockInstance(ctx context.Context, q scriptQuerier, containerDefID, pa
 		route := &taskRoute{BlockMeta: meta, Scope: scope, Skip: skip, AssignInputs: runInputs}
 		blockAssignmentRoute(route, b)
 		if skip {
-			route.State = taskStateSkipped
+			route.State = taskStateDone
+			route.ClosureReason = taskClosureSkipped
 		}
 		_, err := spawnTaskWithRouteByID(ctx, q, b.ChildDefinitionID, parentTaskID, requestedBy, map[string]any{}, route)
 		return err
@@ -410,8 +411,10 @@ func spawnBlockInstance(ctx context.Context, q scriptQuerier, containerDefID, pa
 // 084 only requires one at in_progress.
 func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, parentTaskID, requestedBy string, b DefinitionBlock, runInputs, scope map[string]any, skip bool) error {
 	state := taskStatePending
+	closureReason := ""
 	if skip {
-		state = taskStateSkipped
+		state = taskStateDone
+		closureReason = taskClosureSkipped
 	}
 	groupID, assigneeID := "", ""
 	if strings.TrimSpace(parentTaskID) != "" {
@@ -459,11 +462,11 @@ func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, pare
 	var taskID, number string
 	if err := q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, parent_task_id,
-			assignment_group_id, assigned_user_id, requested_by_user_id, variables)
-		VALUES ('', $1, 'CONTROL', $2, $3, $4, $5, $6, $7::jsonb)
+			assignment_group_id, assigned_user_id, requested_by_user_id, variables, closure_reason)
+		VALUES ('', $1, 'CONTROL', $2, $3, $4, $5, $6, $7::jsonb, $8)
 		RETURNING _id, number`,
 		title, state, parentTaskID, nullableText(groupID), nullableText(assigneeID),
-		nullableText(requestedBy), string(varsJSON)).Scan(&taskID, &number); err != nil {
+		nullableText(requestedBy), string(varsJSON), nullableText(closureReason)).Scan(&taskID, &number); err != nil {
 		return fmt.Errorf("spawn control block %q: %w", b.Label, err)
 	}
 	if _, err := q.Exec(ctx, `UPDATE base_task SET title = $2 WHERE _id = $1`,
@@ -727,7 +730,7 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 			return fmt.Errorf("block %q: read taken branch: %w", b.Label, err)
 		}
 		if takenChildren == 0 {
-			return transitionTaskInTx(ctx, q, inst.taskID, taskStateSkipped)
+			return skipTaskInTx(ctx, q, inst.taskID, actorUserID)
 		}
 		return promoteChildrenDepth(ctx, q, inst.taskID, actorUserID, depth+1)
 	case "retry":
