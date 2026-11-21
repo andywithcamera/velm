@@ -2,70 +2,36 @@ package main
 
 import (
 	"context"
-	"sort"
 	"strings"
 
 	"velm/internal/db"
 )
 
-// loadMenuFromDB preserves the existing bootstrap hook, but the menu is now
-// derived from active app definitions and known platform routes instead of _menu.
+// loadMenuFromDB builds the main menu. Set 2026-11-20: four fixed doors, not
+// one entry per entity table — Catalogue (order work), Task Studio (author the
+// processes), Entities (the data model behind both) and Docs (the knowledge
+// library). Everything that used to be a top-level item is reachable from
+// those, so the menu no longer grows with the schema.
 func loadMenuFromDB() error {
 	ctx := context.Background()
 	menuItems = nil
 
-	tables, err := db.ListBuilderTables(ctx)
-	if err != nil {
-		return err
+	menuItems = append(menuItems,
+		MenuItem{Title: "Catalogue", Href: "/task-catalogue", Order: 10},
+		MenuItem{Title: "Task Studio", Href: "/task-definitions", Order: 20},
+	)
+
+	// Entities is the base_entity table view — the same /t/<table> page every
+	// entity gets, not the schema builder. Gate on the table existing so a
+	// minimal instance still gets the two doors above.
+	if _, ok, err := db.GetPhysicalTable(ctx, "base_entity"); err == nil && ok {
+		menuItems = append(menuItems, MenuItem{Title: "Entities", Href: "/t/base_entity", Order: 30})
 	}
 
-	nextOrder := 10
-	seen := map[string]bool{}
-	appendItem := func(title, href string) {
-		title = strings.TrimSpace(title)
-		href = strings.TrimSpace(href)
-		if title == "" || href == "" || seen[href] {
-			return
-		}
-		seen[href] = true
-		menuItems = append(menuItems, MenuItem{
-			Title: title,
-			Href:  href,
-			Order: nextOrder,
-		})
-		nextOrder += 10
-	}
-
-	for _, table := range tables {
-		title := strings.TrimSpace(table.LabelPlural)
-		if title == "" {
-			title = strings.TrimSpace(table.LabelSingular)
-		}
-		if title == "" {
-			title = humanizeMenuName(table.Name)
-		}
-		appendItem(title, "/t/"+table.Name)
-	}
-
-	// Task Catalogue sits above Task Definitions: the catalogue is where work
-	// is ordered from, the definitions page is the library behind it. Ordered
-	// deliberately — ordering is the job, authoring is the exception.
-	appendItem("Task Catalogue", "/task-catalogue")
-
-	// Task definitions sit beside Docs: one is the process library, the other
-	// is the catalogue of what those processes are made of.
-	appendItem("Task Definitions", "/task-definitions")
-
+	// Docs keeps its old gate: only when the library table is installed.
 	if _, ok, err := db.GetPhysicalTable(ctx, "_docs_library"); err == nil && ok {
-		appendItem("Docs", "/docs")
+		menuItems = append(menuItems, MenuItem{Title: "Docs", Href: "/docs", Order: 40})
 	}
-
-	sort.Slice(menuItems, func(i, j int) bool {
-		if menuItems[i].Order == menuItems[j].Order {
-			return menuItems[i].Title < menuItems[j].Title
-		}
-		return menuItems[i].Order < menuItems[j].Order
-	})
 
 	return nil
 }

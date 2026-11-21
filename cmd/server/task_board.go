@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,12 @@ const (
 	taskBoardUnspecifiedLane = "__unspecified__"
 	taskBoardAssignedToMe    = "__me__"
 	taskBoardAssignedNone    = "__unassigned__"
+
+	// The closed lane loads a page at a time instead of being cut off at a
+	// fixed number (#371). Each reveal of the lane sentinel asks for one more
+	// page; the cap only exists so a crafted URL cannot ask for everything.
+	taskBoardClosedPageSize = 100
+	taskBoardClosedPageMax  = 5000
 )
 
 type taskBoardChoice struct {
@@ -68,6 +75,10 @@ type taskBoardLane struct {
 type taskBoardItem struct {
 	State string
 	Card  taskBoardCard
+	// StateGroupTotal is how many tasks in this lane exist after filtering,
+	// regardless of how many rows this query returned for the lane. Only the
+	// capped lane (closed) differs from len(lane.Cards).
+	StateGroupTotal int
 }
 
 type taskBoardFilters struct {
@@ -77,6 +88,10 @@ type taskBoardFilters struct {
 	Priority   string
 	AssignedTo string
 	Search     string
+	// ClosedLimit caps how many closed tasks are loaded. Other lanes are
+	// uncapped; the closed lane grows by one page at a time as the viewer
+	// scrolls it (closed_limit query param).
+	ClosedLimit int
 }
 
 type taskBoardInsight struct {
@@ -156,12 +171,13 @@ func handleTaskBoardView(w http.ResponseWriter, r *http.Request, route tableRout
 	serverFilter := normalizeTaskBoardSearch(queryVals.Get("q"))
 
 	filters := taskBoardFilters{
-		Scope:      scope,
-		GroupID:    selectedGroupID,
-		Type:       taskType,
-		Priority:   priority,
-		AssignedTo: assignedTo,
-		Search:     serverFilter,
+		Scope:       scope,
+		GroupID:     selectedGroupID,
+		Type:        taskType,
+		Priority:    priority,
+		AssignedTo:  assignedTo,
+		Search:      serverFilter,
+		ClosedLimit: parseTaskBoardClosedLimit(queryVals.Get("closed_limit")),
 	}
 
 	items, err := loadTaskBoardItems(ctx, userID, filters, metadata.PriorityLabels, queryContext)
@@ -199,6 +215,11 @@ func handleTaskBoardView(w http.ResponseWriter, r *http.Request, route tableRout
 	viewData["TaskBoardGroups"] = groups
 	viewData["TaskBoardHasGroups"] = len(groups) > 0
 	viewData["TaskBoardLanes"] = lanes
+	viewData["TaskBoardClosedLimit"] = filters.ClosedLimit
+	viewData["TaskBoardClosedNextURL"] = taskBoardClosedNextURL(r, filters.ClosedLimit)
+	viewData["TaskBoardClosedLoaded"] = taskBoardLaneLoadedCount(lanes, "closed")
+	viewData["TaskBoardClosedTotal"] = taskBoardLaneTotalCount(lanes, "closed")
+	viewData["TaskBoardClosedHasMore"] = taskBoardLaneLoadedCount(lanes, "closed") < taskBoardLaneTotalCount(lanes, "closed")
 	viewData["TaskBoardListURL"] = taskBoardListURL(route)
 	viewData["TaskBoardPath"] = taskBoardURL()
 	viewData["TaskBoardResetURL"] = taskBoardResetURL(scope)
@@ -231,6 +252,34 @@ func normalizeTaskBoardScope(raw string) string {
 		return taskBoardScopeGroups
 	}
 	return taskBoardScopeMine
+}
+
+// parseTaskBoardClosedLimit reads closed_limit and snaps it to the page grid,
+// so "load 250" becomes 200 and the next request is always current+100.
+func parseTaskBoardClosedLimit(raw string) int {
+	limit, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || limit < taskBoardClosedPageSize {
+		return taskBoardClosedPageSize
+	}
+	if limit > taskBoardClosedPageMax {
+		return taskBoardClosedPageMax
+	}
+	return (limit / taskBoardClosedPageSize) * taskBoardClosedPageSize
+}
+
+// taskBoardClosedNextURL is the same board view with one more page of closed
+// tasks. Filters travel with it, so paging cannot silently widen the query.
+func taskBoardClosedNextURL(r *http.Request, current int) string {
+	next := current + taskBoardClosedPageSize
+	if next > taskBoardClosedPageMax {
+		next = taskBoardClosedPageMax
+	}
+	query := r.URL.Query()
+	query.Set("closed_limit", strconv.Itoa(next))
+	if encoded := query.Encode(); encoded != "" {
+		return taskBoardURL() + "?" + encoded
+	}
+	return taskBoardURL()
 }
 
 func normalizeTaskBoardGroup(raw string, groups []taskBoardGroupOption) string {
@@ -726,6 +775,9 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			t.due_at,
 			t._updated_at,
 			(COALESCE(NULLIF(BTRIM(t.state), ''), 'pending') = 'closed') AS is_closed,
+			COUNT(*) OVER (
+				PARTITION BY (COALESCE(NULLIF(BTRIM(t.state), ''), 'pending') = 'closed')
+			) AS state_group_total,
 			ROW_NUMBER() OVER (
 				PARTITION BY (COALESCE(NULLIF(BTRIM(t.state), ''), 'pending') = 'closed')
 				ORDER BY t._updated_at DESC, t.number ASC
@@ -822,8 +874,11 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 			t._updated_at DESC,
 			t.number ASC`
 
-	// Closed lane shows only the most recently closed 20 tasks; other states
-	// are uncapped. The window rank above runs after all filters.
+	// The closed lane is not capped at a fixed number any more: it loads one
+	// page (taskBoardClosedPageSize) and grows by a page each time the viewer
+	// scrolls to the bottom of the lane. state_group_total carries the real
+	// lane count so the header badge still shows the total, not the page.
+	args = append(args, filters.ClosedLimit)
 	query = `
 		WITH board AS (
 		` + query + `
@@ -831,9 +886,9 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 		SELECT
 			_id, record_table, number, title, state, priority, group_id,
 			group_label, assigned_user_id, assignee_label, definition_id,
-			due_at, _updated_at
+			due_at, _updated_at, state_group_total
 		FROM board
-		WHERE NOT is_closed OR board_rn <= 20
+		WHERE NOT is_closed OR board_rn <= $` + strconv.Itoa(len(args)) + `
 		ORDER BY
 			CASE priority
 				WHEN 'very_high' THEN 1
@@ -858,21 +913,22 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 	now := time.Now()
 	for rows.Next() {
 		var (
-			id             string
-			recordTable    string
-			number         string
-			title          string
-			state          string
-			priority       string
-			groupID        string
-			groupLabel     string
-			assignedUserID string
-			assigneeLabel  string
-			definitionID   string
-			dueAt          sql.NullTime
-			updatedAt      sql.NullTime
+			id              string
+			recordTable     string
+			number          string
+			title           string
+			state           string
+			priority        string
+			groupID         string
+			groupLabel      string
+			assignedUserID  string
+			assigneeLabel   string
+			definitionID    string
+			dueAt           sql.NullTime
+			updatedAt       sql.NullTime
+			stateGroupTotal int
 		)
-		if err := rows.Scan(&id, &recordTable, &number, &title, &state, &priority, &groupID, &groupLabel, &assignedUserID, &assigneeLabel, &definitionID, &dueAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &recordTable, &number, &title, &state, &priority, &groupID, &groupLabel, &assignedUserID, &assigneeLabel, &definitionID, &dueAt, &updatedAt, &stateGroupTotal); err != nil {
 			return nil, err
 		}
 		recordTable = strings.TrimSpace(recordTable)
@@ -949,8 +1005,9 @@ func loadTaskBoardItems(ctx context.Context, userID string, filters taskBoardFil
 		}
 
 		items = append(items, taskBoardItem{
-			State: normalizeTaskBoardLaneValue(stateValue),
-			Card:  card,
+			State:           normalizeTaskBoardLaneValue(stateValue),
+			Card:            card,
+			StateGroupTotal: stateGroupTotal,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1133,12 +1190,38 @@ func buildTaskBoardLanes(stateChoices []taskBoardChoice, items []taskBoardItem) 
 			continue
 		}
 		lanes[index].Cards = append(lanes[index].Cards, item.Card)
+		if item.StateGroupTotal > lanes[index].Count {
+			lanes[index].Count = item.StateGroupTotal
+		}
 	}
 	for index := range lanes {
-		lanes[index].Count = len(lanes[index].Cards)
+		if len(lanes[index].Cards) > lanes[index].Count {
+			lanes[index].Count = len(lanes[index].Cards)
+		}
 	}
 
 	return lanes
+}
+
+// taskBoardLaneLoadedCount and taskBoardLaneTotalCount let the template decide
+// whether a capped lane still has rows behind it: loaded < total means the
+// scroll sentinel should be rendered.
+func taskBoardLaneLoadedCount(lanes []taskBoardLane, value string) int {
+	for _, lane := range lanes {
+		if lane.Value == value {
+			return len(lane.Cards)
+		}
+	}
+	return 0
+}
+
+func taskBoardLaneTotalCount(lanes []taskBoardLane, value string) int {
+	for _, lane := range lanes {
+		if lane.Value == value {
+			return lane.Count
+		}
+	}
+	return 0
 }
 
 func buildTaskBoardInsights(items []taskBoardItem) []taskBoardInsight {

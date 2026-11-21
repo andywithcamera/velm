@@ -549,8 +549,8 @@ func TestMenuCarriesTaskDefinitionsBesideDocs(t *testing.T) {
 	for i, item := range menuItems {
 		if item.Href == "/task-definitions" {
 			definitionsAt = i
-			if item.Title != "Task Definitions" {
-				t.Errorf("menu entry title = %q, want \"Task Definitions\"", item.Title)
+			if item.Title != "Task Studio" {
+				t.Errorf("menu entry title = %q, want \"Task Studio\"", item.Title)
 			}
 		}
 		if item.Href == "/docs" {
