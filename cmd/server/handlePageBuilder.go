@@ -174,6 +174,44 @@ type appEditorSelection struct {
 
 var pageSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9\-]{0,63}$`)
 
+// siteEntryPage is one row of the site-entry card's page picker.
+type siteEntryPage struct {
+	Slug   string
+	Name   string
+	Status string
+	Target string // "page:<slug>", the value the landing target stores
+}
+
+// listPagesForSiteEntry lists every page so the site-entry card can offer them
+// as landing targets. Draft pages are included deliberately: a landing target
+// pointing at a draft is a configuration error the operator should be able to
+// see and fix, not one the picker should hide.
+func listPagesForSiteEntry(ctx context.Context) ([]siteEntryPage, error) {
+	rows, err := db.Pool.Query(ctx, `
+		SELECT name, slug, COALESCE(status, 'draft')
+		FROM _page
+		ORDER BY name ASC, slug ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	pages := make([]siteEntryPage, 0, 16)
+	for rows.Next() {
+		var page siteEntryPage
+		if err := rows.Scan(&page.Name, &page.Slug, &page.Status); err != nil {
+			return nil, err
+		}
+		page.Target = "page:" + page.Slug
+		pages = append(pages, page)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return pages, nil
+}
+
 func handlePageBuilder(w http.ResponseWriter, r *http.Request) {
 	selection, err := listAppEditorData(r.Context(), strings.TrimSpace(strings.ToLower(r.URL.Query().Get("app"))))
 	if err != nil {
@@ -210,6 +248,17 @@ func handlePageBuilder(w http.ResponseWriter, r *http.Request) {
 	data["AppEditorDocumentation"] = selection.Documentation
 	data["AppEditorObjects"] = selection.Objects
 	data["AppEditorInitialOpenID"] = initialOpenID
+	// Site entry: the two landing targets and the pages a select can offer.
+	// Read failures are not fatal — the card renders with an empty page list
+	// rather than taking the whole editor down.
+	sitePages, err := listPagesForSiteEntry(r.Context())
+	if err != nil {
+		sitePages = nil
+	}
+	data["SiteEntryPages"] = sitePages
+	data["SiteEntryUnauthenticated"] = resolveUnauthenticatedRootRouteTarget(r.Context())
+	data["SiteEntryAuthenticated"] = resolveAuthenticatedRouteTarget(r.Context())
+	data["SiteEntrySaved"] = strings.TrimSpace(r.URL.Query().Get("root_saved")) != ""
 	if activeObject, ok := findAppEditorObject(selection.Objects, initialOpenID); ok {
 		data["AppEditorActiveObject"] = activeObject
 		if activeObject.EditorTable != "" && activeObject.EditorRecordID != "" {
@@ -2888,53 +2937,39 @@ func handleSaveRootRouteTarget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	target := normalizeRootRouteTarget(strings.TrimSpace(strings.ToLower(r.FormValue("root_route_target"))))
+	// scope selects which landing target is being set. The default is the
+	// unauthenticated one, which is what "the homepage" means to a visitor with
+	// no session; "authenticated" sets where a signed-in user lands instead.
+	scope := strings.TrimSpace(strings.ToLower(r.FormValue("scope")))
+	key := unauthenticatedRootRoutePropertyKey
+	normalize := normalizeUnauthenticatedRouteTarget
+	switch scope {
+	case "authenticated":
+		key = authenticatedRootRoutePropertyKey
+		normalize = normalizeAuthenticatedRouteTarget
+	case "legacy", "root":
+		// Pre-#372 name, kept so an old bookmark or script still writes what it
+		// used to write.
+		key = legacyRootRoutePropertyKey
+	}
+
+	target := normalize(r.FormValue("root_route_target"))
 	if target == "" {
 		http.Error(w, "Invalid root route target", http.StatusBadRequest)
 		return
 	}
 
-	_, err := db.Pool.Exec(context.Background(), `
-		INSERT INTO _property (key, value)
-		VALUES ('root_route_target', $1)
-		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-	`, target)
-	if err != nil {
+	if err := setProperty(context.Background(), key, target); err != nil {
 		http.Error(w, "Failed to save root route target", http.StatusInternalServerError)
 		return
 	}
 
 	_ = loadPropertiesFromDB()
-	http.Redirect(w, r, "/admin/app-editor?root_saved=1", http.StatusSeeOther)
-}
-
-func normalizeRootRouteTarget(input string) string {
-	target := strings.TrimSpace(strings.ToLower(input))
-	switch {
-	case target == "login" || target == "/login" || target == "/login/":
-		return "login"
-	case strings.HasPrefix(target, "page:"):
-		slug := normalizePageRouteSlug(strings.TrimSpace(strings.TrimPrefix(target, "page:")))
-		if slug != "" {
-			return "page:" + slug
-		}
-	case strings.HasPrefix(target, "/p/"):
-		slug := normalizePageRouteSlug(strings.TrimSpace(strings.TrimPrefix(target, "/p/")))
-		if slug != "" {
-			return "page:" + slug
-		}
-	case strings.HasPrefix(target, "table:"):
-		tableName := strings.TrimSpace(strings.TrimPrefix(target, "table:"))
-		if db.IsSafeIdentifier(tableName) {
-			return "table:" + tableName
-		}
-	case strings.HasPrefix(target, "/t/"):
-		tableName := strings.TrimSpace(strings.TrimPrefix(target, "/t/"))
-		if db.IsSafeIdentifier(tableName) {
-			return "table:" + tableName
-		}
+	redirect := "/admin/app-editor?root_saved=1"
+	if app := strings.TrimSpace(r.FormValue("app")); app != "" {
+		redirect += "&app=" + url.QueryEscape(app)
 	}
-	return ""
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
 func handleSavePageBuilder(w http.ResponseWriter, r *http.Request) {

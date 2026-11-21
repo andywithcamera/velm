@@ -67,8 +67,12 @@ type docsArticle struct {
 	Excerpt         string
 	TagItems        []string
 	ReaderHref      string
-	CanEdit         bool
-	CanDelete       bool
+	// IsPublic marks an article readable by visitors with no session (#372).
+	// Only a published public article is served to a guest; the flag on a draft
+	// grants nothing, so unpublishing is also a way to withdraw it.
+	IsPublic  bool
+	CanEdit   bool
+	CanDelete bool
 }
 
 type docsVersion struct {
@@ -92,8 +96,13 @@ type docsPreviewResponse struct {
 }
 
 type docsAccessContext struct {
-	ctx           context.Context
-	userID        string
+	ctx    context.Context
+	userID string
+	// authenticated distinguishes a guest context from a user whose role list
+	// happens to be empty. Both have no roles, but only the guest is limited
+	// to public articles: an empty-role user still falls back to library
+	// visibility and ownership.
+	authenticated bool
 	apps          map[string]db.RegisteredApp
 	roleSets      map[string]map[string]bool
 	globalRoleSet map[string]bool
@@ -154,15 +163,42 @@ func loadDocsViewContext(ctx context.Context, userID string, ensureDefaults bool
 	}, nil
 }
 
+// loadDocsRequestContext builds the view context for either a signed-in user or
+// a guest, and reports which one it built.
+//
+// A guest gets no apps and no roles, and — importantly — no default-library
+// provisioning: ensureDefaultDocLibraries writes rows, and a page anyone can
+// request unauthenticated must not be able to trigger a write. The guest
+// library list is filtered by the caller, which is the only place that knows
+// which libraries actually hold a public article.
+func loadDocsRequestContext(ctx context.Context, userID string) (*docsViewContext, bool, error) {
+	userID = strings.TrimSpace(userID)
+	if userID != "" {
+		docsCtx, err := loadDocsViewContext(ctx, userID, true)
+		return docsCtx, false, err
+	}
+
+	libraries, err := listDocsLibraries(ctx)
+	if err != nil {
+		return nil, true, err
+	}
+	libraryBySlug := make(map[string]docsLibrary, len(libraries))
+	for _, library := range libraries {
+		libraryBySlug[library.Slug] = library
+	}
+	return &docsViewContext{
+		Apps:          []db.RegisteredApp{},
+		Access:        guestDocsAccessContext(),
+		Libraries:     libraries,
+		LibraryBySlug: libraryBySlug,
+	}, true, nil
+}
+
 func handleDocs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID := strings.TrimSpace(auth.UserIDFromRequest(r))
-	if userID == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 
-	docsCtx, err := loadDocsViewContext(ctx, userID, true)
+	docsCtx, guest, err := loadDocsRequestContext(ctx, userID)
 	if err != nil {
 		http.Error(w, "Failed to evaluate docs permissions", http.StatusInternalServerError)
 		return
@@ -187,6 +223,21 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 	for i := range libraries {
 		libraries[i].ArticleCount = articleCountByLibrary[libraries[i].Slug]
 		libraryBySlug[libraries[i].Slug] = libraries[i]
+	}
+	if guest {
+		// A guest catalog lists only shelves it can actually read: showing an
+		// empty library would advertise a collection that is entirely private.
+		visible := make([]docsLibrary, 0, len(libraries))
+		for _, library := range libraries {
+			if library.ArticleCount > 0 {
+				visible = append(visible, library)
+			}
+		}
+		libraries = visible
+		libraryBySlug = make(map[string]docsLibrary, len(visible))
+		for _, library := range visible {
+			libraryBySlug[library.Slug] = library
+		}
 	}
 
 	selectedLibrarySlug := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("library")))
@@ -278,7 +329,14 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 		manageHref += "?library=" + url.QueryEscape(selectedLibrary.Slug)
 	}
 
-	viewData := newViewData(w, r, "/docs", "Docs", "Operations")
+	section := "Operations"
+	if guest {
+		// Section "Public" is the layout contract for "render without the
+		// signed-in navbar": a guest cannot use the menu, and every entry in it
+		// would bounce them to the login page.
+		section = "Public"
+	}
+	viewData := newViewData(w, r, "/docs", "Docs", section)
 	viewData["View"] = "docs"
 	viewData["DocsSaved"] = strings.TrimSpace(r.URL.Query().Get("saved"))
 	viewData["DocsLibraries"] = libraries
@@ -308,10 +366,6 @@ func handleDocs(w http.ResponseWriter, r *http.Request) {
 func handleDocsArticle(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID := strings.TrimSpace(auth.UserIDFromRequest(r))
-	if userID == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
 
 	articleID, err := parseDocsArticleID(r.URL.Path)
 	if err != nil {
@@ -319,7 +373,7 @@ func handleDocsArticle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	docsCtx, err := loadDocsViewContext(ctx, userID, true)
+	docsCtx, guest, err := loadDocsRequestContext(ctx, userID)
 	if err != nil {
 		http.Error(w, "Failed to evaluate docs permissions", http.StatusInternalServerError)
 		return
@@ -369,7 +423,11 @@ func handleDocsArticle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resolver := newWikilinkResolver(ctx)
-	viewData := newViewData(w, r, buildDocsArticleHref(selectedArticle.ID), title, "Operations")
+	section := "Operations"
+	if guest {
+		section = "Public"
+	}
+	viewData := newViewData(w, r, buildDocsArticleHref(selectedArticle.ID), title, section)
 	viewData["View"] = "docs-reader"
 	viewData["DocsArticleSelected"] = selectedArticle
 	viewData["DocsArticleRendered"] = renderMarkdownToSafeHTMLResolved(selectedArticle.MarkdownBody, resolver)
@@ -537,6 +595,16 @@ func parseDocsForm(r *http.Request) error {
 	return nil
 }
 
+// docsFormBool reads a checkbox as a boolean. An absent field is false, which
+// is what an unchecked checkbox sends.
+func docsFormBool(r *http.Request, name string) bool {
+	switch strings.ToLower(strings.TrimSpace(r.FormValue(name))) {
+	case "1", "on", "true", "yes", "public":
+		return true
+	}
+	return false
+}
+
 func handleDocsPreview(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -613,6 +681,9 @@ func handleSaveDocsArticle(w http.ResponseWriter, r *http.Request) {
 		ReadRoles:    normalizeDocsRoleInput(r.FormValue("read_roles")),
 		EditRoles:    normalizeDocsRoleInput(r.FormValue("edit_roles")),
 		DeleteRoles:  normalizeDocsRoleInput(r.FormValue("delete_roles")),
+		// Unchecked checkboxes send nothing, so absence is false. docsFormBool
+		// accepts the spellings browsers and API clients actually send.
+		IsPublic: docsFormBool(r, "is_public"),
 	}, strings.TrimSpace(strings.ToLower(r.FormValue("original_slug"))))
 	if err != nil {
 		if r.Header.Get("X-Requested-With") == "XMLHttpRequest" {
@@ -704,10 +775,32 @@ func newDocsAccessContext(ctx context.Context, userID string, apps []db.Register
 	return &docsAccessContext{
 		ctx:           ctx,
 		userID:        userID,
+		authenticated: true,
 		apps:          appIndex,
 		roleSets:      map[string]map[string]bool{},
 		globalRoleSet: docsRoleSet(globalRoleNames),
 	}, nil
+}
+
+// guestDocsAccessContext is the access context for a request with no session.
+// It holds no roles, so it cannot be granted anything by role, ownership or
+// library visibility: canReadArticle is the only method that returns true, and
+// only for an article explicitly flagged public. Building one touches no
+// database.
+func guestDocsAccessContext() *docsAccessContext {
+	return &docsAccessContext{
+		ctx:           context.Background(),
+		userID:        "",
+		authenticated: false,
+		apps:          map[string]db.RegisteredApp{},
+		roleSets:      map[string]map[string]bool{},
+		globalRoleSet: map[string]bool{},
+	}
+}
+
+// isGuest reports whether this context belongs to a request with no session.
+func (c *docsAccessContext) isGuest() bool {
+	return c == nil || (!c.authenticated && strings.TrimSpace(c.userID) == "")
 }
 
 func (c *docsAccessContext) roleSetForLibrary(library docsLibrary) map[string]bool {
@@ -764,6 +857,9 @@ func (c *docsAccessContext) roleMatch(library docsLibrary, roles []string) bool 
 }
 
 func (c *docsAccessContext) canReadLibrary(library docsLibrary) bool {
+	if c.isGuest() {
+		return false
+	}
 	if c.isAdmin(library) {
 		return true
 	}
@@ -777,6 +873,9 @@ func (c *docsAccessContext) canReadLibrary(library docsLibrary) bool {
 }
 
 func (c *docsAccessContext) canCreateInLibrary(library docsLibrary) bool {
+	if c.isGuest() {
+		return false
+	}
 	if c.isAdmin(library) {
 		return true
 	}
@@ -787,6 +886,9 @@ func (c *docsAccessContext) canCreateInLibrary(library docsLibrary) bool {
 }
 
 func (c *docsAccessContext) canEditLibrary(library docsLibrary) bool {
+	if c.isGuest() {
+		return false
+	}
 	if c.isAdmin(library) {
 		return true
 	}
@@ -797,6 +899,9 @@ func (c *docsAccessContext) canEditLibrary(library docsLibrary) bool {
 }
 
 func (c *docsAccessContext) canDeleteLibrary(library docsLibrary) bool {
+	if c.isGuest() {
+		return false
+	}
 	if library.IsDefault {
 		return false
 	}
@@ -810,6 +915,12 @@ func (c *docsAccessContext) canDeleteLibrary(library docsLibrary) bool {
 }
 
 func (c *docsAccessContext) canReadArticle(library docsLibrary, article docsArticle) bool {
+	if c.isGuest() {
+		// The public flag is the whole gate: a guest gets a published article
+		// that is flagged public, and nothing else. Checked here rather than in
+		// the handler so every caller inherits the same rule.
+		return article.IsPublic && article.Status == "published" && library.Status == "active"
+	}
 	if c.isAdmin(library) {
 		return true
 	}
@@ -821,6 +932,9 @@ func (c *docsAccessContext) canReadArticle(library docsLibrary, article docsArti
 }
 
 func (c *docsAccessContext) canEditArticle(library docsLibrary, article docsArticle) bool {
+	if c.isGuest() {
+		return false
+	}
 	if c.isAdmin(library) {
 		return true
 	}
@@ -835,6 +949,9 @@ func (c *docsAccessContext) canEditArticle(library docsLibrary, article docsArti
 }
 
 func (c *docsAccessContext) canDeleteArticle(library docsLibrary, article docsArticle) bool {
+	if c.isGuest() {
+		return false
+	}
 	if c.isAdmin(library) {
 		return true
 	}
@@ -1283,7 +1400,8 @@ const docsArticleSelectColumns = `
 	a.owner_user_id,
 	COALESCE(a.read_roles, '[]'::jsonb)::text,
 	COALESCE(a.edit_roles, '[]'::jsonb)::text,
-	COALESCE(a.delete_roles, '[]'::jsonb)::text
+	COALESCE(a.delete_roles, '[]'::jsonb)::text,
+	a.is_public
 `
 
 // docsArticleSummaryColumns is the same but truncates markdown_body to 600 chars.
@@ -1306,7 +1424,8 @@ const docsArticleSummaryColumns = `
 	a.owner_user_id,
 	COALESCE(a.read_roles, '[]'::jsonb)::text,
 	COALESCE(a.edit_roles, '[]'::jsonb)::text,
-	COALESCE(a.delete_roles, '[]'::jsonb)::text
+	COALESCE(a.delete_roles, '[]'::jsonb)::text,
+	a.is_public
 `
 
 type docsRowScanner interface {
@@ -1337,6 +1456,7 @@ func scanDocsArticle(scanner docsRowScanner) (docsArticle, error) {
 		&readRolesJSON,
 		&editRolesJSON,
 		&deleteRolesJSON,
+		&item.IsPublic,
 	); err != nil {
 		return docsArticle{}, err
 	}
@@ -1658,12 +1778,13 @@ func saveDocsArticle(ctx context.Context, userID, librarySlug string, article do
 			    read_roles = $8::jsonb,
 			    edit_roles = $9::jsonb,
 			    delete_roles = $10::jsonb,
+			    is_public = $11,
 			    version_num = version_num + 1,
 			    published_at = CASE WHEN $6 = 'published' THEN COALESCE(published_at, NOW()) ELSE published_at END,
 			    _updated_at = NOW()
 			WHERE _id::text = $1
 			RETURNING version_num
-		`, existing.ID, article.Slug, article.Title, article.MarkdownBody, rendered, article.Status, article.Tags, readRolesJSON, editRolesJSON, deleteRolesJSON).Scan(&nextVersion); err != nil {
+		`, existing.ID, article.Slug, article.Title, article.MarkdownBody, rendered, article.Status, article.Tags, readRolesJSON, editRolesJSON, deleteRolesJSON, article.IsPublic).Scan(&nextVersion); err != nil {
 			return "", err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -1679,10 +1800,10 @@ func saveDocsArticle(ctx context.Context, userID, librarySlug string, article do
 		}
 		var articleID string
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO _docs_article (docs_library_id, slug, title, markdown_body, rendered_html, status, tags, version_num, published_at, owner_user_id, read_roles, edit_roles, delete_roles)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, 1, CASE WHEN $6 = 'published' THEN NOW() ELSE NULL END, $8, $9::jsonb, $10::jsonb, $11::jsonb)
+			INSERT INTO _docs_article (docs_library_id, slug, title, markdown_body, rendered_html, status, tags, version_num, published_at, owner_user_id, read_roles, edit_roles, delete_roles, is_public)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, 1, CASE WHEN $6 = 'published' THEN NOW() ELSE NULL END, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12)
 			RETURNING _id::text
-		`, library.ID, article.Slug, article.Title, article.MarkdownBody, rendered, article.Status, article.Tags, userID, readRolesJSON, editRolesJSON, deleteRolesJSON).Scan(&articleID); err != nil {
+		`, library.ID, article.Slug, article.Title, article.MarkdownBody, rendered, article.Status, article.Tags, userID, readRolesJSON, editRolesJSON, deleteRolesJSON, article.IsPublic).Scan(&articleID); err != nil {
 			return "", err
 		}
 		if _, err := tx.Exec(ctx, `

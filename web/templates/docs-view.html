@@ -155,6 +155,16 @@
               <input id="docs-article-delete-roles" class="ui-input" name="delete_roles"
                      value="{{.DocsArticleSelected.DeleteRolesText}}" placeholder="inherits library when blank">
             </div>
+            {{/* Public (#372): readable by anyone with the link, no session.
+                 Only takes effect when the article is published. */}}
+            <div class="ui-field">
+              <label class="ui-field-label" for="docs-article-public">Public</label>
+              <label class="ui-checkbox" for="docs-article-public">
+                <input type="checkbox" id="docs-article-public" name="is_public" value="1"
+                       {{if .DocsArticleSelected.IsPublic}}checked{{end}}>
+                <span>Readable without signing in</span>
+              </label>
+            </div>
           </div>
         </details>
 
