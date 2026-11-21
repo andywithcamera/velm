@@ -27,6 +27,10 @@ const (
 	accessWrite  accessClass = "write"
 	accessAdmin  accessClass = "admin"
 	accessAgent  accessClass = "agent"
+	// accessOptional authenticates when there is a session and passes the
+	// request through when there is not. The handler must therefore authorize
+	// anonymous callers itself; used by public docs (#372).
+	accessOptional accessClass = "optional"
 )
 
 // routeAccess is the reviewed expectation for every route in routes.go.
@@ -98,15 +102,18 @@ var routeAccess = map[string]accessClass{
 	"POST /task-definitions/{slug}/steps/{child_slug}/move":    accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/depends": accessWrite,
 	"POST /task-definitions/{slug}/steps/{child_slug}/mapping": accessWrite,
-	"/task":                            accessView,
-	"/task/":                           accessView,
-	"/t/":                              accessView,
-	"/f/":                              accessView,
-	"/f/graph/":                        accessView,
-	"/api/links/":                      accessWrite,
-	"/docs":                            accessView,
+	"/task":       accessView,
+	"/task/":      accessView,
+	"/t/":         accessView,
+	"/f/":         accessView,
+	"/f/graph/":   accessView,
+	"/api/links/": accessWrite,
+	// Public docs (#372): one URL, two audiences. OptionalAuth never redirects,
+	// and handleDocs / handleDocsArticle limit a guest to articles flagged
+	// public and published. Managing docs stays behind view permission.
+	"/docs":                            accessOptional,
 	"/docs/manage":                     accessView,
-	"/d/":                              accessView,
+	"/d/":                              accessOptional,
 	"/knowledge":                       accessView,
 	"/logout":                          accessView,
 	"/api/menu/":                       accessView,
@@ -307,6 +314,10 @@ func classifyHandler(t *testing.T, fset *token.FileSet, handler ast.Expr) access
 			t.Errorf("withAuth at %s uses unknown permission %q", fset.Position(call.Pos()), sel.Sel.Name)
 			return accessPublic
 		}
+	case "withOptionalAuth":
+		// Authenticates if a session exists, never refuses. The handler owns
+		// the anonymous authorization decision.
+		return accessOptional
 	case "withAuthOrAgentOnly":
 		return accessAgent
 	case "withAuthOrAgentWrite":

@@ -117,9 +117,17 @@ func registerRoutes() {
 	http.Handle("/api/realtime/stream", withAuth(authz.PermissionView, http.HandlerFunc(handleRealtimeStream)))
 	http.Handle("/api/realtime/record-version", withAuth(authz.PermissionView, http.HandlerFunc(handleRealtimeRecordVersion)))
 	http.Handle("/api/realtime/presence/heartbeat", withAuth(authz.PermissionView, http.HandlerFunc(handleRealtimePresenceHeartbeat)))
+	// /docs and /d/ serve two audiences from one URL (issue #372): a signed-in
+	// user gets the full catalog, a visitor with no session gets only articles
+	// flagged public. OptionalAuth authenticates when a session exists and never
+	// redirects; the handlers decide what a guest may see. /docs/manage stays
+	// behind the normal view-permission chain — editing is session-only.
+	withOptionalAuth := func(handler http.Handler) http.Handler {
+		return security.RequestLog(security.Audit(auth.OptionalAuth(handler, store)))
+	}
 	http.Handle("/docs/manage", withAuth(authz.PermissionView, http.HandlerFunc(handleDocsManage)))
-	http.Handle("/docs", withAuth(authz.PermissionView, http.HandlerFunc(handleDocs)))
-	http.Handle("/d/", withAuth(authz.PermissionView, http.HandlerFunc(handleDocsArticle)))
+	http.Handle("/docs", withOptionalAuth(http.HandlerFunc(handleDocs)))
+	http.Handle("/d/", withOptionalAuth(http.HandlerFunc(handleDocsArticle)))
 	http.Handle("/knowledge", withAuth(authz.PermissionView, http.HandlerFunc(handleLegacyDocsRedirect)))
 	http.Handle("/api/preferences/list-view", withAuth(authz.PermissionView, http.HandlerFunc(handleListViewPreference)))
 	http.Handle("/api/preferences/theme", withAuth(authz.PermissionView, http.HandlerFunc(handleThemePreference)))

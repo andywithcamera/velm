@@ -631,6 +631,45 @@
       </div>
 
       <section class="ui-card ui-code-surface">
+        {{/* Site entry (#372): the two landing targets, editable here because
+             this is where pages are made. Two separate forms rather than one
+             with a scope selector: saving a landed-at-a-wrong-place homepage is
+             an afternoon lost, and one form per target makes the scope visible
+             in the button the operator presses. */}}
+        <div class="ui-card" style="margin: 0 0 1rem; padding: 1rem;">
+          <h2 class="ui-section-title">Site entry</h2>
+          <p class="ui-section-copy">
+            Where <code>/</code> sends people. Accepts <code>page:slug</code> for a page,
+            <code>table:name</code> for a table, or <code>login</code> for the login page.
+            The signed-in target also accepts a path such as <code>/task</code>.
+            {{if .SiteEntrySaved}}<span class="ui-badge ui-badge-neutral">Saved</span>{{end}}
+          </p>
+          <datalist id="site-entry-page-targets">
+            {{range .SiteEntryPages}}<option value="{{.Target}}">{{.Name}} ({{.Status}})</option>{{end}}
+          </datalist>
+          <div class="ui-form-grid">
+            <form method="POST" action="/api/root-route/save" class="ui-field">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <input type="hidden" name="scope" value="unauthenticated">
+              {{if $selectedApp.Name}}<input type="hidden" name="app" value="{{$selectedApp.Name}}">{{end}}
+              <label class="ui-field-label" for="site-entry-unauthenticated">Not signed in</label>
+              <input id="site-entry-unauthenticated" class="ui-input" name="root_route_target"
+                     value="{{.SiteEntryUnauthenticated}}" list="site-entry-page-targets" placeholder="login">
+              <p class="ui-section-copy" style="margin: 0.25rem 0 0;">Only a published page is served here.</p>
+              <button type="submit" class="ui-btn ui-btn-secondary" style="margin-top: 0.5rem;">Save</button>
+            </form>
+            <form method="POST" action="/api/root-route/save" class="ui-field">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <input type="hidden" name="scope" value="authenticated">
+              {{if $selectedApp.Name}}<input type="hidden" name="app" value="{{$selectedApp.Name}}">{{end}}
+              <label class="ui-field-label" for="site-entry-authenticated">Signed in</label>
+              <input id="site-entry-authenticated" class="ui-input" name="root_route_target"
+                     value="{{.SiteEntryAuthenticated}}" list="site-entry-page-targets" placeholder="/task">
+              <p class="ui-section-copy" style="margin: 0.25rem 0 0;">Cannot be the login page or <code>/</code>.</p>
+              <button type="submit" class="ui-btn ui-btn-secondary" style="margin-top: 0.5rem;">Save</button>
+            </form>
+          </div>
+        </div>
         <div class="ui-code-surface-head">
           {{if $selectedApp.Name}}
           <div class="ui-app-editor-head">
