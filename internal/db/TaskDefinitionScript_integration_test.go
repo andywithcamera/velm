@@ -324,31 +324,37 @@ func TestIfSelectsThenAndElse(t *testing.T) {
 			t.Fatalf("%s: spawn: %v", tc.name, err)
 		}
 		_ = root
-		states := map[string]string{}
+		// The branch that did not run is closed, not a state of its own
+		// (104): state closed, closure_reason skipped.
+		type branchOutcome struct{ state, reason string }
+		states := map[string]branchOutcome{}
 		rows, err := Pool.Query(ctx, `
-			SELECT COALESCE(variables->'block'->>'label', ''), state
+			SELECT COALESCE(variables->'block'->>'label', ''), state,
+			       COALESCE(closure_reason, '')
 			FROM base_task WHERE parent_task_id IN
 				(SELECT _id FROM base_task WHERE parent_task_id = $1)`, root)
 		if err != nil {
 			t.Fatalf("%s: read branches: %v", tc.name, err)
 		}
 		for rows.Next() {
-			var label, state string
-			if err := rows.Scan(&label, &state); err != nil {
+			var label string
+			var outcome branchOutcome
+			if err := rows.Scan(&label, &outcome.state, &outcome.reason); err != nil {
 				t.Fatalf("scan: %v", err)
 			}
-			states[label] = state
+			states[label] = outcome
 		}
 		rows.Close()
-		if states[tc.taken] == "skipped" || states[tc.taken] == "" {
-			t.Errorf("%s: %s = %q, want it to run (all %v)", tc.name, tc.taken, states[tc.taken], states)
+		taken := states[tc.taken]
+		if taken.state != "ready" && taken.state != "in_progress" && taken.state != "closed" || taken.reason == "skipped" {
+			t.Errorf("%s: %s = %+v, want it to run (all %v)", tc.name, tc.taken, taken, states)
 		}
 		other := "Then work"
 		if tc.taken == "Then work" {
 			other = "Else work"
 		}
-		if states[other] != "skipped" {
-			t.Errorf("%s: %s = %q, want skipped", tc.name, other, states[other])
+		if got := states[other]; got.state != "closed" || got.reason != "skipped" {
+			t.Errorf("%s: %s = %+v, want closed/skipped", tc.name, other, got)
 		}
 	}
 }

@@ -364,7 +364,7 @@ func dropUnrunAttemptChildren(ctx context.Context, q scriptQuerier, retryTaskID 
 			SELECT _id::text AS id, 0 AS depth
 			FROM base_task
 			WHERE parent_task_id = $1 AND _deleted_at IS NULL
-			  AND state NOT IN ('closed', 'skipped')
+			  AND state <> 'closed'
 			  AND COALESCE(variables->>'attempt_no', '') = $2::text
 			UNION ALL
 			SELECT c._id::text, d.depth + 1

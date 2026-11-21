@@ -205,17 +205,17 @@ func TestIfFalseSkipsScope(t *testing.T) {
 		"server": map[string]any{"role": "standby"}, "server_name": "web-1",
 	})
 
-	var ifState string
+	var ifState, ifReason string
 	if err := Pool.QueryRow(ctx, `
-		SELECT state FROM base_task
-		WHERE parent_task_id = $1 AND variables->'block'->>'type' = 'if'`, rootID).Scan(&ifState); err != nil {
+		SELECT state, COALESCE(closure_reason, '') FROM base_task
+		WHERE parent_task_id = $1 AND variables->'block'->>'type' = 'if'`, rootID).Scan(&ifState, &ifReason); err != nil {
 		t.Fatalf("read if state: %v", err)
 	}
-	if ifState != taskStateSkipped {
-		t.Fatalf("false if state = %q, want %q", ifState, taskStateSkipped)
+	if ifState != taskStateDone || ifReason != taskClosureSkipped {
+		t.Fatalf("false if = %q/%q, want closed/skipped", ifState, ifReason)
 	}
 	rows, err := Pool.Query(ctx, `
-		SELECT title, state FROM base_task
+		SELECT title, state, COALESCE(closure_reason, '') FROM base_task
 		WHERE parent_task_id IN (SELECT _id FROM base_task WHERE parent_task_id = $1)`, rootID)
 	if err != nil {
 		t.Fatalf("read skipped scope: %v", err)
@@ -223,13 +223,13 @@ func TestIfFalseSkipsScope(t *testing.T) {
 	defer rows.Close()
 	scoped := 0
 	for rows.Next() {
-		var title, state string
-		if err := rows.Scan(&title, &state); err != nil {
+		var title, state, reason string
+		if err := rows.Scan(&title, &state, &reason); err != nil {
 			t.Fatalf("scan skipped scope: %v", err)
 		}
 		scoped++
-		if state != taskStateSkipped {
-			t.Fatalf("scoped task %q state = %q, want %q", title, state, taskStateSkipped)
+		if state != taskStateDone || reason != taskClosureSkipped {
+			t.Fatalf("scoped task %q = %q/%q, want closed/skipped", title, state, reason)
 		}
 	}
 	if scoped != 1 {
@@ -469,8 +469,8 @@ func TestIfNotReevaluated(t *testing.T) {
 		t.Fatalf("read scoped task: %v", err)
 	}
 	before := taskState(ctx, t, scopedID)
-	if before == taskStateSkipped {
-		t.Fatalf("true branch spawned its scope %q", before)
+	if before == taskStateDone {
+		t.Fatalf("true branch spawned its scope closed (%q)", before)
 	}
 
 	if _, err := Pool.Exec(ctx, `

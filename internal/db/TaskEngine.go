@@ -21,28 +21,31 @@ import (
 // user is the audit principal for every CRUD write the script performs
 // via ctx.records (captured by _audit_data_change, 009).
 
-// State codes on the real model (085): pending/ready/in_progress/closed,
-// stored in the text `state` column and guarded by chk_base_task_state.
-// 'skipped' is an engine-internal terminal for run_if evaluating false; it
-// is not offered in the UI. The design doc (rev 3) has children spawn in
-// PENDING; the engine promotes to ready (same run_if gate:
-// ready/pending -> in_progress, false -> skipped).
+// State codes on the real model: pending/ready/in_progress/closed, stored
+// in the text `state` column and guarded by chk_base_task_state. The design
+// doc (rev 3) has children spawn in PENDING; the engine promotes to ready
+// (same run_if gate: ready/pending -> in_progress, false -> closed).
+//
+// 'skipped' is not a state. A block that must not run is CLOSED with
+// closure_reason 'skipped' (migration 104): it is done, and it is done
+// because it did not run. That keeps one terminal state, one set of queries
+// meaning "still outstanding", and a reason the UI can show.
 const (
 	taskStatePending    = "pending"
 	taskStateReady      = "ready"
 	taskStateInProgress = "in_progress"
-	taskStateSkipped    = "skipped"
 	taskStateDone       = "closed"
+
+	taskClosureSkipped = "skipped"
 )
 
 // taskTransitions is the engine's allowed-edge set, validated in Go
 // against the text state column (077 removed base_task_transition).
 var taskTransitions = map[string]map[string]bool{
-	"ready":       {"ready": true, "in_progress": true, "closed": true, "skipped": true},
-	"in_progress": {"in_progress": true, "pending": true, "skipped": true, "closed": true},
-	"pending":     {"pending": true, "ready": true, "in_progress": true, "skipped": true},
+	"ready":       {"ready": true, "in_progress": true, "closed": true},
+	"in_progress": {"in_progress": true, "pending": true, "closed": true},
+	"pending":     {"pending": true, "ready": true, "in_progress": true, "closed": true},
 	"closed":      {},
-	"skipped":     {},
 }
 
 // allowedTaskTransition reports whether from -> to is an engine edge.
@@ -185,6 +188,9 @@ type taskRoute struct {
 	// State, when set, is the state the instance is inserted in. The control
 	// runtime uses it for a skipped branch; empty keeps the engine default.
 	State string
+	// ClosureReason is written with State, so a block that must not run is
+	// inserted closed with closure_reason 'skipped' (104).
+	ClosureReason string
 	// Skip marks a task that must not run: a branch whose `if` was false.
 	Skip bool
 	// BlockMeta and Scope stamp the block identity and the $item/$index/$parent
@@ -354,6 +360,12 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	if _, err := q.Exec(ctx, `UPDATE base_task SET title = $2 WHERE _id = $1`,
 		taskID, composedTitle); err != nil {
 		return "", fmt.Errorf("spawn task title: %w", err)
+	}
+	if route != nil && route.ClosureReason != "" {
+		if _, err := q.Exec(ctx, `UPDATE base_task SET closure_reason = $2 WHERE _id = $1`,
+			taskID, route.ClosureReason); err != nil {
+			return "", fmt.Errorf("spawn task closure reason: %w", err)
+		}
 	}
 
 	// Issue #332: the engine writes base_task directly, so the notification
@@ -817,7 +829,7 @@ func runTaskBarrier(earlier []DefinitionBlock, instances map[string][]childInsta
 			continue
 		}
 		for _, inst := range instances[b.ID] {
-			if inst.state != taskStateDone && inst.state != taskStateSkipped {
+			if !isTerminalTaskState(inst.state) {
 				return true
 			}
 		}
@@ -834,7 +846,7 @@ func earlierSiblingsTerminal(earlier []DefinitionBlock, instances map[string][]c
 			continue
 		}
 		for _, inst := range list {
-			if inst.state != taskStateDone && inst.state != taskStateSkipped {
+			if !isTerminalTaskState(inst.state) {
 				return false
 			}
 		}
@@ -939,7 +951,7 @@ func promoteBlockInstance(ctx context.Context, tx scriptQuerier, parentTaskID st
 			return fmt.Errorf("run_if evaluation failed for task %s: %w", inst.taskID, evalErr)
 		}
 		if !allowed {
-			return transitionTaskInTx(ctx, tx, inst.taskID, taskStateSkipped)
+			return skipTaskInTx(ctx, tx, inst.taskID, actorUserID)
 		}
 	}
 	if err := transitionTaskInTx(ctx, tx, inst.taskID, taskStateReady); err != nil {
@@ -998,25 +1010,26 @@ func depsSatisfied(deps []string, reason string, siblings map[string][]childInst
 }
 
 func instanceSatisfies(inst childInstanceState, reason string) bool {
-	switch inst.state {
-	case taskStateSkipped:
-		return true
-	case taskStateDone:
-		r := ""
-		if inst.reason != nil {
-			r = *inst.reason
-		}
-		if reason == "" {
-			return r == "completed" || r == "cancelled"
-		}
-		return r == reason
-	default:
+	if inst.state != taskStateDone {
 		return false
 	}
+	r := ""
+	if inst.reason != nil {
+		r = *inst.reason
+	}
+	// A skipped sibling always satisfies: one run_if:false must not deadlock
+	// the block that waits on it (issue #209).
+	if r == taskClosureSkipped {
+		return true
+	}
+	if reason == "" {
+		return r == "completed" || r == "cancelled"
+	}
+	return r == reason
 }
 
-// promoteInstance moves one pending child to ready (or skipped when its
-// run_if is false) and re-binds its input_mapping against the parent scope,
+// promoteInstance moves one pending child to ready (or closes it skipped when
+// its run_if is false) and re-binds its input_mapping against the parent scope,
 // so inputs referencing $outputs.<predecessor> resolve now that the
 // predecessor has published.
 func promoteInstance(ctx context.Context, tx scriptQuerier, parentTaskID string, inst childInstanceState, spec childSpec, actorUserID string, depth int) error {
@@ -1054,7 +1067,7 @@ func promoteInstance(ctx context.Context, tx scriptQuerier, parentTaskID string,
 			return fmt.Errorf("run_if evaluation failed for task %s: %w", inst.taskID, evalErr)
 		}
 		if !allowed {
-			return transitionTaskInTx(ctx, tx, inst.taskID, taskStateSkipped)
+			return skipTaskInTx(ctx, tx, inst.taskID, actorUserID)
 		}
 	}
 
@@ -1113,6 +1126,24 @@ func transitionTaskInTx(ctx context.Context, tx scriptQuerier, taskID, toStateCo
 	return err
 }
 
+// skipTaskInTx closes a task that must not run. Since 104 that is an
+// ordinary close with closure_reason 'skipped': terminal, publishes nothing,
+// and the same roll-up path as any other close, so a scope of skipped blocks
+// still collapses to its container.
+func skipTaskInTx(ctx context.Context, tx scriptQuerier, taskID, actorUserID string) error {
+	if err := transitionTaskInTx(ctx, tx, taskID, taskStateDone); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE base_task SET closure_reason = $2 WHERE _id = $1`,
+		taskID, taskClosureSkipped); err != nil {
+		return err
+	}
+	if err := onTaskClosed(ctx, tx, taskID, taskClosureSkipped, actorUserID); err != nil {
+		return err
+	}
+	return rollUpAncestors(ctx, tx, taskID, actorUserID)
+}
+
 // runTaskHooks: on entering in_progress — evaluate run_if (false -> skip),
 // then run the definition script for script tasks.
 func runTaskHooks(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) error {
@@ -1138,7 +1169,7 @@ func runTaskHooks(ctx context.Context, tx pgx.Tx, taskID, actorUserID string) er
 			return fmt.Errorf("run_if evaluation failed for task %s: %w", taskID, evalErr)
 		}
 		if !allowed {
-			return transitionTaskInTx(ctx, tx, taskID, taskStateSkipped)
+			return skipTaskInTx(ctx, tx, taskID, actorUserID)
 		}
 	}
 
@@ -1271,7 +1302,8 @@ func CloseTaskWithReason(ctx context.Context, taskID, actorUserID, closureReason
 	if err := tx.QueryRow(ctx, `SELECT state FROM base_task WHERE _id = $1`, taskID).Scan(&stateAfterHooks); err != nil {
 		return err
 	}
-	if stateAfterHooks == taskStateSkipped || stateAfterHooks == taskStateDone {
+	if stateAfterHooks == taskStateDone {
+		// run_if may have closed it as skipped; terminal, nothing to close.
 		return tx.Commit(ctx)
 	}
 
@@ -1323,6 +1355,12 @@ func onTaskClosed(ctx context.Context, tx scriptQuerier, taskID, closureReason, 
 		if merged, mergeErr := mergeContainerOutputs(ctx, tx, taskID, vars, containerYAML); mergeErr == nil {
 			outputs = merged
 		}
+	}
+
+	// A skipped close publishes nothing (AC-28): the block did not run, so it
+	// has no output to hand a successor. Promotion and roll-up still run.
+	if closureReason == taskClosureSkipped {
+		outputs = nil
 	}
 
 	// Publish up: parent's variables.outputs.<child slug> = this outputs.

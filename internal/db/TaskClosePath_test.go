@@ -9,7 +9,7 @@ func TestContainerRollUpReason(t *testing.T) {
 		r := reason
 		return childInstanceState{state: taskStateDone, reason: &r}
 	}
-	skipped := childInstanceState{state: taskStateSkipped}
+	skipped := closed(taskClosureSkipped)
 
 	cases := []struct {
 		name     string

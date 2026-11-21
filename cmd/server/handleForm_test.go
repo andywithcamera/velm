@@ -139,7 +139,7 @@ func TestBuildFormFieldConfigsLocksAssignmentGroupPastPending(t *testing.T) {
 		{NAME: "assignment_group_id", DATA_TYPE: "reference", IS_NULLABLE: true, LABEL: "Assignment Group"},
 	}
 
-	for _, state := range []string{"ready", "in_progress", "closed", "skipped"} {
+	for _, state := range []string{"ready", "in_progress", "closed"} {
 		t.Run(state, func(t *testing.T) {
 			configs := buildFormFieldConfigs(context.Background(), "base_task", columns, map[string]any{"state": state})
 			if !configs["assignment_group_id"].ReadOnly {
