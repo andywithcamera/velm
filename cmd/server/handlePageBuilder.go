@@ -2972,35 +2972,6 @@ func handleSaveRootRouteTarget(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
-func normalizeRootRouteTarget(input string) string {
-	target := strings.TrimSpace(strings.ToLower(input))
-	switch {
-	case target == "login" || target == "/login" || target == "/login/":
-		return "login"
-	case strings.HasPrefix(target, "page:"):
-		slug := normalizePageRouteSlug(strings.TrimSpace(strings.TrimPrefix(target, "page:")))
-		if slug != "" {
-			return "page:" + slug
-		}
-	case strings.HasPrefix(target, "/p/"):
-		slug := normalizePageRouteSlug(strings.TrimSpace(strings.TrimPrefix(target, "/p/")))
-		if slug != "" {
-			return "page:" + slug
-		}
-	case strings.HasPrefix(target, "table:"):
-		tableName := strings.TrimSpace(strings.TrimPrefix(target, "table:"))
-		if db.IsSafeIdentifier(tableName) {
-			return "table:" + tableName
-		}
-	case strings.HasPrefix(target, "/t/"):
-		tableName := strings.TrimSpace(strings.TrimPrefix(target, "/t/"))
-		if db.IsSafeIdentifier(tableName) {
-			return "table:" + tableName
-		}
-	}
-	return ""
-}
-
 func handleSavePageBuilder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
