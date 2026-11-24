@@ -3,7 +3,7 @@ module velm
 go 1.26.0
 
 require (
-	cel.dev/cel-go v0.32.0
+	cel.dev/cel-go v0.33.4
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/gorilla/sessions v1.4.0
