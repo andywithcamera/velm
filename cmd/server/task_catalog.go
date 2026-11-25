@@ -12,7 +12,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"net/url"
@@ -29,8 +28,13 @@ type taskCatalogEntry struct {
 	Description string
 	Category    string
 	IsContainer bool
-	// StepCount is the number of blocks a container will open when it is
-	// started. Zero for a leaf, which opens nothing but itself.
+	// StepCount is the number of steps a container will open when it is started:
+	// every child block except its trigger, which is the boundary the run starts
+	// from rather than a step. Zero for a leaf, which opens nothing but itself.
+	//
+	// The trigger is excluded because the order page lists the steps by name,
+	// and a count that included the trigger would disagree with the list the
+	// reader is looking at.
 	StepCount   int
 	InputFields []db.TaskInputField
 }
@@ -54,9 +58,9 @@ func (e taskCatalogEntry) KindLabel() string {
 // after it has opened.
 func (e taskCatalogEntry) StartLabel() string {
 	if e.IsContainer {
-		return "Start chain…"
+		return "Start chain"
 	}
-	return "Start…"
+	return "Start"
 }
 
 func stepWord(n int) string {
@@ -76,9 +80,11 @@ func loadTaskCatalog(ctx context.Context, query string) ([]taskCatalogCategory, 
 		`SELECT d.slug, d.display_name, d.description, d.category, d.is_container,
 		        COALESCE(d.input_schema_yaml, ''),
 		        (SELECT count(*) FROM base_task_definition_child c
-		          WHERE c.container_definition_id = d._id)
+		          WHERE c.container_definition_id = d._id
+		            AND COALESCE(c.block_kind, 'task') <> 'trigger')
 		 FROM base_task_definition d
 		 WHERE d._deleted_at IS NULL
+		   AND d.is_active
 		 ORDER BY d.display_name`)
 	if err != nil {
 		return nil, err
@@ -148,7 +154,6 @@ func handleTaskCatalogPage(w http.ResponseWriter, r *http.Request) {
 	viewData["TaskCatalogCategories"] = catalog
 	viewData["TaskCatalogQuery"] = strings.TrimSpace(r.URL.Query().Get("q"))
 	viewData["TaskCatalogTotal"] = total
-	viewData["TaskCatalogOrderURL"] = "/task-catalogue/order"
 	if r.Header.Get("HX-Request") == "true" {
 		// HTMX search swaps only the results region, not the whole page.
 		if err := templates.ExecuteTemplate(w, "task-catalog-results", viewData); err != nil {
@@ -173,9 +178,16 @@ func handleTaskCatalogueLegacyRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusMovedPermanently)
 }
 
-// handleTaskCatalogOrder spawns a definition instance from the catalogue's
-// "Start" form. Same engine path as POST /api/task-instances; the catalogue
-// just wraps it in a form so the experience needs no client scripting.
+// handleTaskCatalogOrder spawns a definition instance from the order page.
+// Same engine path as POST /api/task-instances; the order page just wraps it in
+// a form so the experience needs no client scripting.
+//
+// It answers with a 303 to the task it created. Landing on the record is the
+// confirmation: the steps that opened are on the page, named, with their own
+// state — which no sentence about a count can beat.
+//
+// The slug comes from the path. The form field is still read as a fallback so
+// a client posting the pre-2026-11-25 shape keeps working.
 func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -185,9 +197,12 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad form", http.StatusBadRequest)
 		return
 	}
-	slug := strings.TrimSpace(r.PostFormValue("definition_slug"))
+	slug := strings.TrimSpace(r.PathValue("slug"))
 	if slug == "" {
-		http.Error(w, "definition_slug is required", http.StatusBadRequest)
+		slug = strings.TrimSpace(r.PostFormValue("definition_slug"))
+	}
+	if slug == "" {
+		http.Error(w, "A definition slug is required", http.StatusBadRequest)
 		return
 	}
 	userID := auth.UserIDFromRequest(r)
@@ -195,72 +210,42 @@ func handleTaskCatalogOrder(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthenticated", http.StatusUnauthorized)
 		return
 	}
-	if reason, perr := checkStoredPlumbing(r.Context(), slug, isAdminRequest(r)); perr == nil && reason != "" {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = catalogOrderInvalidTmpl.Execute(w, map[string]string{"Slug": slug, "Reason": reason})
+	// The same loader the GET page uses, so a submission that is refused says
+	// exactly what the page said before it was submitted — inactive, broken
+	// plumbing, or nothing at all — with the requester's answers still in the
+	// fields.
+	view, found, err := loadTaskCatalogOrder(r.Context(), r, slug, r.PostForm)
+	if err != nil {
+		log.Printf("catalog order %q by %s: load: %v", slug, userID, err)
+		http.Error(w, "Failed to load the definition", http.StatusInternalServerError)
+		return
+	}
+	if !found {
+		http.Error(w, "Unknown definition", http.StatusNotFound)
+		return
+	}
+	if view.Problem != "" {
+		renderTaskCatalogOrder(w, r, view, http.StatusBadRequest)
 		return
 	}
 	inputs, ierr := catalogOrderInputs(r.Context(), slug, r.PostForm)
 	if ierr != nil {
 		log.Printf("catalog order %q by %s rejected: %v", slug, userID, ierr)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = catalogOrderInvalidTmpl.Execute(w, map[string]string{"Slug": slug, "Reason": ierr.Error()})
+		view.Error = ierr.Error()
+		renderTaskCatalogOrder(w, r, view, http.StatusBadRequest)
 		return
 	}
 	rootID, err := runtimeSpawnTaskBySlug(r.Context(), db.Pool, slug, "", userID, inputs)
 	if err != nil {
-		// Log the underlying error; the client sees a static message plus the
-		// (escaped) slug. Rendered through html/template so no user-controlled
-		// string is ever concatenated into markup (CodeQL go/reflected-xss).
+		// Log the underlying error; the page says only that the start failed.
+		// The slug is rendered by the template, so no user-controlled string is
+		// ever concatenated into markup (CodeQL go/reflected-xss).
 		log.Printf("catalog order %q by %s failed: %v", slug, userID, err)
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusBadRequest)
-		_ = catalogOrderErrorTmpl.Execute(w, map[string]string{"Slug": slug})
+		view.Error = "The definition could not be started. See the server log for details."
+		renderTaskCatalogOrder(w, r, view, http.StatusBadRequest)
 		return
 	}
-	// The confirmation has to say what came into existence: a chain that opened
-	// steps is a different outcome from a single task, and Andy ordered the
-	// leaf believing it was the chain precisely because nothing said so.
-	number := ""
-	steps := 0
-	if root, children, derr := runtimeDescribeTaskInstace(r.Context(), db.Pool, rootID); derr == nil {
-		number = root.Number
-		steps = len(children)
-	}
-	isContainer := catalogDefinitionIsContainer(r.Context(), slug) || steps > 0
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = catalogOrderDoneTmpl.Execute(w, map[string]string{
-		"TaskID":  rootID,
-		"Number":  number,
-		"Message": catalogOrderConfirmation(number, isContainer, steps),
-	})
-}
-
-// catalogDefinitionIsContainer reads the flag that decides how the order
-// confirmation describes the run. A read failure falls back to "not a
-// container"; the step count then decides, and the spawn has already
-// succeeded, so this must never turn a success into an error.
-func catalogDefinitionIsContainer(ctx context.Context, slug string) bool {
-	var isContainer bool
-	err := db.Pool.QueryRow(ctx,
-		`SELECT is_container FROM base_task_definition
-		 WHERE slug = $1 AND _deleted_at IS NULL`, slug).Scan(&isContainer)
-	return err == nil && isContainer
-}
-
-// catalogOrderConfirmation is the sentence the order fragment shows. Pure, so
-// the wording is testable without a database or a spawn: "Started TASK-152 as
-// a chain: 1 step opened" must stay true for 0, 1 and many steps.
-func catalogOrderConfirmation(number string, isContainer bool, steps int) string {
-	if !isContainer {
-		return fmt.Sprintf("Started %s as a single task: no steps opened.", number)
-	}
-	if steps == 0 {
-		return fmt.Sprintf("Started %s as a chain: no steps to open yet.", number)
-	}
-	return fmt.Sprintf("Started %s as a chain: %d %s opened.", number, steps, stepWord(steps))
+	http.Redirect(w, r, "/f/base_task/"+rootID, http.StatusSeeOther)
 }
 
 // catalogOrderInputs resolves the requester's form against the definition's
@@ -293,15 +278,3 @@ func resolveCatalogInputs(schemaYAML string, form url.Values) (map[string]any, e
 	}
 	return db.TaskInputValues(fields, submitted)
 }
-
-// catalogOrderErrorTmpl / catalogOrderDoneTmpl render the HTMX swap fragments
-// for the order endpoint. html/template context-encodes every interpolation,
-// which is both the XSS defence and what the code scanner expects.
-var catalogOrderErrorTmpl = template.Must(template.New("catalogOrderError").Parse(
-	`<div class="ui-catalog-order-error">Could not start {{.Slug}}: the definition could not be spawned. See the server log for details.</div>`))
-
-var catalogOrderInvalidTmpl = template.Must(template.New("catalogOrderInvalid").Parse(
-	`<div class="ui-catalog-order-error">Could not start {{.Slug}}: {{.Reason}}</div>`))
-
-var catalogOrderDoneTmpl = template.Must(template.New("catalogOrderDone").Parse(
-	`<div class="ui-catalog-order-done">{{.Message}} <a href="/f/base_task/{{.TaskID}}">Open the task</a> · track it on the <a href="/task">board</a>.</div>`))

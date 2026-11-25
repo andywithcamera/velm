@@ -132,9 +132,10 @@ func searchTaskResults(ctx context.Context, query string, limit int) ([]MenuItem
 	return results, nil
 }
 
-// searchTaskDefinitionResults surfaces catalog entries: starting an
-// orderable task type straight from global search links into the catalog
-// with the query prefilled.
+// searchTaskDefinitionResults surfaces catalogue entries. A hit is the
+// definition, so it links to that definition's order page: searching for
+// something and then having to find it again in a grid was the long way
+// round, and search already knows which row it matched.
 func searchTaskDefinitionResults(ctx context.Context, query string, limit int) ([]MenuItem, error) {
 	query = strings.TrimSpace(query)
 	if query == "" || limit <= 0 || db.Pool == nil {
@@ -163,7 +164,7 @@ func searchTaskDefinitionResults(ctx context.Context, query string, limit int) (
 		}
 		results = append(results, MenuItem{
 			Title: "Start task: " + name,
-			Href:  "/task-catalogue?q=" + url.QueryEscape(slug),
+			Href:  catalogOrderURL(slug),
 		})
 	}
 	return results, rows.Err()

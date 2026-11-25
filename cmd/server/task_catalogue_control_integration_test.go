@@ -34,11 +34,17 @@ func catalogueTestUser(t *testing.T, ctx context.Context) string {
 	return id
 }
 
-func orderThroughCatalogue(t *testing.T, userID, slug string) *httptest.ResponseRecorder {
+// orderThroughCatalogue posts to the definition's order page, the way the form
+// on that page does: the slug is in the path, and the form carries only inputs.
+func orderThroughCatalogue(t *testing.T, userID, slug string, form url.Values) *httptest.ResponseRecorder {
 	t.Helper()
+	if form == nil {
+		form = url.Values{}
+	}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/task-catalogue/order",
-		strings.NewReader(url.Values{"definition_slug": {slug}}.Encode()))
+	req := httptest.NewRequest(http.MethodPost, "/task-catalogue/"+slug+"/start",
+		strings.NewReader(form.Encode()))
+	req.SetPathValue("slug", slug)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = req.WithContext(auth.WithUserContext(req.Context(), userID, "", "", "admin"))
 	handleTaskCatalogOrder(rec, req)
@@ -66,7 +72,7 @@ func TestCatalogOrderRefusesOverCap(t *testing.T) {
 		t.Fatalf("seed for_each: %v", err)
 	}
 
-	rec := orderThroughCatalogue(t, userID, slug)
+	rec := orderThroughCatalogue(t, userID, slug, nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("catalogue order over the cap = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
 	}
@@ -114,11 +120,24 @@ func TestCatalogOrderConfirmation(t *testing.T) {
 		t.Fatalf("seed end: %v", err)
 	}
 
-	rec := orderThroughCatalogue(t, userID, slug)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("catalogue order = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	rec := orderThroughCatalogue(t, userID, slug, nil)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("catalogue order = %d, want 303 (body: %s)", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "2 steps opened") {
-		t.Fatalf("confirmation does not count the if and end: %s", rec.Body.String())
+	// The redirect lands on the record that was created; the count is read from
+	// the database rather than from a sentence, so it cannot drift.
+	location := rec.Header().Get("Location")
+	if !strings.HasPrefix(location, "/f/base_task/") {
+		t.Fatalf("order redirected to %q, want the created task's record", location)
+	}
+	rootID := strings.TrimPrefix(location, "/f/base_task/")
+	var spawned int
+	if err := db.Pool.QueryRow(ctx, `
+		SELECT count(*) FROM base_task
+		WHERE parent_task_id = $1`, rootID).Scan(&spawned); err != nil {
+		t.Fatalf("count spawned children: %v", err)
+	}
+	if spawned != 2 {
+		t.Fatalf("the chain opened %d blocks, want the if and the branch task", spawned)
 	}
 }

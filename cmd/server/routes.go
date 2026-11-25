@@ -158,10 +158,14 @@ func registerRoutes() {
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/move", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepMove), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/depends", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepDepends), store)))
 	http.Handle("POST /task-definitions/{slug}/steps/{child_slug}/mapping", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskDefinitionStepMapping), store)))
-	// Task catalogue: the order page and its order endpoint. The pre-spelling
-	// path /task-catalog is kept as a permanent redirect for bookmarks.
+	// Task catalogue: browse, then one page per definition to order it. Reading
+	// a definition's order page needs view; placing the order needs write, and
+	// a state-changing POST carries the CSRF token, like every other write in
+	// the app. The pre-spelling path /task-catalog is a permanent redirect for
+	// bookmarks.
 	http.Handle("/task-catalogue", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogPage)))
-	http.Handle("/task-catalogue/order", withAuth(authz.PermissionWrite, http.HandlerFunc(handleTaskCatalogOrder)))
+	http.Handle("GET /task-catalogue/{slug}/start", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogOrderPage)))
+	http.Handle("POST /task-catalogue/{slug}/start", withAuth(authz.PermissionWrite, auth.RequireCSRF(http.HandlerFunc(handleTaskCatalogOrder), store)))
 	http.Handle("/task-catalog", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskCatalogueLegacyRedirect)))
 	http.Handle("/task", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))
 	http.Handle("/task/", withAuth(authz.PermissionView, http.HandlerFunc(handleTaskBoardPage)))

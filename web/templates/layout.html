@@ -92,6 +92,9 @@
             {{if eq .View "task-catalog"}}
                 {{template "task-catalog-view" .}}
             {{end}}
+            {{if eq .View "task-catalog-order"}}
+                {{template "task-catalog-order-view" .}}
+            {{end}}
             {{if eq .View "task-definitions"}}
                 {{template "task-definitions-view" .}}
             {{end}}

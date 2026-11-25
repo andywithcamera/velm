@@ -72,20 +72,36 @@
     font-size: 0.85rem;
   }
 
+  /* align-items: start keeps a taller card in the row from stretching its
+     neighbours to the row's height, which left the shorter cards with a
+     block of dead space above their chips. */
   .ui-catalog-grid {
     display: grid;
     gap: 0.85rem;
     grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+    align-items: start;
   }
 
+  /* The card is a link. A card is one destination, so it is one anchor with a
+     stretched hit area: ⌘-click, middle-click, copy address and the back
+     button all work, and there is no form inside the grid for a search swap
+     to throw away. */
   .ui-catalog-card {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    position: relative;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: 14px;
     padding: 1rem;
+    transition: border-color 120ms ease, background 120ms ease;
+  }
+
+  .ui-catalog-card:hover,
+  .ui-catalog-card:focus-within {
+    border-color: var(--border-mid);
+    background: var(--surface-soft);
   }
 
   .ui-catalog-card-name {
@@ -94,11 +110,31 @@
     font-size: 1rem;
   }
 
+  .ui-catalog-card-link {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .ui-catalog-card-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 14px;
+  }
+
+  .ui-catalog-card-link:focus-visible {
+    outline: none;
+  }
+
+  .ui-catalog-card-link:focus-visible::after {
+    outline: var(--edge-w-thick) var(--edge-style) var(--blue-bright);
+    outline-offset: 2px;
+  }
+
   .ui-catalog-card-desc {
     margin: 0;
     color: var(--text-secondary);
     font-size: 0.875rem;
-    flex: 1;
   }
 
   .ui-catalog-card-meta {
@@ -106,6 +142,7 @@
     flex-wrap: wrap;
     gap: 0.4rem;
     align-items: center;
+    margin-top: auto;
   }
 
   .ui-catalog-chip {
@@ -117,6 +154,9 @@
     color: var(--text-secondary);
   }
 
+  /* The CTA is a span, not a button: the whole card is already the link, and
+     a second control wearing the same words would start nothing on its own.
+     pointer-events: none lets the click through to the stretched anchor. */
   .ui-catalog-start {
     align-self: flex-start;
     border: 1px solid var(--border-mid);
@@ -125,91 +165,26 @@
     border-radius: 999px;
     padding: 0.35rem 0.9rem;
     font-size: 0.85rem;
-    cursor: pointer;
+    pointer-events: none;
   }
 
-  .ui-catalog-start:hover {
+  .ui-catalog-card:hover .ui-catalog-start,
+  .ui-catalog-card:focus-within .ui-catalog-start {
     background: var(--surface-soft);
   }
 
-  .ui-catalog-start:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .ui-catalog-order-done {
+  .ui-catalog-search-button {
     border: 1px solid var(--border-mid);
-    border-radius: 10px;
-    background: var(--surface-soft);
-    color: var(--text-primary);
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-  }
-
-  .ui-catalog-order-error {
-    border: 1px solid rgba(220, 80, 80, 0.4);
-    border-radius: 10px;
-    color: var(--text-primary);
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-  }
-
-  .ui-catalog-order {
-    border-top: 1px solid var(--border);
-    padding-top: 0.5rem;
-  }
-
-  .ui-catalog-order > summary {
-    list-style: none;
-    cursor: pointer;
-    display: inline-block;
-  }
-
-  .ui-catalog-order > summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .ui-catalog-order-form {
-    display: grid;
-    gap: 0.6rem;
-    margin-top: 0.6rem;
-  }
-
-  .ui-catalog-field {
-    display: grid;
-    gap: 0.25rem;
-  }
-
-  .ui-catalog-field-label {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-  }
-
-  .ui-catalog-required {
-    color: rgb(220, 80, 80);
-    margin-left: 0.2rem;
-  }
-
-  .ui-catalog-field-input {
-    min-height: 40px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
     background: var(--bg-base);
     color: var(--text-primary);
+    border-radius: 999px;
+    padding: 0 1.1rem;
     font-size: 0.9rem;
-    padding: 0.4rem 0.6rem;
-    font-family: inherit;
-    width: 100%;
-    box-sizing: border-box;
+    cursor: pointer;
   }
 
-  textarea.ui-catalog-field-input {
-    resize: vertical;
-  }
-
-  .ui-catalog-field-help {
-    font-size: 0.75rem;
-    color: var(--text-dim);
+  .ui-catalog-search-button:hover {
+    background: var(--surface-soft);
   }
 
   .ui-catalog-chip-chain {
@@ -243,9 +218,9 @@
   <div class="ui-catalog-hero">
     <h1 class="ui-catalog-title">Task Catalogue</h1>
     <p class="ui-catalog-sub">Everything that can be started, in one place. A chain opens its steps as tasks of their own; a single task opens one task. Pick a definition, start it, track it on the board.</p>
-    <form class="ui-catalog-search" hx-get="/task-catalogue" hx-target="#task-catalog-results" hx-swap="outerHTML" hx-trigger="submit, keyup delay:300ms from:find input">
-      <input class="ui-catalog-search-input" type="search" name="q" placeholder="Search definitions…" value="{{.TaskCatalogQuery}}" autocomplete="off" />
-      <button class="ui-catalog-start" type="submit">Search</button>
+    <form class="ui-catalog-search" hx-get="/task-catalogue" hx-target="#task-catalog-results" hx-swap="outerHTML" hx-trigger="submit, keyup delay:300ms from:find input" action="/task-catalogue" method="get" role="search">
+      <input class="ui-catalog-search-input" type="search" name="q" placeholder="Search definitions…" value="{{.TaskCatalogQuery}}" autocomplete="off" aria-label="Search task definitions" />
+      <button class="ui-catalog-search-button" type="submit">Search</button>
     </form>
   </div>
 
@@ -267,7 +242,9 @@
           <div class="ui-catalog-grid">
             {{range .Entries}}
               <article class="ui-catalog-card" id="definition-{{.Slug}}">
-                <h3 class="ui-catalog-card-name">{{.DisplayName}}</h3>
+                <h3 class="ui-catalog-card-name">
+                  <a class="ui-catalog-card-link" href="/task-catalogue/{{.Slug}}/start">{{.DisplayName}}</a>
+                </h3>
                 <p class="ui-catalog-card-desc">{{if .Description}}{{.Description}}{{else}}No description yet.{{end}}</p>
                 <div class="ui-catalog-card-meta">
                   {{if .IsContainer}}
@@ -277,39 +254,7 @@
                   {{end}}
                   {{if .HasInputs}}<span class="ui-catalog-chip">{{len .InputFields}} input{{if ne (len .InputFields) 1}}s{{end}}</span>{{end}}
                 </div>
-                {{if .HasInputs}}
-                  <details class="ui-catalog-order">
-                    <summary class="ui-catalog-start">{{.StartLabel}}</summary>
-                    <form class="ui-catalog-order-form" hx-post="{{$.TaskCatalogOrderURL}}" hx-target="find .ui-catalog-order-result" hx-swap="innerHTML">
-                      <input type="hidden" name="definition_slug" value="{{.Slug}}" />
-                      {{range $field := .InputFields}}
-                        <label class="ui-catalog-field">
-                          <span class="ui-catalog-field-label">{{.LabelOrName}}{{if .IsRequired}}<span class="ui-catalog-required" title="Required">*</span>{{end}}</span>
-                          {{if eq $field.InputControlKind "textarea"}}
-                            <textarea class="ui-catalog-field-input" name="{{.Name}}" rows="3"{{if .IsRequired}} required{{end}}>{{.DefaultValue}}</textarea>
-                          {{else if eq $field.InputControlKind "select"}}
-                            <select class="ui-catalog-field-input" name="{{.Name}}"{{if .IsRequired}} required{{end}}>
-                              {{if not .IsRequired}}<option value="">—</option>{{end}}
-                              {{range $field.Choices}}<option value="{{.Value}}"{{if eq .Value $field.DefaultValue}} selected{{end}}>{{.Label}}</option>{{end}}
-                            </select>
-                          {{else if eq $field.InputControlKind "checkbox"}}
-                            <input type="checkbox" name="{{.Name}}" value="yes"{{if eq .DefaultValue "yes"}} checked{{end}} />
-                          {{else}}
-                            <input class="ui-catalog-field-input" type="{{.InputHTMLType}}" name="{{.Name}}" value="{{.DefaultValue}}"{{if .IsRequired}} required{{end}} />
-                          {{end}}
-                          {{if .HelpText}}<span class="ui-catalog-field-help">{{.HelpText}}</span>{{end}}
-                        </label>
-                      {{end}}
-                      <button class="ui-catalog-start" type="submit">Submit request</button>
-                      <div class="ui-catalog-order-result"></div>
-                    </form>
-                  </details>
-                {{else}}
-                  <form class="ui-catalog-order-form" hx-post="{{$.TaskCatalogOrderURL}}" hx-target="find .ui-catalog-start" hx-swap="outerHTML">
-                    <input type="hidden" name="definition_slug" value="{{.Slug}}" />
-                    <button class="ui-catalog-start" type="submit">{{.StartLabel}}</button>
-                  </form>
-                {{end}}
+                <span class="ui-catalog-start">{{.StartLabel}}</span>
               </article>
             {{end}}
           </div>
