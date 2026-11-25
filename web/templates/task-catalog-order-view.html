@@ -1,0 +1,288 @@
+{{define "task-catalog-order-view"}}
+<style>
+  .ui-order {
+    padding: 1.5rem;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .ui-order-back {
+    display: inline-block;
+    margin-bottom: 0.9rem;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    text-decoration: none;
+  }
+
+  .ui-order-back:hover {
+    color: var(--text-primary);
+  }
+
+  .ui-order-hero {
+    background:
+      radial-gradient(circle at top right, rgba(231, 197, 111, 0.18), transparent 34%),
+      linear-gradient(180deg, var(--bg-surface), var(--bg-base));
+    border: 1px solid rgba(231, 197, 111, 0.32);
+    border-radius: 18px;
+    padding: 1.3rem;
+    margin-bottom: 1rem;
+  }
+
+  .ui-order-title {
+    margin: 0 0 0.35rem;
+    font-family: "Instrument Sans", sans-serif;
+    letter-spacing: -0.03em;
+    color: var(--text-primary);
+  }
+
+  .ui-order-desc {
+    margin: 0 0 0.75rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-order-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  .ui-order-chip {
+    font-size: 0.78rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 999px;
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+  }
+
+  .ui-order-chip-chain {
+    border-color: var(--accent, rgb(80, 140, 220));
+    color: var(--accent, rgb(80, 140, 220));
+    font-weight: 600;
+  }
+
+  .ui-order-chip-single {
+    border-style: dashed;
+  }
+
+  .ui-order-outcome {
+    margin: 0.85rem 0 0;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+  }
+
+  .ui-order-steps {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .ui-order-step {
+    display: flex;
+    gap: 0.65rem;
+    align-items: baseline;
+    padding: 0.55rem 0.85rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface);
+  }
+
+  .ui-order-step:first-child {
+    border-top: none;
+  }
+
+  .ui-order-step-number {
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.8rem;
+    min-width: 1.2rem;
+  }
+
+  .ui-order-step-label {
+    color: var(--text-primary);
+    font-size: 0.92rem;
+  }
+
+  .ui-order-step-label[data-depth="1"] { margin-left: 1.1rem; }
+  .ui-order-step-label[data-depth="2"] { margin-left: 2.2rem; }
+  .ui-order-step-label[data-depth="3"] { margin-left: 3.3rem; }
+  .ui-order-step-label[data-depth="4"] { margin-left: 4.4rem; }
+  .ui-order-step-label[data-depth="5"] { margin-left: 5.5rem; }
+
+  .ui-order-step-kind {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.05rem 0.45rem;
+  }
+
+  .ui-order-form {
+    display: grid;
+    gap: 0.8rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1.1rem;
+  }
+
+  .ui-order-field {
+    display: grid;
+    gap: 0.3rem;
+  }
+
+  /* The help text sits outside the label. Inside it, it becomes part of the
+     control's accessible name, and a screen reader reads the explanation as
+     the field's title. aria-describedby carries it instead. */
+  .ui-order-field-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+
+  .ui-order-required {
+    color: rgb(220, 80, 80);
+    margin-left: 0.2rem;
+  }
+
+  .ui-order-field-input {
+    min-height: 42px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 0.92rem;
+    padding: 0.45rem 0.65rem;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  textarea.ui-order-field-input {
+    resize: vertical;
+  }
+
+  .ui-order-field-help {
+    font-size: 0.76rem;
+    color: var(--text-dim);
+  }
+
+  .ui-order-submit {
+    justify-self: start;
+    border: 1px solid var(--border-mid);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    border-radius: 999px;
+    padding: 0.5rem 1.2rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .ui-order-submit:hover {
+    background: var(--surface-soft);
+  }
+
+  .ui-order-error,
+  .ui-order-problem {
+    border: 1px solid rgba(220, 80, 80, 0.4);
+    border-radius: 12px;
+    background: rgba(220, 80, 80, 0.08);
+    color: var(--text-primary);
+    padding: 0.6rem 0.85rem;
+    font-size: 0.88rem;
+    margin-bottom: 1rem;
+  }
+
+  .ui-order-problem {
+    border-color: rgba(231, 197, 111, 0.45);
+    background: rgba(231, 197, 111, 0.09);
+  }
+
+  .ui-order-note {
+    color: var(--text-dim);
+    font-size: 0.8rem;
+    margin: 0.5rem 0 0;
+  }
+
+  @media (max-width: 640px) {
+    .ui-order {
+      padding: 1rem 0.75rem;
+    }
+  }
+</style>
+{{$order := .Order}}
+<div class="ui-order">
+  <a class="ui-order-back" href="/task-catalogue">← Catalogue</a>
+
+  <div class="ui-order-hero">
+    <h1 class="ui-order-title">{{$order.DisplayName}}</h1>
+    <p class="ui-order-desc">{{if $order.Description}}{{$order.Description}}{{else}}No description yet.{{end}}</p>
+    <div class="ui-order-meta">
+      {{if $order.IsContainer}}
+        <span class="ui-order-chip ui-order-chip-chain">{{$order.KindLabel}}</span>
+      {{else}}
+        <span class="ui-order-chip ui-order-chip-single">{{$order.KindLabel}}</span>
+      {{end}}
+      {{if $order.HasInputs}}<span class="ui-order-chip">{{len $order.Fields}} input{{if ne (len $order.Fields) 1}}s{{end}}</span>{{end}}
+      <code class="ui-order-chip">{{$order.Slug}}</code>
+    </div>
+    <p class="ui-order-outcome">{{$order.Outcome}}</p>
+  </div>
+
+  {{if $order.Error}}
+    <div class="ui-order-error ui-catalog-order-error" role="alert">{{$order.Error}}</div>
+  {{end}}
+  {{if $order.Problem}}
+    <div class="ui-order-problem ui-catalog-order-error" role="status">{{$order.Problem}}</div>
+  {{end}}
+
+  {{if $order.Steps}}
+    <ol class="ui-order-steps">
+      {{range $step := $order.Steps}}
+        <li class="ui-order-step">
+          <span class="ui-order-step-number">{{$step.Number}}</span>
+          <span class="ui-order-step-label" data-depth="{{$step.Depth}}">{{$step.Label}}</span>
+          {{if $step.Kind}}<span class="ui-order-step-kind">{{$step.Kind}}</span>{{end}}
+        </li>
+      {{end}}
+    </ol>
+  {{end}}
+
+  {{if not $order.Problem}}
+    <form class="ui-order-form" method="post" action="/task-catalogue/{{$order.Slug}}/start">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}" />
+      {{template "catalogOrderFields" $order.Fields}}
+      <button class="ui-order-submit" type="submit">{{$order.StartLabel}}</button>
+      <p class="ui-order-note">Starting creates the task immediately. You will land on it.</p>
+    </form>
+  {{end}}
+</div>
+{{end}}
+
+{{/* catalogOrderFields renders a definition's declared inputs. It is the only
+     renderer for them, so a new data_type appears here once and applies
+     everywhere ordering happens. */}}
+{{define "catalogOrderFields"}}
+  {{range $field := .}}
+    {{$describedBy := ""}}
+    {{if $field.HelpText}}{{$describedBy = printf "help-%s" $field.Name}}{{end}}
+    <div class="ui-order-field">
+      <label class="ui-order-field-label" for="input-{{$field.Name}}">{{$field.LabelOrName}}{{if $field.IsRequired}}<span class="ui-order-required" title="Required">*</span>{{end}}</label>
+      {{if eq $field.InputControlKind "textarea"}}
+        <textarea class="ui-order-field-input" id="input-{{$field.Name}}" name="{{$field.Name}}" rows="3"{{if $field.IsRequired}} required{{end}}{{if $describedBy}} aria-describedby="{{$describedBy}}"{{end}}>{{$field.Value}}</textarea>
+      {{else if eq $field.InputControlKind "select"}}
+        <select class="ui-order-field-input" id="input-{{$field.Name}}" name="{{$field.Name}}"{{if $field.IsRequired}} required{{end}}{{if $describedBy}} aria-describedby="{{$describedBy}}"{{end}}>
+          {{if not $field.IsRequired}}<option value=""{{if eq $field.Value ""}} selected{{end}}>—</option>{{end}}
+          {{range $field.Choices}}<option value="{{.Value}}"{{if eq .Value $field.Value}} selected{{end}}>{{.Label}}</option>{{end}}
+        </select>
+      {{else if eq $field.InputControlKind "checkbox"}}
+        <input class="ui-order-field-input" type="checkbox" id="input-{{$field.Name}}" name="{{$field.Name}}" value="yes"{{if eq $field.Value "yes"}} checked{{end}}{{if $describedBy}} aria-describedby="{{$describedBy}}"{{end}} />
+      {{else}}
+        <input class="ui-order-field-input" type="{{$field.InputHTMLType}}" id="input-{{$field.Name}}" name="{{$field.Name}}" value="{{$field.Value}}"{{if $field.IsRequired}} required{{end}}{{if $describedBy}} aria-describedby="{{$describedBy}}"{{end}} />
+      {{end}}
+      {{if $field.HelpText}}<span class="ui-order-field-help" id="help-{{$field.Name}}">{{$field.HelpText}}</span>{{end}}
+    </div>
+  {{end}}
+{{end}}

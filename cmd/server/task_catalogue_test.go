@@ -1,18 +1,23 @@
 package main
 
 // Slice 1 (legibility) of the process designer: the catalogue must say out
-// loud whether an entry is a chain or a single task, and the order fragment
-// must say how many blocks opened. These tests are the labels; the route and
-// menu tests live in task_catalogue_integration_test.go because the menu is
-// built from the database.
+// loud whether an entry is a chain or a single task, and the order page must
+// say what starting it will open. These tests are the labels and the page
+// structure; the route and menu tests live in
+// task_catalogue_integration_test.go because the menu is built from the
+// database.
 
 import (
 	"bytes"
-	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"html/template"
+	"path/filepath"
+
+	"velm/internal/db"
 )
 
 func TestTaskCatalogEntryKindLabel(t *testing.T) {
@@ -23,10 +28,10 @@ func TestTaskCatalogEntryKindLabel(t *testing.T) {
 		want      string
 		startWant string
 	}{
-		{"leaf", false, 0, "Single task", "Start…"},
-		{"chain with one step", true, 1, "Chain · 1 step", "Start chain…"},
-		{"chain with many steps", true, 3, "Chain · 3 steps", "Start chain…"},
-		{"empty container", true, 0, "Chain · 0 steps", "Start chain…"},
+		{"leaf", false, 0, "Single task", "Start"},
+		{"chain with one step", true, 1, "Chain · 1 step", "Start chain"},
+		{"chain with many steps", true, 3, "Chain · 3 steps", "Start chain"},
+		{"empty container", true, 0, "Chain · 0 steps", "Start chain"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -41,82 +46,223 @@ func TestTaskCatalogEntryKindLabel(t *testing.T) {
 	}
 }
 
-func TestTaskCatalogOrderConfirmation(t *testing.T) {
+// The order page must say what starting the definition will open, and the
+// page must not be a card: one definition, its steps, its inputs. Pure, so the
+// wording is testable without a database.
+func TestTaskCatalogOrderViewLabelsWhatWillOpen(t *testing.T) {
 	cases := []struct {
 		name        string
-		number      string
-		isContainer bool
-		steps       int
-		want        string
+		view        taskCatalogOrderView
+		wantKind    string
+		wantStart   string
+		wantOutcome string
 	}{
 		{
 			name:        "single task opens only itself",
-			number:      "TASK-000151",
-			isContainer: false,
-			steps:       0,
-			want:        "Started TASK-000151 as a single task: no steps opened.",
+			view:        taskCatalogOrderView{Slug: "reboot", DisplayName: "Reboot", StepCount: 0},
+			wantKind:    "Single task",
+			wantStart:   "Start",
+			wantOutcome: "Starting this opens a single task.",
 		},
 		{
 			// The exact case Andy hit: one step, and nothing said so.
 			name:        "chain with one step",
-			number:      "TASK-000152",
-			isContainer: true,
-			steps:       1,
-			want:        "Started TASK-000152 as a chain: 1 step opened.",
+			view:        taskCatalogOrderView{Slug: "upgrade", DisplayName: "Upgrade", IsContainer: true, StepCount: 1},
+			wantKind:    "Chain · 1 step",
+			wantStart:   "Start chain · 1 step",
+			wantOutcome: "Starting this opens a chain of 1 step.",
 		},
 		{
 			name:        "chain with several steps",
-			number:      "TASK-000160",
-			isContainer: true,
-			steps:       4,
-			want:        "Started TASK-000160 as a chain: 4 steps opened.",
-		},
-		{
-			name:        "container with no steps yet",
-			number:      "TASK-000170",
-			isContainer: true,
-			steps:       0,
-			want:        "Started TASK-000170 as a chain: no steps to open yet.",
+			view:        taskCatalogOrderView{Slug: "ship", DisplayName: "Ship", IsContainer: true, StepCount: 4},
+			wantKind:    "Chain · 4 steps",
+			wantStart:   "Start chain · 4 steps",
+			wantOutcome: "Starting this opens a chain of 4 steps.",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := catalogOrderConfirmation(tc.number, tc.isContainer, tc.steps); got != tc.want {
-				t.Errorf("catalogOrderConfirmation() = %q, want %q", got, tc.want)
+			if got := tc.view.KindLabel(); got != tc.wantKind {
+				t.Errorf("KindLabel() = %q, want %q", got, tc.wantKind)
+			}
+			if got := tc.view.StartLabel(); got != tc.wantStart {
+				t.Errorf("StartLabel() = %q, want %q", got, tc.wantStart)
+			}
+			want := tc.wantOutcome
+			if got := tc.view.Outcome(); got != want {
+				t.Errorf("Outcome() = %q, want %q", got, want)
+			}
+			if !strings.Contains(renderOrderPage(t, tc.view), want) {
+				t.Errorf("order page does not say %q", want)
 			}
 		})
 	}
 }
 
-// The confirmation is rendered into the HTMX fragment, so the sentence must
-// survive the template and not just the function.
-func TestTaskCatalogOrderDoneFragmentReportsChain(t *testing.T) {
-	var buf bytes.Buffer
-	err := catalogOrderDoneTmpl.Execute(&buf, map[string]string{
-		"TaskID":  "8a1f",
-		"Number":  "TASK-000152",
-		"Message": catalogOrderConfirmation("TASK-000152", true, 1),
-	})
+// renderOrderPage renders through a freshly parsed template set rather than
+// the package global, so the test does not depend on another test file having
+// called initTemplates first.
+func renderOrderPage(t *testing.T, view taskCatalogOrderView) string {
+	t.Helper()
+	tpl, err := template.ParseGlob(filepath.Join("..", "..", "web", "templates", "*.html"))
 	if err != nil {
-		t.Fatalf("Execute(catalogOrderDone): %v", err)
+		t.Fatalf("parse templates: %v", err)
 	}
-	out := buf.String()
-	for _, want := range []string{
-		"Started TASK-000152 as a chain: 1 step opened.",
-		`href="/f/base_task/8a1f"`,
-		`href="/task"`,
-	} {
-		if !strings.Contains(out, want) {
-			t.Errorf("order fragment missing %q; got %s", want, out)
+	if _, err := tpl.ParseGlob(filepath.Join("..", "..", "web", "templates", "components", "*.html")); err != nil {
+		t.Fatalf("parse components: %v", err)
+	}
+	var buf bytes.Buffer
+	data := map[string]any{"Order": view, "CSRFToken": "test-token"}
+	if err := tpl.ExecuteTemplate(&buf, "task-catalog-order-view", data); err != nil {
+		t.Fatalf("ExecuteTemplate(task-catalog-order-view): %v", err)
+	}
+	return buf.String()
+}
+
+// The steps are the decision input: they come from the stored tree, in order,
+// and the trigger and a scope's End are boundaries rather than steps.
+func TestCatalogStepsFromDocumentSkipsBoundaries(t *testing.T) {
+	blocks := []db.DocumentBlock{
+		{ID: "t", Kind: "trigger", Type: "trigger"},
+		{ID: "a", Kind: "task", DisplayName: "Write the change note", Position: 10},
+		{ID: "if", Kind: "control", Type: "if", Label: "enhancement?", Position: 20},
+		{ID: "b", Kind: "task", DisplayName: "Build and test", ParentID: "if", Position: 25},
+		{ID: "c", Kind: "task", Label: "Push the PR", ParentID: "if", Position: 30},
+		{ID: "end", Kind: "control", Type: "end", ParentID: "if", Position: 40},
+	}
+	steps := catalogStepsFromDocument(blocks)
+	if len(steps) != 4 {
+		t.Fatalf("got %d steps, want 4: %+v", len(steps), steps)
+	}
+	wantLabels := []string{"Write the change note", "enhancement?", "Build and test", "Push the PR"}
+	for i, want := range wantLabels {
+		if steps[i].Label != want {
+			t.Errorf("step %d label = %q, want %q", i+1, steps[i].Label, want)
+		}
+		if steps[i].Number != i+1 {
+			t.Errorf("step %d Number = %d, want %d", i+1, steps[i].Number, i+1)
+		}
+	}
+	if steps[1].Kind != "If" {
+		t.Errorf("the If block is not named as one: %+v", steps[1])
+	}
+	for i, step := range steps {
+		wantDepth := 0
+		if i >= 2 {
+			wantDepth = 1
+		}
+		if step.Depth != wantDepth {
+			t.Errorf("step %d Depth = %d, want %d", i+1, step.Depth, wantDepth)
 		}
 	}
 }
 
+// A chain whose steps are all filtered out must not print an empty numbered
+// list; the page falls back to the outcome sentence alone.
+func TestCatalogStepsFromDocumentEmptyWhenOnlyBoundaries(t *testing.T) {
+	steps := catalogStepsFromDocument([]db.DocumentBlock{
+		{ID: "t", Kind: "trigger"},
+		{ID: "end", Kind: "control", Type: "end"},
+	})
+	if len(steps) != 0 {
+		t.Fatalf("got %d steps, want none: %+v", len(steps), steps)
+	}
+}
+
+// A refused submission re-renders with what was typed, not the stored default:
+// otherwise the browser's Back button is the only way to keep an answer, and
+// the field the requester got wrong is the one that wants keeping.
+func TestCatalogFieldsPreferSubmittedValues(t *testing.T) {
+	fields := []db.TaskInputField{
+		{Name: "server", Label: "Server", DefaultValue: "web-01"},
+		{Name: "reason", Label: "Reason", DataType: "long_text"},
+	}
+	submitted := map[string][]string{"server": {"db-02"}, "reason": {"Needs the patch"}}
+	view := catalogOrderFields(fields, submitted)
+	if got, want := view[0].Value, "db-02"; got != want {
+		t.Errorf("server value = %q, want the submitted %q", got, want)
+	}
+	if got, want := view[1].Value, "Needs the patch"; got != want {
+		t.Errorf("reason value = %q, want the submitted %q", got, want)
+	}
+
+	untouched := catalogOrderFields(fields, map[string][]string{})
+	if got, want := untouched[0].Value, "web-01"; got != want {
+		t.Errorf("server value = %q, want the stored default %q", got, want)
+	}
+}
+
+// An unchecked checkbox is absent from the form, so it must not fall back to a
+// stored default of "yes": that would re-tick the box the requester cleared.
+func TestCatalogFieldsTreatAbsentCheckboxAsUnchecked(t *testing.T) {
+	fields := []db.TaskInputField{
+		{Name: "notify", Label: "Notify", DataType: "boolean", DefaultValue: "yes"},
+	}
+	view := catalogOrderFields(fields, map[string][]string{"other": {"x"}})
+	if view[0].Value != "" {
+		t.Errorf("notify value = %q, want it cleared", view[0].Value)
+	}
+	fresh := catalogOrderFields(fields, nil)
+	if fresh[0].Value != "yes" {
+		t.Errorf("first render notify value = %q, want the stored default", fresh[0].Value)
+	}
+}
+
+// Help text sits outside the label and is linked with aria-describedby. Inside
+// the label it becomes part of the control's accessible name, which is what
+// made a textarea announce itself as "What to do Write why it was refused".
+func TestCatalogOrderFieldsKeepHelpTextOutOfTheLabel(t *testing.T) {
+	out := renderOrderPage(t, taskCatalogOrderView{
+		Slug: "ship", DisplayName: "Ship a change",
+		Fields: []catalogFieldView{{
+			TaskInputField: db.TaskInputField{
+				Name: "what_to_do", Label: "What to do", DataType: "long_text",
+				HelpText: "One sentence. The steps do the detail.",
+			},
+			Value: "Add the flag",
+		}},
+	})
+	if !strings.Contains(out, `aria-describedby="help-what_to_do"`) {
+		t.Errorf("the field is not linked to its help text:\n%s", out)
+	}
+	labelOpen := strings.Index(out, `<label class="ui-order-field-label" for="input-what_to_do">`)
+	if labelOpen < 0 {
+		t.Fatalf("no label for the field:\n%s", out)
+	}
+	labelClose := strings.Index(out[labelOpen:], "</label>")
+	if labelClose < 0 {
+		t.Fatalf("unclosed label:\n%s", out)
+	}
+	if strings.Contains(out[labelOpen:labelOpen+labelClose], "One sentence") {
+		t.Errorf("the help text is inside the label:\n%s", out)
+	}
+	if !strings.Contains(out, "Add the flag") {
+		t.Errorf("the submitted value is not in the field:\n%s", out)
+	}
+}
+
+// An order page that cannot be placed renders the reason instead of a Start
+// button, so nobody types into a form that was never going to work.
+func TestCatalogOrderPageHidesStartWhenNotOrderable(t *testing.T) {
+	out := renderOrderPage(t, taskCatalogOrderView{
+		Slug: "dead", DisplayName: "Inactive thing", Problem: "This definition is inactive.",
+	})
+	if strings.Contains(out, `type="submit"`) {
+		t.Errorf("an inactive definition still offers a Start button:\n%s", out)
+	}
+	if !strings.Contains(out, "This definition is inactive.") {
+		t.Errorf("the reason is not shown:\n%s", out)
+	}
+}
+
 // A container must be unmistakably different from a leaf on the rendered card,
-// not just in the struct.
-func TestTaskCatalogResultsMarksChainsAndSingleTasks(t *testing.T) {
-	ensureTestSessionStore()
-	var buf bytes.Buffer
+// and the card must be a link to that definition's order page: the grid holds
+// no forms, so a search that swaps the results cannot throw away typing.
+func TestTaskCatalogResultsLinksToOrderPages(t *testing.T) {
+	tpl, err := template.ParseGlob(filepath.Join("..", "..", "web", "templates", "*.html"))
+	if err != nil {
+		t.Fatalf("parse templates: %v", err)
+	}
 	data := map[string]any{
 		"TaskCatalogTotal": 2,
 		"TaskCatalogCategories": []taskCatalogCategory{{
@@ -126,9 +272,9 @@ func TestTaskCatalogResultsMarksChainsAndSingleTasks(t *testing.T) {
 				{Slug: "reboot-server", DisplayName: "Reboot Server"},
 			},
 		}},
-		"TaskCatalogOrderURL": "/task-catalogue/order",
 	}
-	if err := templates.ExecuteTemplate(&buf, "task-catalog-results", data); err != nil {
+	var buf bytes.Buffer
+	if err := tpl.ExecuteTemplate(&buf, "task-catalog-results", data); err != nil {
 		t.Fatalf("ExecuteTemplate(task-catalog-results): %v", err)
 	}
 	out := buf.String()
@@ -136,11 +282,19 @@ func TestTaskCatalogResultsMarksChainsAndSingleTasks(t *testing.T) {
 		"Chain · 1 step",
 		"Single task",
 		`id="definition-upgrade-server"`,
-		"Start chain…",
-		`hx-post="/task-catalogue/order"`,
+		"Start chain",
+		`href="/task-catalogue/upgrade-server/start"`,
+		`href="/task-catalogue/reboot-server/start"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("catalogue results missing %q", want)
+		}
+	}
+	// The grid is a set of links. A form in it would be state a search swap
+	// destroys, which is the bug this shape exists to remove.
+	for _, unwanted := range []string{"<form", "hx-post", "<input"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("catalogue results still contain %q:\n%s", unwanted, out)
 		}
 	}
 	// Actions must not point at the pre-spelling path.
