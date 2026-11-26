@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -213,11 +212,10 @@ func taskStateAndReason(ctx context.Context, t *testing.T, taskID string) (strin
 
 func setTaskVars(ctx context.Context, t *testing.T, taskID string, vars map[string]any) {
 	t.Helper()
-	vj, err := json.Marshal(vars)
-	if err != nil {
-		t.Fatalf("marshal vars: %v", err)
+	if _, err := Pool.Exec(ctx, `DELETE FROM _task_variables WHERE task_id = $1`, taskID); err != nil {
+		t.Fatalf("clear vars %s: %v", taskID, err)
 	}
-	if _, err := Pool.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(vj)); err != nil {
+	if err := WriteTaskVariables(ctx, Pool, taskID, vars); err != nil {
 		t.Fatalf("set vars %s: %v", taskID, err)
 	}
 }

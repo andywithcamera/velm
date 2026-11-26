@@ -56,13 +56,11 @@ func seedChildLink(ctx context.Context, t *testing.T, containerDef, childDef str
 
 func taskVars(ctx context.Context, t *testing.T, taskID string) map[string]any {
 	t.Helper()
-	var vj []byte
-	if err := Pool.QueryRow(ctx, `SELECT variables FROM base_task WHERE _id = $1`, taskID).Scan(&vj); err != nil {
+	vars, err := LoadTaskVars(ctx, Pool, taskID)
+	if err != nil {
 		t.Fatalf("read task variables: %v", err)
 	}
-	vars := map[string]any{}
-	_ = json.Unmarshal(vj, &vars)
-	return vars
+	return vars.Values
 }
 
 // TestContainerInputMappingAtParentStart is the #208 acceptance test: a
@@ -107,8 +105,7 @@ func TestContainerInputMappingAtParentStart(t *testing.T) {
 	// Pre-seed a spawn-time input that the mapping must overwrite.
 	vars := taskVars(ctx, t, childID)
 	vars["inputs"] = map[string]any{"entity_id": "stale", "keep": "me"}
-	vj, _ := json.Marshal(vars)
-	if _, err := Pool.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, childID, string(vj)); err != nil {
+	if err := WriteTaskVariables(ctx, Pool, childID, vars); err != nil {
 		t.Fatal(err)
 	}
 

@@ -25,12 +25,14 @@ type retryChild struct {
 func retryChildren(t *testing.T, ctx context.Context, retryTaskID string) []retryChild {
 	t.Helper()
 	rows, err := Pool.Query(ctx, `
-		SELECT _id::text, title, state, COALESCE(closure_reason, ''),
-			COALESCE((variables->>'attempt_no')::int, 0)
-		FROM base_task
-		WHERE parent_task_id = $1 AND _deleted_at IS NULL
-		  AND COALESCE(work_type, 'TASK') <> 'CONTROL'
-		ORDER BY _created_at, number`, retryTaskID)
+		SELECT t._id::text, t.title, t.state, COALESCE(t.closure_reason, ''),
+			COALESCE(attempt.value_number, 0)::int
+		FROM base_task t
+		LEFT JOIN _task_variables attempt
+			ON attempt.task_id = t._id AND attempt.scope = 'top' AND attempt.name = 'attempt_no'
+		WHERE t.parent_task_id = $1 AND t._deleted_at IS NULL
+		  AND COALESCE(t.work_type, 'TASK') <> 'CONTROL'
+		ORDER BY t._created_at, t.number`, retryTaskID)
 	if err != nil {
 		t.Fatalf("read retry children: %v", err)
 	}
@@ -54,8 +56,9 @@ func retryTaskID(t *testing.T, ctx context.Context, rootID string) string {
 	t.Helper()
 	var id string
 	if err := Pool.QueryRow(ctx, `
-		SELECT _id::text FROM base_task
-		WHERE parent_task_id = $1 AND variables->'block'->>'type' = 'retry'`,
+		SELECT t._id::text FROM base_task t
+		JOIN base_task_variables v ON v.task_id = t._id
+		WHERE t.parent_task_id = $1 AND v.variables->'block'->>'type' = 'retry'`,
 		rootID).Scan(&id); err != nil {
 		t.Fatalf("read retry control task: %v", err)
 	}

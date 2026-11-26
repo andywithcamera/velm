@@ -14,7 +14,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -85,18 +84,17 @@ func runRunTaskBlock(ctx context.Context, q scriptQuerier, inst childInstanceSta
 	if err != nil {
 		return err
 	}
-	vars["inputs"] = inputs
 	block, _ := vars["block"].(map[string]any)
 	if block == nil {
 		block = map[string]any{}
 	}
 	block["input_mapping"] = b.InputMapping
 	block["inputs"] = inputs
-	vars["block"] = block
-	if raw, err := json.Marshal(vars); err == nil {
-		if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, inst.taskID, string(raw)); err != nil {
-			return err
-		}
+	if err := SetTaskVariableScope(ctx, q, inst.taskID, VarScopeBlock, block); err != nil {
+		return err
+	}
+	if err := SetTaskVariableScope(ctx, q, inst.taskID, VarScopeInput, inputs); err != nil {
+		return err
 	}
 	route := &taskRoute{Ready: true, Scope: scope, AssignInputs: runInputs}
 	childID, err := spawnTaskWithRouteByID(ctx, q, targetID, inst.taskID, actorUserID, inputs, route)
@@ -113,11 +111,8 @@ func runRunTaskBlock(ctx context.Context, q scriptQuerier, inst childInstanceSta
 	}
 	block["child_task_id"] = childID
 	block["child_task_number"] = childNumber
-	vars["block"] = block
-	if raw, err := json.Marshal(vars); err == nil {
-		if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, inst.taskID, string(raw)); err != nil {
-			return err
-		}
+	if err := SetTaskVariableScope(ctx, q, inst.taskID, VarScopeBlock, block); err != nil {
+		return err
 	}
 	return nil
 }
@@ -176,11 +171,8 @@ func publishRunTaskResult(ctx context.Context, q scriptQuerier, controlTaskID, r
 		block = map[string]any{}
 	}
 	block["result"] = output
-	vars["block"] = block
-	if raw, err := json.Marshal(vars); err == nil {
-		if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, controlTaskID, string(raw)); err != nil {
-			return err
-		}
+	if err := SetTaskVariableScope(ctx, q, controlTaskID, VarScopeBlock, block); err != nil {
+		return err
 	}
 	return publishBlockOutput(ctx, q, controlTaskID, key, output)
 }

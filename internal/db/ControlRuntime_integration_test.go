@@ -29,7 +29,6 @@ func controlTestDefinition(t *testing.T, ctx context.Context, slug string, conta
 	t.Cleanup(func() {
 		bg := context.Background()
 		_, _ = Pool.Exec(bg, `DELETE FROM base_task WHERE definition_id = $1 OR parent_task_id IN (SELECT _id FROM base_task WHERE definition_id = $1)`, id)
-		_, _ = Pool.Exec(bg, `DELETE FROM base_task WHERE parent_task_id IS NULL AND variables->'inputs'->>'__control_test_definition' = $1`, id)
 		_, _ = Pool.Exec(bg, `DELETE FROM base_task WHERE parent_task_id IS NULL AND title LIKE 'control-run-%'`)
 		_, _ = Pool.Exec(bg, `DELETE FROM base_task_definition WHERE _id = $1`, id)
 	})
@@ -134,8 +133,10 @@ func TestSpawnIfBlockTree(t *testing.T) {
 	}
 
 	rows, err := Pool.Query(ctx, `
-		SELECT title, COALESCE(variables->'block'->>'type', '')
-		FROM base_task WHERE parent_task_id = $1 ORDER BY number`, rootID)
+		SELECT t.title, COALESCE(v.variables->'block'->>'type', '')
+		FROM base_task t
+		LEFT JOIN base_task_variables v ON v.task_id = t._id
+		WHERE t.parent_task_id = $1 ORDER BY t.number`, rootID)
 	if err != nil {
 		t.Fatalf("read control children: %v", err)
 	}
@@ -207,8 +208,9 @@ func TestIfFalseSkipsScope(t *testing.T) {
 
 	var ifState, ifReason string
 	if err := Pool.QueryRow(ctx, `
-		SELECT state, COALESCE(closure_reason, '') FROM base_task
-		WHERE parent_task_id = $1 AND variables->'block'->>'type' = 'if'`, rootID).Scan(&ifState, &ifReason); err != nil {
+		SELECT t.state, COALESCE(t.closure_reason, '') FROM base_task t
+		JOIN base_task_variables v ON v.task_id = t._id
+		WHERE t.parent_task_id = $1 AND v.variables->'block'->>'type' = 'if'`, rootID).Scan(&ifState, &ifReason); err != nil {
 		t.Fatalf("read if state: %v", err)
 	}
 	if ifState != taskStateDone || ifReason != taskClosureSkipped {
@@ -258,8 +260,9 @@ func TestSpawnForEachTree(t *testing.T) {
 
 	var controlID string
 	if err := Pool.QueryRow(ctx, `
-		SELECT _id::text FROM base_task
-		WHERE parent_task_id = $1 AND work_type = 'CONTROL' AND variables->'block'->>'type' = 'for_each'`,
+		SELECT t._id::text FROM base_task t
+		JOIN base_task_variables v ON v.task_id = t._id
+		WHERE t.parent_task_id = $1 AND t.work_type = 'CONTROL' AND v.variables->'block'->>'type' = 'for_each'`,
 		rootID).Scan(&controlID); err != nil {
 		t.Fatalf("read for_each control task: %v", err)
 	}
@@ -283,7 +286,9 @@ func TestSpawnForEachTree(t *testing.T) {
 	}
 
 	rows, err := Pool.Query(ctx, `
-		SELECT variables FROM base_task WHERE parent_task_id = $1 ORDER BY number`, controlID)
+		SELECT v.variables FROM base_task t
+		JOIN base_task_variables v ON v.task_id = t._id
+		WHERE t.parent_task_id = $1 ORDER BY t.number`, controlID)
 	if err != nil {
 		t.Fatalf("read iterations: %v", err)
 	}
@@ -345,8 +350,9 @@ func TestForEachCapBoundary(t *testing.T) {
 		rootID := controlSpawn(t, ctx, container, map[string]any{"hosts": hosts(100)})
 		var controlID string
 		if err := Pool.QueryRow(ctx, `
-			SELECT _id::text FROM base_task
-			WHERE parent_task_id = $1 AND variables->'block'->>'type' = 'for_each'`, rootID).Scan(&controlID); err != nil {
+			SELECT t._id::text FROM base_task t
+			JOIN base_task_variables v ON v.task_id = t._id
+			WHERE t.parent_task_id = $1 AND v.variables->'block'->>'type' = 'for_each'`, rootID).Scan(&controlID); err != nil {
 			t.Fatalf("read for_each control task: %v", err)
 		}
 		var count int
@@ -425,8 +431,9 @@ func TestEndClosesOnScopeClose(t *testing.T) {
 		t.Fatalf("read work task: %v", err)
 	}
 	if err := Pool.QueryRow(ctx, `
-		SELECT _id::text FROM base_task
-		WHERE parent_task_id = $1 AND variables->'block'->>'type' = 'end'`, rootID).Scan(&endID); err != nil {
+		SELECT t._id::text FROM base_task t
+		JOIN base_task_variables v ON v.task_id = t._id
+		WHERE t.parent_task_id = $1 AND v.variables->'block'->>'type' = 'end'`, rootID).Scan(&endID); err != nil {
 		t.Fatalf("read end task: %v", err)
 	}
 	if state := taskState(ctx, t, endID); state != taskStatePending {

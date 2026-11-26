@@ -249,6 +249,11 @@ func TestPreMigrationDefinitionSpawnsIdentically(t *testing.T) {
 
 	// --- 097, as a pre-098 installation would be. ---------------------------
 	migTestApplyUpTo(t, ctx, "098_definition_block_tree.sql")
+	// Definitions authored before 098 is the thing under test; the code that
+	// spawns them still needs the variables table (#385), which exists at
+	// every version the engine runs at. Applying it here keeps the baseline a
+	// pre-098 *definition*, not a pre-098 binary.
+	migTestApplyOne(t, ctx, "107_task_variables.sql")
 	seedPreMigrationDefinitions(t, ctx)
 
 	// AC-19: a pre-098 leaf spawns one task and no children.
@@ -409,10 +414,12 @@ func TestPreMigrationDefinitionSpawnsIdentically(t *testing.T) {
 	for _, taskID := range []string{beforeRootID, afterRootID} {
 		var input string
 		if err := Pool.QueryRow(ctx, `
-			SELECT COALESCE(variables #>> '{inputs,server_name}', '')
-			FROM base_task
-			WHERE definition_id = (SELECT _id FROM base_task_definition WHERE slug = 'pre098_stage')
-			  AND parent_task_id = $1`, taskID).Scan(&input); err != nil {
+			SELECT COALESCE(input.value #>> '{}', '')
+			FROM base_task t
+			JOIN _task_variables input
+				ON input.task_id = t._id AND input.scope = 'input' AND input.name = 'server_name'
+			WHERE t.definition_id = (SELECT _id FROM base_task_definition WHERE slug = 'pre098_stage')
+			  AND t.parent_task_id = $1`, taskID).Scan(&input); err != nil {
 			t.Fatalf("stage input for root %s: %v", taskID, err)
 		}
 		if input != "web-01" {

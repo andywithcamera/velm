@@ -33,9 +33,10 @@ func rtControl(t *testing.T, ctx context.Context, parent, blockType string) (str
 	t.Helper()
 	var id string
 	if err := Pool.QueryRow(ctx, `
-		SELECT _id::text FROM base_task
-		WHERE parent_task_id = $1 AND work_type = 'CONTROL'
-		  AND variables->'block'->>'type' = $2`, parent, blockType).Scan(&id); err != nil {
+		SELECT t._id::text FROM base_task t
+		JOIN base_task_variables v ON v.task_id = t._id
+		WHERE t.parent_task_id = $1 AND t.work_type = 'CONTROL'
+		  AND v.variables->'block'->>'type' = $2`, parent, blockType).Scan(&id); err != nil {
 		t.Fatalf("read %s control task: %v", blockType, err)
 	}
 	vars := taskVars(ctx, t, id)

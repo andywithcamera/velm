@@ -239,10 +239,7 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	if route != nil {
 		mergeScope(vars, route.Scope)
 	}
-	varsJSON, err := json.Marshal(vars)
-	if err != nil {
-		return "", err
-	}
+	var err error
 	nullable := func(s string) any {
 		if s == "" {
 			return nil
@@ -336,20 +333,25 @@ func spawnTaskWithRoute(ctx context.Context, q scriptQuerier, def *TaskDefinitio
 	ask := InstanceAsk(def, inputs)
 	err = q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, priority, parent_task_id,
-			assignment_group_id, assigned_user_id, requested_by_user_id, definition_id, variables,
+			assignment_group_id, assigned_user_id, requested_by_user_id, definition_id,
 			description, planned_start_at, ask)
 		VALUES (
 			'', -- assigned by the autonumber trigger (051); base_task_number_seq was dropped there
 			$1, 'TASK',
 			$2,
-			$3, $4, $5, $6, $7, $8, $9::jsonb,
-			$10, $11, $12)
+			$3, $4, $5, $6, $7, $8,
+			$9, $10, $11)
 		RETURNING _id, number`,
 		title, state, priority, nullable(parentTaskID), nullable(groupID),
-		nullable(assigneeID), nullable(requestedBy), def.ID, string(varsJSON),
+		nullable(assigneeID), nullable(requestedBy), def.ID,
 		description, plannedStart, ask).Scan(&taskID, &taskNumber)
 	if err != nil {
 		return "", fmt.Errorf("spawn task: %w", err)
+	}
+	// The scope is rows, not a column (#385): a task is inserted without one,
+	// then its variables are written, in the same transaction.
+	if err := WriteTaskVariables(ctx, q, taskID, vars); err != nil {
+		return "", err
 	}
 
 	// Identity (#272): every run of a definition used to carry the same
@@ -536,32 +538,42 @@ func bindChildInputs(ctx context.Context, tx scriptQuerier, parentTaskID, actorU
 	// Instance children by block id, with definition id as the fallback for a
 	// row the engine did not create from a block.
 	rows, err := tx.Query(ctx, `
-		SELECT _id::text, COALESCE(definition_id::text, ''), variables
+		SELECT _id::text, COALESCE(definition_id::text, '')
 		FROM base_task
 		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, parentTaskID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	childTasks := map[string]string{}
-	childVars := map[string]map[string]any{}
+	type childRow struct {
+		id, defID string
+	}
+	var children []childRow
 	for rows.Next() {
-		var id, cid string
-		var vj []byte
-		if err := rows.Scan(&id, &cid, &vj); err != nil {
+		var child childRow
+		if err := rows.Scan(&child.id, &child.defID); err != nil {
 			return err
 		}
-		vars := map[string]any{}
-		_ = json.Unmarshal(vj, &vars)
-		key := cid
-		if blockID, _, _, _, _, _, ok := blockFromVars(vars); ok {
-			key = "block:" + blockID
-		}
-		childTasks[key] = id
-		childVars[id] = vars
+		children = append(children, child)
 	}
 	if err := rows.Err(); err != nil {
 		return err
+	}
+	childIDs := make([]string, 0, len(children))
+	for _, child := range children {
+		childIDs = append(childIDs, child.id)
+	}
+	childVars, err := loadTaskVarsFor(ctx, tx, childIDs)
+	if err != nil {
+		return err
+	}
+	childTasks := map[string]string{}
+	for _, child := range children {
+		key := child.defID
+		if blockID, _, _, _, _, _, ok := blockFromVars(childVars[child.id]); ok {
+			key = "block:" + blockID
+		}
+		childTasks[key] = child.id
 	}
 
 	for _, b := range parentScopeBlocks(blocks, parentVars) {
@@ -600,14 +612,14 @@ func bindChildInputs(ctx context.Context, tx scriptQuerier, parentTaskID, actorU
 				inputs[childInput] = val
 			}
 		}
-		childVars[taskID]["inputs"] = inputs
-		// $parent.* walks up one level from any spawned task (AC-31).
-		childVars[taskID]["parent"] = parentVars
-		updated, err := json.Marshal(childVars[taskID])
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(updated)); err != nil {
+		// Write only the names that changed: two bindings running at once
+		// must not overwrite each other (#385).
+		if err := UpdateTaskVariables(ctx, tx, taskID, func(childScope map[string]any) error {
+			childScope["inputs"] = inputs
+			// $parent.* walks up one level from any spawned task (AC-31).
+			childScope["parent"] = parentVars
+			return nil
+		}); err != nil {
 			return err
 		}
 	}
@@ -660,24 +672,39 @@ func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, ac
 	// row without one (a spawn-rule follow-on, or a child the v1 editor
 	// created) keeps the definition-keyed path.
 	rows, err := tx.Query(ctx, `
-		SELECT _id::text, COALESCE(definition_id::text, ''), state, closure_reason, variables
+		SELECT _id::text, COALESCE(definition_id::text, ''), state, closure_reason
 		FROM base_task
 		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, parentTaskID)
+	if err != nil {
+		return false, err
+	}
+	var pending []childInstanceState
+	var siblingIDs []string
+	for rows.Next() {
+		var st childInstanceState
+		if err := rows.Scan(&st.taskID, &st.defID, &st.state, &st.reason); err != nil {
+			rows.Close()
+			return false, err
+		}
+		pending = append(pending, st)
+		siblingIDs = append(siblingIDs, st.taskID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return false, err
+	}
+	rows.Close()
+	// The sibling scopes come from the variables table in one query: block
+	// identity lives in `block.id`, and promotion needs it for every sibling.
+	siblingScopes, err := loadTaskVarsFor(ctx, tx, siblingIDs)
 	if err != nil {
 		return false, err
 	}
 	siblings := map[string][]childInstanceState{}
 	siblingsByBlock := map[string][]childInstanceState{}
 	var unmarked []childInstanceState
-	for rows.Next() {
-		var st childInstanceState
-		var vj []byte
-		if err := rows.Scan(&st.taskID, &st.defID, &st.state, &st.reason, &vj); err != nil {
-			rows.Close()
-			return false, err
-		}
-		st.vars = map[string]any{}
-		_ = json.Unmarshal(vj, &st.vars)
+	for _, st := range pending {
+		st.vars = siblingScopes[st.taskID]
 		siblings[st.defID] = append(siblings[st.defID], st)
 		if blockID, _, _, _, _, _, ok := blockFromVars(st.vars); ok {
 			siblingsByBlock[blockID] = append(siblingsByBlock[blockID], st)
@@ -685,11 +712,6 @@ func promoteChildrenOnce(ctx context.Context, tx scriptQuerier, parentTaskID, ac
 			unmarked = append(unmarked, st)
 		}
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return false, err
-	}
-	rows.Close()
 
 	// Template edges for this container's definition. A control task has no
 	// definition of its own; scopeDefinitionID reads the definition it was
@@ -931,6 +953,11 @@ func promoteBlockInstance(ctx context.Context, tx scriptQuerier, parentTaskID st
 		}
 	}
 	inst.vars["inputs"] = inputs
+	// The binding is the only part of the scope this path changed: write that
+	// scope, not the whole map the sibling scan produced.
+	if err := SetTaskVariableScope(ctx, tx, inst.taskID, VarScopeInput, inputs); err != nil {
+		return err
+	}
 
 	if b.IsControl() {
 		return promoteControlInstance(ctx, tx, parentTaskID, inst, b, bConfigContainerID(inst.vars), actorUserID, depth)
@@ -957,10 +984,6 @@ func promoteBlockInstance(ctx context.Context, tx scriptQuerier, parentTaskID st
 	if err := transitionTaskInTx(ctx, tx, inst.taskID, taskStateReady); err != nil {
 		return err
 	}
-	updated, err := json.Marshal(inst.vars)
-	if err != nil {
-		return err
-	}
 	var currentDescription string
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(description, '') FROM base_task WHERE _id = $1`,
 		inst.taskID).Scan(&currentDescription); err != nil {
@@ -970,9 +993,8 @@ func promoteBlockInstance(ctx context.Context, tx scriptQuerier, parentTaskID st
 	refreshDescription := description != "" && descriptionIsEngineAuthored(currentDescription, def)
 	if _, err := tx.Exec(ctx, `
 		UPDATE base_task
-		SET variables = $2::jsonb,
-			description = CASE WHEN $3 THEN $4 ELSE description END
-		WHERE _id = $1`, inst.taskID, string(updated), refreshDescription, description); err != nil {
+		SET description = CASE WHEN $2 THEN $3 ELSE description END
+		WHERE _id = $1`, inst.taskID, refreshDescription, description); err != nil {
 		return err
 	}
 	if def.IsContainer {
@@ -1059,6 +1081,9 @@ func promoteInstance(ctx context.Context, tx scriptQuerier, parentTaskID string,
 		inputs[childInput] = val
 	}
 	inst.vars["inputs"] = inputs
+	if err := SetTaskVariableScope(ctx, tx, inst.taskID, VarScopeInput, inputs); err != nil {
+		return err
+	}
 
 	// run_if gate at promotion, matching the engine's start semantics.
 	if strings.TrimSpace(def.RunIfScript) != "" {
@@ -1074,10 +1099,6 @@ func promoteInstance(ctx context.Context, tx scriptQuerier, parentTaskID string,
 	if err := transitionTaskInTx(ctx, tx, inst.taskID, taskStateReady); err != nil {
 		return err
 	}
-	updated, err := json.Marshal(inst.vars)
-	if err != nil {
-		return err
-	}
 	// The body that makes the task legible is only bound now: a child spawns
 	// with empty inputs and learns the requester's words when its
 	// input_mapping resolves. Refresh the description with the bound inputs,
@@ -1091,9 +1112,8 @@ func promoteInstance(ctx context.Context, tx scriptQuerier, parentTaskID string,
 	refreshDescription := description != "" && descriptionIsEngineAuthored(currentDescription, def)
 	_, err = tx.Exec(ctx, `
 		UPDATE base_task
-		SET variables = $2::jsonb,
-			description = CASE WHEN $3 THEN $4 ELSE description END
-		WHERE _id = $1`, inst.taskID, string(updated), refreshDescription, description)
+		SET description = CASE WHEN $2 THEN $3 ELSE description END
+		WHERE _id = $1`, inst.taskID, refreshDescription, description)
 	if err != nil {
 		return err
 	}
@@ -1224,24 +1244,17 @@ func publishScriptOutputs(ctx context.Context, q scriptQuerier, taskID string, r
 		return nil
 	}
 
-	vars, err := readTaskVariables(ctx, q, taskID)
-	if err != nil {
-		return err
-	}
-	outputs, _ := vars["outputs"].(map[string]any)
-	if outputs == nil {
-		outputs = map[string]any{}
-	}
-	for name, value := range returnedOutputs {
-		outputs[name] = value
-	}
-	vars["outputs"] = outputs
-	updated, err := json.Marshal(vars)
-	if err != nil {
-		return err
-	}
-	_, err = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(updated))
-	return err
+	return UpdateTaskVariables(ctx, q, taskID, func(vars map[string]any) error {
+		outputs, _ := vars["outputs"].(map[string]any)
+		if outputs == nil {
+			outputs = map[string]any{}
+		}
+		for name, value := range returnedOutputs {
+			outputs[name] = value
+		}
+		vars["outputs"] = outputs
+		return nil
+	})
 }
 
 // executeTaskGoja runs Goja code with the task scope in Input. Writes the
@@ -1336,16 +1349,15 @@ func onTaskClosed(ctx context.Context, tx scriptQuerier, taskID, closureReason, 
 		return nil
 	}
 	var parentID *string
-	var varsJSON []byte
 	err := tx.QueryRow(ctx,
-		`SELECT parent_task_id::text, variables FROM base_task WHERE _id = $1`, taskID).Scan(&parentID, &varsJSON)
+		`SELECT parent_task_id::text FROM base_task WHERE _id = $1`, taskID).Scan(&parentID)
 	if err != nil {
 		return err
 	}
 
-	vars := map[string]any{}
-	if len(varsJSON) > 0 {
-		_ = json.Unmarshal(varsJSON, &vars)
+	vars, err := readTaskVariables(ctx, tx, taskID)
+	if err != nil {
+		return err
 	}
 	outputs, _ := vars["outputs"].(map[string]any)
 
@@ -1370,20 +1382,17 @@ func onTaskClosed(ctx context.Context, tx scriptQuerier, taskID, closureReason, 
 		if defID != nil && *defID != "" {
 			var slug string
 			if err := tx.QueryRow(ctx, `SELECT slug FROM base_task_definition WHERE _id = $1`, *defID).Scan(&slug); err == nil {
-				var parentVars map[string]any
-				var parentJSON []byte
-				if err := tx.QueryRow(ctx, `SELECT variables FROM base_task WHERE _id = $1`, *parentID).Scan(&parentJSON); err == nil {
-					parentVars = map[string]any{}
-					_ = json.Unmarshal(parentJSON, &parentVars)
+				// One child's output is one name in the parent's outputs: a
+				// sibling closing at the same moment writes its own name.
+				_ = UpdateTaskVariables(ctx, tx, *parentID, func(parentVars map[string]any) error {
 					parentOutputs, _ := parentVars["outputs"].(map[string]any)
 					if parentOutputs == nil {
 						parentOutputs = map[string]any{}
 					}
 					parentOutputs[slug] = outputs
 					parentVars["outputs"] = parentOutputs
-					updated, _ := json.Marshal(parentVars)
-					_, _ = tx.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, *parentID, string(updated))
-				}
+					return nil
+				})
 			}
 		}
 	}
@@ -1574,16 +1583,15 @@ func validatedAssignee(ctx context.Context, q scriptQuerier, groupID, assigneeID
 	return assigneeID
 }
 
+// readTaskVariables returns a task's scope as the map the engine evaluates
+// against. Storage is one row per name (#385); this is the only shape the rest
+// of the engine sees.
 func readTaskVariables(ctx context.Context, q scriptQuerier, taskID string) (map[string]any, error) {
-	var varsJSON []byte
-	if err := q.QueryRow(ctx, `SELECT variables FROM base_task WHERE _id = $1`, taskID).Scan(&varsJSON); err != nil {
+	vars, err := LoadTaskVars(ctx, q, taskID)
+	if err != nil {
 		return nil, err
 	}
-	vars := map[string]any{}
-	if len(varsJSON) > 0 {
-		_ = json.Unmarshal(varsJSON, &vars)
-	}
-	return vars, nil
+	return vars.Values, nil
 }
 
 func getDefinitionIDByTaskID(ctx context.Context, q scriptQuerier, taskID string) (string, error) {
@@ -1689,17 +1697,15 @@ type TaskInstanceSummary struct {
 // so callers can see the whole instance graph that came into existence.
 func DescribeTaskInstance(ctx context.Context, q scriptQuerier, taskID string) (*TaskInstanceSummary, []TaskInstanceSummary, error) {
 	var root TaskInstanceSummary
-	var rootVars []byte
 	err := q.QueryRow(ctx, `
-		SELECT _id::text, number, title, state, COALESCE(work_type, 'TASK'), variables FROM base_task
+		SELECT _id::text, number, title, state, COALESCE(work_type, 'TASK') FROM base_task
 		WHERE _id = $1 AND _deleted_at IS NULL`, taskID).Scan(
-		&root.ID, &root.Number, &root.Title, &root.State, &root.WorkType, &rootVars)
+		&root.ID, &root.Number, &root.Title, &root.State, &root.WorkType)
 	if err != nil {
 		return nil, nil, fmt.Errorf("load spawned task: %w", err)
 	}
-	root.BlockType = summaryBlockType(rootVars)
 	rows, err := q.Query(ctx, `
-		SELECT _id::text, number, title, state, COALESCE(work_type, 'TASK'), variables FROM base_task
+		SELECT _id::text, number, title, state, COALESCE(work_type, 'TASK') FROM base_task
 		WHERE parent_task_id = $1 AND _deleted_at IS NULL
 		ORDER BY number`, taskID)
 	if err != nil {
@@ -1709,24 +1715,38 @@ func DescribeTaskInstance(ctx context.Context, q scriptQuerier, taskID string) (
 	children := []TaskInstanceSummary{}
 	for rows.Next() {
 		var c TaskInstanceSummary
-		var vars []byte
-		if err := rows.Scan(&c.ID, &c.Number, &c.Title, &c.State, &c.WorkType, &vars); err != nil {
+		if err := rows.Scan(&c.ID, &c.Number, &c.Title, &c.State, &c.WorkType); err != nil {
 			return nil, nil, err
 		}
-		c.BlockType = summaryBlockType(vars)
 		children = append(children, c)
 	}
-	return &root, children, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	// The block type is the only thing these summaries read from the scope,
+	// so it is loaded once for the whole instance rather than per row.
+	ids := make([]string, 0, len(children)+1)
+	ids = append(ids, root.ID)
+	for _, child := range children {
+		ids = append(ids, child.ID)
+	}
+	scopes, err := loadTaskVarsFor(ctx, q, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	root.BlockType = summaryBlockType(scopes[root.ID])
+	for index := range children {
+		children[index].BlockType = summaryBlockType(scopes[children[index].ID])
+	}
+	return &root, children, nil
 }
 
 // summaryBlockType reports the control shape a run row was spawned from, so
 // a caller can tell structure from work (AC-43).
-func summaryBlockType(varsJSON []byte) string {
-	if len(varsJSON) == 0 {
+func summaryBlockType(vars map[string]any) string {
+	if len(vars) == 0 {
 		return ""
 	}
-	vars := map[string]any{}
-	_ = json.Unmarshal(varsJSON, &vars)
 	_, _, _, typ, _, _, ok := blockFromVars(vars)
 	if !ok {
 		return ""

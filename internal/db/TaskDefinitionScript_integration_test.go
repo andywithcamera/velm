@@ -329,9 +329,11 @@ func TestIfSelectsThenAndElse(t *testing.T) {
 		type branchOutcome struct{ state, reason string }
 		states := map[string]branchOutcome{}
 		rows, err := Pool.Query(ctx, `
-			SELECT COALESCE(variables->'block'->>'label', ''), state,
-			       COALESCE(closure_reason, '')
-			FROM base_task WHERE parent_task_id IN
+			SELECT COALESCE(v.variables->'block'->>'label', ''), t.state,
+			       COALESCE(t.closure_reason, '')
+			FROM base_task t
+			LEFT JOIN base_task_variables v ON v.task_id = t._id
+			WHERE t.parent_task_id IN
 				(SELECT _id FROM base_task WHERE parent_task_id = $1)`, root)
 		if err != nil {
 			t.Fatalf("%s: read branches: %v", tc.name, err)

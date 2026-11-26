@@ -1,7 +1,6 @@
 package db
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -37,12 +36,16 @@ func TestSpawnPopulatesInstanceFields(t *testing.T) {
 
 	var description, priority, state string
 	var plannedStart *string
-	var vars map[string]any
 	if err := Pool.QueryRow(ctx, `
-		SELECT COALESCE(description, ''), priority, state, planned_start_at::text, variables
-		FROM base_task WHERE _id = $1`, rootID).Scan(&description, &priority, &state, &plannedStart, &vars); err != nil {
+		SELECT COALESCE(description, ''), priority, state, planned_start_at::text
+		FROM base_task WHERE _id = $1`, rootID).Scan(&description, &priority, &state, &plannedStart); err != nil {
 		t.Fatalf("read spawned task: %v", err)
 	}
+	scope, err := LoadTaskVars(ctx, Pool, rootID)
+	if err != nil {
+		t.Fatalf("read spawned task variables: %v", err)
+	}
+	vars := scope.Values
 
 	if want := "Add delta sync to the importer.\n\nProduce a patch artifact on a branch."; description != want {
 		t.Fatalf("description = %q, want %q", description, want)
@@ -71,14 +74,11 @@ func TestSpawnPopulatesInstanceFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spawn with nil inputs: %v", err)
 	}
-	var raw json.RawMessage
-	if err := Pool.QueryRow(ctx, `SELECT variables FROM base_task WHERE _id = $1`, nilID).Scan(&raw); err != nil {
+	nilScope, err := LoadTaskVars(ctx, Pool, nilID)
+	if err != nil {
 		t.Fatalf("read variables: %v", err)
 	}
-	var decoded map[string]any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		t.Fatalf("decode variables: %v", err)
-	}
+	decoded := nilScope.Values
 	if _, ok := decoded["inputs"].(map[string]any); !ok {
 		t.Fatalf("nil spawn left inputs as %#v, want {}", decoded["inputs"])
 	}

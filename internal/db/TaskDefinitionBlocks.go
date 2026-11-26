@@ -455,19 +455,18 @@ func spawnControlTask(ctx context.Context, q scriptQuerier, containerDefID, pare
 		"block":   blockMeta(containerDefID, b),
 	}
 	mergeScope(vars, scope)
-	varsJSON, err := json.Marshal(vars)
-	if err != nil {
-		return err
-	}
 	var taskID, number string
 	if err := q.QueryRow(ctx, `
 		INSERT INTO base_task (number, title, work_type, state, parent_task_id,
-			assignment_group_id, assigned_user_id, requested_by_user_id, variables, closure_reason)
-		VALUES ('', $1, 'CONTROL', $2, $3, $4, $5, $6, $7::jsonb, $8)
+			assignment_group_id, assigned_user_id, requested_by_user_id, closure_reason)
+		VALUES ('', $1, 'CONTROL', $2, $3, $4, $5, $6, $7)
 		RETURNING _id, number`,
 		title, state, parentTaskID, nullableText(groupID), nullableText(assigneeID),
-		nullableText(requestedBy), string(varsJSON), nullableText(closureReason)).Scan(&taskID, &number); err != nil {
+		nullableText(requestedBy), nullableText(closureReason)).Scan(&taskID, &number); err != nil {
 		return fmt.Errorf("spawn control block %q: %w", b.Label, err)
+	}
+	if err := WriteTaskVariables(ctx, q, taskID, vars); err != nil {
+		return err
 	}
 	if _, err := q.Exec(ctx, `UPDATE base_task SET title = $2 WHERE _id = $1`,
 		taskID, composeInstanceTitle(title, number)); err != nil {
@@ -689,12 +688,7 @@ func promoteControlInstance(ctx context.Context, q scriptQuerier, parentTaskID s
 	}
 	// Persist the inherited scope: a child's own promotion reads these
 	// variables, and the run row should say what the block ran against.
-	scopeJSON, err := json.Marshal(scope)
-	if err != nil {
-		return err
-	}
-	if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`,
-		inst.taskID, string(scopeJSON)); err != nil {
+	if err := WriteTaskVariables(ctx, q, inst.taskID, scope); err != nil {
 		return err
 	}
 	switch b.Type {
@@ -852,13 +846,7 @@ func runScriptBlock(ctx context.Context, q scriptQuerier, inst childInstanceStat
 	if runErr != nil {
 		block["log"] = []any{runErr.Error()}
 	}
-	vars["block"] = block
-	varsJSON, err := json.Marshal(vars)
-	if err != nil {
-		return err
-	}
-	if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`,
-		inst.taskID, string(varsJSON)); err != nil {
+	if err := SetTaskVariableScope(ctx, q, inst.taskID, VarScopeBlock, block); err != nil {
 		return err
 	}
 	// A failed script is still readable by a following `if`: publish the
@@ -926,22 +914,15 @@ func publishBlockOutput(ctx context.Context, q scriptQuerier, taskID, key string
 	if parentID == "" {
 		return nil
 	}
-	vars, err := readTaskVariables(ctx, q, parentID)
-	if err != nil {
-		return err
-	}
-	blocks, _ := vars["blocks"].(map[string]any)
-	if blocks == nil {
-		blocks = map[string]any{}
-	}
-	blocks[key] = map[string]any{"output": output}
-	vars["blocks"] = blocks
-	raw, err := json.Marshal(vars)
-	if err != nil {
-		return err
-	}
-	_, err = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, parentID, string(raw))
-	return err
+	return UpdateTaskVariables(ctx, q, parentID, func(vars map[string]any) error {
+		blocks, _ := vars["blocks"].(map[string]any)
+		if blocks == nil {
+			blocks = map[string]any{}
+		}
+		blocks[key] = map[string]any{"output": output}
+		vars["blocks"] = blocks
+		return nil
+	})
 }
 
 // closeScriptTask closes the script's control row. A refusal or a thrown body
@@ -966,8 +947,7 @@ func closeScriptTask(ctx context.Context, q scriptQuerier, taskID, actorUserID s
 	// A failed block records why. The run stays where it is: the failure is
 	// visible on the block rather than silently rolled up as complete.
 	if cause != nil {
-		vars, err := readTaskVariables(ctx, q, taskID)
-		if err == nil {
+		_ = UpdateTaskVariables(ctx, q, taskID, func(vars map[string]any) error {
 			block, _ := vars["block"].(map[string]any)
 			if block == nil {
 				block = map[string]any{}
@@ -975,10 +955,8 @@ func closeScriptTask(ctx context.Context, q scriptQuerier, taskID, actorUserID s
 			block["error"] = cause.Error()
 			block["log"] = []any{cause.Error()}
 			vars["block"] = block
-			if raw, err := json.Marshal(vars); err == nil {
-				_, _ = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(raw))
-			}
-		}
+			return nil
+		})
 	}
 	// A failed close does not reach onTaskClosed, so a retry parent hears
 	// about the failure here instead (AC-84/88).
