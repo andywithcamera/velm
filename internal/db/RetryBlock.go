@@ -20,10 +20,8 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -133,10 +131,16 @@ func startRetryAttempt(ctx context.Context, q scriptQuerier, retryTaskID string,
 	}
 	// Children of this attempt carry its number. They are the rows AC-84
 	// counts, and the ones a first failure removes before they run.
+	// The attempt number is one name in each child's scope, so it is one row
+	// per child — and a row a filter can read without casting a document.
 	if _, err := q.Exec(ctx, `
-		UPDATE base_task
-		SET variables = jsonb_set(variables, '{attempt_no}', to_jsonb($2::int))
-		WHERE parent_task_id = $1 AND _deleted_at IS NULL`, retryTaskID, attemptNo); err != nil {
+		INSERT INTO _task_variables (task_id, scope, name, value, value_number)
+		SELECT _id, 'top', 'attempt_no', to_jsonb($2::int), $2::numeric
+		FROM base_task
+		WHERE parent_task_id = $1 AND _deleted_at IS NULL
+		ON CONFLICT (task_id, scope, name) DO UPDATE
+		SET value = EXCLUDED.value, value_number = EXCLUDED.value_number, _updated_at = NOW()`,
+		retryTaskID, attemptNo); err != nil {
 		return err
 	}
 	return promoteChildrenDepth(ctx, q, retryTaskID, actorUserID, depth+1)
@@ -224,11 +228,15 @@ func settleRetryAttempt(ctx context.Context, q scriptQuerier, retryTaskID string
 		error  string
 	}
 	rows, err := q.Query(ctx, `
-		SELECT _id::text, state, COALESCE(closure_reason, ''),
-			COALESCE(variables->'block'->>'error', '')
-		FROM base_task
-		WHERE parent_task_id = $1 AND _deleted_at IS NULL
-		ORDER BY _created_at, number`, retryTaskID)
+		SELECT t._id::text, t.state, COALESCE(t.closure_reason, ''),
+			COALESCE(block_error.value #>> '{}', '')
+		FROM base_task t
+		LEFT JOIN LATERAL (
+			SELECT v.value FROM _task_variables v
+			WHERE v.task_id = t._id AND v.scope = 'block' AND v.name = 'error'
+		) block_error ON TRUE
+		WHERE t.parent_task_id = $1 AND t._deleted_at IS NULL
+		ORDER BY t._created_at, t.number`, retryTaskID)
 	if err != nil {
 		return err
 	}
@@ -362,10 +370,14 @@ func dropUnrunAttemptChildren(ctx context.Context, q scriptQuerier, retryTaskID 
 	rows, err := q.Query(ctx, `
 		WITH RECURSIVE doomed AS (
 			SELECT _id::text AS id, 0 AS depth
-			FROM base_task
-			WHERE parent_task_id = $1 AND _deleted_at IS NULL
-			  AND state <> 'closed'
-			  AND COALESCE(variables->>'attempt_no', '') = $2::text
+			FROM base_task base
+			WHERE base.parent_task_id = $1 AND base._deleted_at IS NULL
+			  AND base.state <> 'closed'
+			  AND EXISTS (
+				SELECT 1 FROM _task_variables v
+				WHERE v.task_id = base._id AND v.scope = 'top' AND v.name = 'attempt_no'
+				  AND v.value_number = $2::int
+			  )
 			UNION ALL
 			SELECT c._id::text, d.depth + 1
 			FROM base_task c
@@ -373,7 +385,7 @@ func dropUnrunAttemptChildren(ctx context.Context, q scriptQuerier, retryTaskID 
 			WHERE c._deleted_at IS NULL
 		)
 		SELECT id, depth FROM doomed ORDER BY depth DESC`,
-		retryTaskID, strconv.Itoa(attemptNo))
+		retryTaskID, attemptNo)
 	if err != nil {
 		return err
 	}
@@ -434,13 +446,7 @@ func writeRetryOutputs(ctx context.Context, q scriptQuerier, retryTaskID string,
 		outputs["last_error"] = lastError
 	}
 	vars["outputs"] = outputs
-	raw, err := json.Marshal(vars)
-	if err != nil {
-		return err
-	}
-	_, err = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`,
-		retryTaskID, string(raw))
-	return err
+	return SetTaskVariableScope(ctx, q, retryTaskID, VarScopeOutput, outputs)
 }
 
 // finishRetrySuccess closes the retry block after an attempt whose children
@@ -517,8 +523,7 @@ func exhaustRetryBlock(ctx context.Context, q scriptQuerier, retryTaskID string,
 	}
 	// The block's own row records why, so the board shows the failure on the
 	// block the author drew.
-	vars, err := readTaskVariables(ctx, q, retryTaskID)
-	if err == nil {
+	_ = UpdateTaskVariables(ctx, q, retryTaskID, func(vars map[string]any) error {
 		block, _ := vars["block"].(map[string]any)
 		if block == nil {
 			block = map[string]any{}
@@ -526,11 +531,8 @@ func exhaustRetryBlock(ctx context.Context, q scriptQuerier, retryTaskID string,
 		block["error"] = message
 		block["log"] = []any{message}
 		vars["block"] = block
-		if raw, err := json.Marshal(vars); err == nil {
-			_, _ = q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`,
-				retryTaskID, string(raw))
-		}
-	}
+		return nil
+	})
 	var parentIDPtr *string
 	if err := q.QueryRow(ctx, `SELECT parent_task_id::text FROM base_task WHERE _id = $1`,
 		retryTaskID).Scan(&parentIDPtr); err != nil {

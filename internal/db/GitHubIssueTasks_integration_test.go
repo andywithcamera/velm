@@ -70,10 +70,15 @@ func TestRecreateGitHubIssueTasks(t *testing.T) {
 
 	var title string
 	var vars map[string]any
-	if err := Pool.QueryRow(ctx, `SELECT title, variables FROM base_task WHERE _id = $1`, results[0].ReplacementID).
-		Scan(&title, &vars); err != nil {
+	if err := Pool.QueryRow(ctx, `SELECT title FROM base_task WHERE _id = $1`, results[0].ReplacementID).
+		Scan(&title); err != nil {
 		t.Fatalf("read replacement: %v", err)
 	}
+	scope, scopeErr := LoadTaskVars(ctx, Pool, results[0].ReplacementID)
+	if scopeErr != nil {
+		t.Fatalf("read replacement variables: %v", scopeErr)
+	}
+	vars = scope.Values
 	if want := fmt.Sprintf("GH-%d Flat thing (TASK-", issueNumber); !strings.HasPrefix(title, want) {
 		t.Fatalf("replacement title = %q, want it to start %q", title, want)
 	}

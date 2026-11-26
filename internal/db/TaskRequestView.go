@@ -71,33 +71,30 @@ func LoadTaskRequest(ctx context.Context, taskID string) (TaskRequestView, error
 	}
 
 	var (
-		variablesRaw   string
 		displayName    string
 		slug           string
 		inputSchemaRaw string
 	)
 	err := Pool.QueryRow(ctx, `
-		SELECT COALESCE(t.variables::text, '{}'),
-		       COALESCE(d.display_name, ''),
+		SELECT COALESCE(d.display_name, ''),
 		       COALESCE(d.slug, ''),
 		       COALESCE(d.input_schema_yaml, '')
 		FROM base_task t
 		LEFT JOIN base_task_definition d ON d._id = t.definition_id
 		WHERE t._id::text = $1
-	`, taskID).Scan(&variablesRaw, &displayName, &slug, &inputSchemaRaw)
+	`, taskID).Scan(&displayName, &slug, &inputSchemaRaw)
 	if err != nil {
 		return view, fmt.Errorf("load task request: %w", err)
 	}
 	view.DefinitionName = strings.TrimSpace(displayName)
 	view.DefinitionSlug = strings.TrimSpace(slug)
 
-	var scope struct {
-		Inputs  map[string]any `json:"inputs"`
-		Outputs map[string]any `json:"outputs"`
-	}
-	if err := json.Unmarshal([]byte(variablesRaw), &scope); err != nil {
+	scope, err := LoadTaskVars(ctx, Pool, taskID)
+	if err != nil {
 		return view, nil // unreadable scope renders nothing rather than breaking the form
 	}
+	inputs, _ := scope.Values["inputs"].(map[string]any)
+	outputs, _ := scope.Values["outputs"].(map[string]any)
 
 	// The schema supplies labels, types and a stable order.
 	var declaredFields []TaskInputField
@@ -105,9 +102,9 @@ func LoadTaskRequest(ctx context.Context, taskID string) (TaskRequestView, error
 		declaredFields = fields
 	}
 
-	view.InputFields = taskRequestInputFields(scope.Inputs, declaredFields)
+	view.InputFields = taskRequestInputFields(inputs, declaredFields)
 	view.HasInputs = len(view.InputFields) > 0
-	view.Outputs = orderedScopeValues(scope.Outputs, nil, nil, nil)
+	view.Outputs = orderedScopeValues(outputs, nil, nil, nil)
 	view.HasOutputs = len(view.Outputs) > 0
 	return view, nil
 }

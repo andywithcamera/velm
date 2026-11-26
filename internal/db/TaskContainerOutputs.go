@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -68,7 +67,7 @@ func mergeContainerOutputs(ctx context.Context, q scriptQuerier, taskID string, 
 			JOIN tree t ON c.parent_task_id = t._id
 			WHERE c._deleted_at IS NULL AND t.depth < $2
 		)
-		SELECT b._id::text, b.variables
+		SELECT b._id::text
 		FROM base_task b
 		JOIN tree ON tree._id = b._id
 		ORDER BY b._created_at`, taskID, maxBubbleDepth)
@@ -76,19 +75,24 @@ func mergeContainerOutputs(ctx context.Context, q scriptQuerier, taskID string, 
 		return outputs, err
 	}
 	defer rows.Close()
-	var descendants []descendant
+	order := []string{}
 	for rows.Next() {
 		var id string
-		var raw []byte
-		if err := rows.Scan(&id, &raw); err != nil {
+		if err := rows.Scan(&id); err != nil {
 			return outputs, err
 		}
-		childVars := map[string]any{}
-		_ = json.Unmarshal(raw, &childVars)
-		descendants = append(descendants, descendant{id: id, vars: childVars})
+		order = append(order, id)
 	}
 	if err := rows.Err(); err != nil {
 		return outputs, err
+	}
+	scopes, err := loadTaskVarsFor(ctx, q, order)
+	if err != nil {
+		return outputs, err
+	}
+	descendants := make([]descendant, 0, len(order))
+	for _, id := range order {
+		descendants = append(descendants, descendant{id: id, vars: scopes[id]})
 	}
 
 	declared := parseDeclaredOutputs(variablesYAML)
@@ -124,11 +128,7 @@ func mergeContainerOutputs(ctx context.Context, q scriptQuerier, taskID string, 
 	}
 
 	vars["outputs"] = outputs
-	updated, err := json.Marshal(vars)
-	if err != nil {
-		return outputs, err
-	}
-	if _, err := q.Exec(ctx, `UPDATE base_task SET variables = $2::jsonb WHERE _id = $1`, taskID, string(updated)); err != nil {
+	if err := SetTaskVariableScope(ctx, q, taskID, VarScopeOutput, outputs); err != nil {
 		return outputs, err
 	}
 	return outputs, nil
