@@ -51,14 +51,23 @@ func TestOrderedTaskCarriesDeclaredInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTaskRequest: %v", err)
 	}
-	if !view.HasInputs || len(view.Inputs) != 1 {
-		t.Fatalf("request view inputs = %+v", view.Inputs)
+	if !view.HasInputs || len(view.InputFields) != 1 {
+		t.Fatalf("request view inputs = %+v", view.InputFields)
 	}
-	if view.Inputs[0].Label != "What should the doc be about?" {
-		t.Fatalf("label = %q", view.Inputs[0].Label)
+	field := view.InputFields[0]
+	if field.Label != "What should the doc be about?" {
+		t.Fatalf("label = %q", field.Label)
 	}
-	if view.Inputs[0].Value != "write me a doc about cheese" {
-		t.Fatalf("value = %q", view.Inputs[0].Value)
+	if field.Value != "write me a doc about cheese" {
+		t.Fatalf("value = %q", field.Value)
+	}
+	// The form draws a control from the declared type, so the type has to
+	// survive the trip (#383).
+	if field.DataType != "long_text" {
+		t.Fatalf("data type = %q, want the declared long_text", field.DataType)
+	}
+	if !field.Declared {
+		t.Fatalf("declared = false, want a schema-declared input")
 	}
 	if view.DefinitionName != "Create Doc" {
 		t.Fatalf("definition name = %q", view.DefinitionName)
@@ -164,9 +173,11 @@ func TestNonTaskCommentsStayPerRecord(t *testing.T) {
 	}
 }
 
-// A choice is stored as its value but must be shown as its label: the request
-// panel should read back the words the requester picked.
-func TestRequestViewShowsChoiceLabelNotValue(t *testing.T) {
+// A choice is stored as its value. The field must keep that value, because the
+// form's select matches against option values; the label comes from the option
+// list beside it. Substituting the label here would leave nothing selected
+// (#383).
+func TestRequestViewKeepsChoiceValueWithOptions(t *testing.T) {
 	ctx := taskEngineTestDB(t)
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	actorID, _ := seedActorAndGroup(ctx, t)
@@ -185,7 +196,17 @@ func TestRequestViewShowsChoiceLabelNotValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadTaskRequest: %v", err)
 	}
-	if len(view.Inputs) != 1 || view.Inputs[0].Value != "High" {
-		t.Fatalf("request view = %+v, want the choice label High", view.Inputs)
+	if len(view.InputFields) != 1 {
+		t.Fatalf("request view = %+v", view.InputFields)
+	}
+	field := view.InputFields[0]
+	if field.Value != "high" {
+		t.Fatalf("value = %q, want the stored value high so the select can match it", field.Value)
+	}
+	if field.DataType != "choice" {
+		t.Fatalf("data type = %q, want choice", field.DataType)
+	}
+	if len(field.Choices) != 1 || field.Choices[0].Value != "high" || field.Choices[0].Label != "High" {
+		t.Fatalf("choices = %+v, want high/High so the form shows the label", field.Choices)
 	}
 }

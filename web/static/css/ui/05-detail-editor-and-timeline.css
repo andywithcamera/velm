@@ -618,14 +618,6 @@
   margin-top: 0.85rem;
 }
 
-.ui-task-request-group-title {
-  margin: 0 0 0.4rem;
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
-}
-
 .ui-task-request-list {
   margin: 0;
   display: grid;

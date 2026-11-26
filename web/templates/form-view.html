@@ -115,38 +115,22 @@
 	        <button type="button" class="ui-btn ui-btn-secondary" data-form-live-reload="true">Reload latest</button>
 	      </div>
 
-	      {{with .FormTaskRequest}}{{if or .HasInputs .HasOutputs}}
-	      <section class="ui-card ui-task-request" aria-label="Request">
+	      {{with .FormTaskRequest}}{{if .HasOutputs}}
+	      <section class="ui-card ui-task-request" aria-label="Produced by this task">
 	        <header class="ui-task-request-head">
-	          <h2 class="ui-task-request-title">Request</h2>
+	          <h2 class="ui-task-request-title">Produced by this task</h2>
 	          {{if .DefinitionName}}<span class="ui-task-request-def">{{.DefinitionName}}</span>{{end}}
 	        </header>
-	        {{if .HasInputs}}
-	          <div class="ui-task-request-group">
-	            <h3 class="ui-task-request-group-title">What was asked for</h3>
-	            <dl class="ui-task-request-list">
-	              {{range .Inputs}}
-	                <div class="ui-task-request-item">
-	                  <dt class="ui-task-request-label">{{.Label}}</dt>
-	                  <dd class="ui-task-request-value">{{.Value}}</dd>
-	                </div>
-	              {{end}}
-	            </dl>
-	          </div>
-	        {{end}}
-	        {{if .HasOutputs}}
-	          <div class="ui-task-request-group">
-	            <h3 class="ui-task-request-group-title">Produced by this task</h3>
-	            <dl class="ui-task-request-list">
-	              {{range .Outputs}}
-	                <div class="ui-task-request-item">
-	                  <dt class="ui-task-request-label">{{.Label}}</dt>
-	                  <dd class="ui-task-request-value">{{.Value}}</dd>
-	                </div>
-	              {{end}}
-	            </dl>
-	          </div>
-	        {{end}}
+	        <div class="ui-task-request-group">
+	          <dl class="ui-task-request-list">
+	            {{range .Outputs}}
+	              <div class="ui-task-request-item">
+	                <dt class="ui-task-request-label">{{.Label}}</dt>
+	                <dd class="ui-task-request-value">{{.Value}}</dd>
+	              </div>
+	            {{end}}
+	          </dl>
+	        </div>
 	      </section>
 	      {{end}}{{end}}
 
@@ -156,6 +140,7 @@
             {{$cfg := index $.FormFieldConfigs $x.NAME}}
             {{$val := index $.FormFieldValues $x.NAME}}
             {{$readonly := or $x.IS_READONLY $cfg.ReadOnly}}
+            {{$synthetic := $cfg.Synthetic}}
             {{$required := and (not $x.IS_NULLABLE) (not $readonly) (not $x.IS_HIDDEN)}}
             {{$fieldKind := $cfg.Kind}}
             <div
@@ -164,6 +149,7 @@
               {{if $x.IS_HIDDEN}}hidden{{end}}
               data-field-container="true"
               data-condition-expr="{{$cfg.ConditionExpr}}"
+              {{if $synthetic}}data-frozen="true"{{end}}
             >
               {{if not $x.IS_HIDDEN}}
                 <div class="ui-field-head">
@@ -171,15 +157,17 @@
                     <span>{{$x.LABEL}}</span>
                   </label>
                   <div class="ui-field-meta-row">
-                    {{if $required}}<span class="ui-field-pill">Required</span>{{else}}<span class="ui-field-pill ui-field-pill-muted">Optional</span>{{end}}
-                    {{if $readonly}}<span class="ui-field-pill ui-field-pill-muted">Read only</span>{{end}}
+                    {{if $synthetic}}<span class="ui-field-pill ui-field-pill-muted">From the request</span>
+                    {{else if $required}}<span class="ui-field-pill">Required</span>
+                    {{else}}<span class="ui-field-pill ui-field-pill-muted">Optional</span>{{end}}
+                    {{if and $readonly (not $synthetic)}}<span class="ui-field-pill ui-field-pill-muted">Read only</span>{{end}}
                     {{if $cfg.ConditionExpr}}<span class="ui-field-pill ui-field-pill-accent">Conditional</span>{{end}}
                   </div>
                 </div>
               {{end}}
 
               {{if eq $cfg.Kind "bool"}}
-	              <input type="hidden" name="{{$x.NAME}}" value="false" data-field-name="{{$x.NAME}}" data-base-required="0" />
+	              {{if not $synthetic}}<input type="hidden" name="{{$x.NAME}}" value="false" data-field-name="{{$x.NAME}}" data-base-required="0" />{{end}}
               <label class="ui-checkbox ui-toggle-card {{if $x.IS_HIDDEN}}hidden{{end}}">
                 <input
                   id="{{$x.NAME}}"
@@ -287,7 +275,7 @@
                 data-field-name="{{$x.NAME}}"
                 data-base-required="{{if $required}}1{{else}}0{{end}}"
                 {{if $x.IS_HIDDEN}}hidden{{end}}
-                {{if $readonly}}readonly{{end}}
+                {{if $synthetic}}disabled{{else if $readonly}}readonly{{end}}
                 {{if not $x.IS_NULLABLE}}required{{end}}
                 data-json-input="true"
                 data-json-error-id="{{$x.NAME}}-json-error"
@@ -411,7 +399,7 @@
                 data-field-name="{{$x.NAME}}"
                 data-base-required="{{if $required}}1{{else}}0{{end}}"
                 {{if $x.IS_HIDDEN}}hidden{{end}}
-                {{if $readonly}}readonly{{end}}
+                {{if $synthetic}}disabled{{else if $readonly}}readonly{{end}}
                 {{if not $x.IS_NULLABLE}}required{{end}}
                 rows="{{if eq $x.NAME "script"}}18{{else}}6{{end}}"
                 placeholder="{{$cfg.Placeholder}}"
@@ -425,7 +413,7 @@
                 data-field-name="{{$x.NAME}}"
                 data-base-required="{{if $required}}1{{else}}0{{end}}"
                 {{if $x.IS_HIDDEN}}hidden{{end}}
-                {{if $readonly}}readonly{{end}}
+                {{if $synthetic}}disabled{{else if $readonly}}readonly{{end}}
                 {{if not $x.IS_NULLABLE}}required{{end}}
                 name="{{$x.NAME}}"
                 {{if and $.FormPasswordFieldName (eq $x.NAME $.FormPasswordFieldName)}}autocomplete="new-password" spellcheck="false"{{end}}
@@ -437,6 +425,7 @@
 	              {{if and $.FormPasswordFieldName (eq $x.NAME $.FormPasswordFieldName)}}
 	              <p class="ui-field-help">Leave blank to keep the current password. Minimum 10 characters. Saving signs that user out of every other session.</p>
 	              {{end}}
+	              {{if $cfg.HelpText}}<p class="ui-field-help">{{$cfg.HelpText}}</p>{{end}}
 	              <p class="ui-field-error hidden" data-field-error-for="{{$x.NAME}}"></p>
 	            </div>
 
@@ -1687,12 +1676,17 @@
         container.classList.toggle("hidden", !visible);
 
         const fields = Array.from(container.querySelectorAll("[data-field-name]"));
+        // A frozen container holds fields that are not columns — a task's
+        // inputs. They render disabled and must stay that way, or making a
+        // field visible would re-enable it and post a name the save path
+        // rightly rejects.
+        const frozen = container.getAttribute("data-frozen") === "true";
         fields.forEach((field) => {
           const baseRequired = field.getAttribute("data-base-required") === "1";
           const readonly = field.hasAttribute("readonly");
           const isCheckbox = field instanceof HTMLInputElement && field.type === "checkbox";
           const isHiddenField = field.hasAttribute("hidden") || (field instanceof HTMLInputElement && field.type === "hidden");
-          if (!readonly) {
+          if (!readonly && !frozen) {
             field.disabled = !visible;
           }
           if (visible && baseRequired && !isCheckbox && !isHiddenField) {

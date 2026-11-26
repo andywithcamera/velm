@@ -33,6 +33,10 @@ type formFieldConfig struct {
 	ReferenceTableLabel string
 	ReferenceRows       []formReferenceOption
 	ConditionExpr       string
+	HelpText            string
+	// Synthetic marks a field that is not a column: today the task inputs a
+	// record carries (#383). The template disables it, so it never submits.
+	Synthetic bool
 }
 
 type formVariantOption struct {
@@ -369,6 +373,15 @@ func buildFormViewData(w http.ResponseWriter, r *http.Request, uri, title, secti
 		viewData["FormRelatedSections"] = relatedSections
 		viewData["FormDocBacklinks"] = docBacklinks
 		viewData["FormTaskRequest"] = taskRequest
+		// The brief belongs in the form, not in a card above it (#383).
+		if tableName == db.TaskTableName {
+			if columns, configs, values := injectTaskRequestFormFields(ctx, taskRequest, formColumns, formFieldConfigs, formFieldValues); len(columns) > 0 {
+				formColumns, formFieldConfigs, formFieldValues = columns, configs, values
+				viewData["FormColumns"] = formColumns
+				viewData["FormFieldConfigs"] = formFieldConfigs
+				viewData["FormFieldValues"] = formFieldValues
+			}
+		}
 	}
 	return viewData, nil
 }

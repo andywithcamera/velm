@@ -8,8 +8,12 @@ package db
 // for: the brief, the requester's words and every value that flowed in from a
 // predecessor were all sitting in the row, invisible.
 //
-// This exposes it for the record page. It is deliberately read-only — inputs
-// are the requester's words and are not editable by the doer.
+// Inputs reach the record page as read-only form fields (#383), not as a card
+// of prose above the form: the brief belongs where the doer already looks. They
+// are deliberately read-only — inputs are the requester's words and are not
+// editable by the doer. Values that flowed in without a schema entry still
+// show, because a predecessor's output is worth reading even when the
+// definition never declared it.
 
 import (
 	"context"
@@ -30,11 +34,27 @@ type TaskRequestValue struct {
 	Value string
 }
 
-// TaskRequestView is what the record page shows above the form.
+// TaskRequestInputField is one input as the record page renders it: still
+// typed, so the form can draw a select for a choice and a textarea for long
+// text instead of flattening every input into a bullet of prose.
+type TaskRequestInputField struct {
+	Name       string
+	Label      string
+	DataType   string
+	Value      string
+	IsNullable bool
+	HelpText   string
+	Choices    []ChoiceOption
+	// Declared is false for a value that arrived in the task's scope with no
+	// schema entry. Those still render, as read-only text.
+	Declared bool
+}
+
+// TaskRequestView is what a task record carries about the request that made it.
 type TaskRequestView struct {
 	DefinitionName string
 	DefinitionSlug string
-	Inputs         []TaskRequestValue
+	InputFields    []TaskRequestInputField
 	Outputs        []TaskRequestValue
 	HasInputs      bool
 	HasOutputs     bool
@@ -79,31 +99,65 @@ func LoadTaskRequest(ctx context.Context, taskID string) (TaskRequestView, error
 		return view, nil // unreadable scope renders nothing rather than breaking the form
 	}
 
-	// The schema supplies labels and a stable order; a value with no schema
-	// entry still shows, because a predecessor's output is worth reading even
-	// when the definition never declared it.
-	labels := map[string]string{}
-	choiceLabels := map[string]map[string]string{}
-	var declaredOrder []string
+	// The schema supplies labels, types and a stable order.
+	var declaredFields []TaskInputField
 	if fields, err := ParseTaskInputSchema(inputSchemaRaw); err == nil {
-		for _, field := range fields {
-			labels[field.Name] = field.LabelOrName()
-			declaredOrder = append(declaredOrder, field.Name)
-			if len(field.Choices) > 0 {
-				byValue := make(map[string]string, len(field.Choices))
-				for _, choice := range field.Choices {
-					byValue[choice.Value] = choice.Label
-				}
-				choiceLabels[field.Name] = byValue
-			}
-		}
+		declaredFields = fields
 	}
 
-	view.Inputs = orderedScopeValues(scope.Inputs, declaredOrder, labels, choiceLabels)
-	view.HasInputs = len(view.Inputs) > 0
+	view.InputFields = taskRequestInputFields(scope.Inputs, declaredFields)
+	view.HasInputs = len(view.InputFields) > 0
 	view.Outputs = orderedScopeValues(scope.Outputs, nil, nil, nil)
 	view.HasOutputs = len(view.Outputs) > 0
 	return view, nil
+}
+
+// taskRequestInputFields keeps a choice's stored value rather than its label:
+// the form renders the label from the option list, so substituting it here
+// would leave the select with nothing selected.
+func taskRequestInputFields(values map[string]any, declared []TaskInputField) []TaskRequestInputField {
+	if len(values) == 0 && len(declared) == 0 {
+		return nil
+	}
+	out := make([]TaskRequestInputField, 0, len(declared)+len(values))
+	seen := make(map[string]bool, len(declared))
+	for _, field := range declared {
+		name := strings.TrimSpace(field.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, TaskRequestInputField{
+			Name:       name,
+			Label:      field.LabelOrName(),
+			DataType:   strings.TrimSpace(field.DataType),
+			Value:      renderScopeValue(values[name]),
+			IsNullable: field.IsNullable,
+			HelpText:   strings.TrimSpace(field.HelpText),
+			Choices:    field.Choices,
+			Declared:   true,
+		})
+	}
+	rest := make([]string, 0, len(values))
+	for name := range values {
+		if !seen[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	for _, name := range rest {
+		if strings.TrimSpace(name) == "" {
+			continue
+		}
+		out = append(out, TaskRequestInputField{
+			Name:       name,
+			Label:      humanizeInputName(name),
+			DataType:   "text",
+			Value:      renderScopeValue(values[name]),
+			IsNullable: true,
+		})
+	}
+	return out
 }
 
 func orderedScopeValues(values map[string]any, declaredOrder []string, labels map[string]string, choiceLabels map[string]map[string]string) []TaskRequestValue {
